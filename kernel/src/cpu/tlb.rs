@@ -8,33 +8,70 @@ use crate::address::{Address, VirtAddr};
 use crate::cpu::control_regs::{CR4Flags, read_cr3, read_cr4, write_cr3, write_cr4};
 use crate::cpu::ipi::{IpiMessage, IpiTarget, send_multicast_ipi};
 use crate::platform::SVSM_PLATFORM;
+use crate::types::PageSize;
+use crate::utils::MemoryRegion;
 
 use core::arch::asm;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 static FLUSH_SMP: AtomicBool = AtomicBool::new(false);
 
+/// When a partial TLB flush is requested, if the amount of PTEs that
+/// need to be flushed exceeds this value, a complete TLB flush will
+/// be performed instead.
+const TLB_FLUSH_ALL_THRESHOLD: usize = 256;
+
 /// Defines the scope of a TLB flush.
 #[derive(Copy, Clone, Debug)]
-pub enum TlbFlushScope {
-    /// Indicates that all addresses must be flushed on all processors,
-    /// including global addresses.
-    AllGlobal,
+pub enum TlbFlushRange {
+    All,
+    Range {
+        /// The range of addresses to be flush.
+        region: MemoryRegion<VirtAddr>,
+        /// The size of the PTEs used to map the region being flushed.
+        pgsize: PageSize,
+    },
+}
 
-    /// Indicates that all addresses must be flushed on all processors,
-    /// excluding global addresses.
-    AllNonGlobal,
+/// Defines the scope of a TLB flush.
+#[derive(Copy, Clone, Debug)]
+pub struct TlbFlushScope {
+    /// Indicates whether global addresses should be flushed or not.
+    pub global: bool,
+    /// Indicates the range of virtual addresses that should be flushed.
+    pub range: TlbFlushRange,
 }
 
 impl TlbFlushScope {
+    /// Flushes the TLB for the current CPU.
     pub fn flush_percpu(&self) {
-        match self {
-            Self::AllGlobal => flush_tlb_global_percpu(),
-            Self::AllNonGlobal => flush_tlb_percpu(),
+        match self.range {
+            TlbFlushRange::All => self.flush_percpu_all(),
+            TlbFlushRange::Range { region, pgsize } => {
+                let page_count = region.len().div_ceil(usize::from(pgsize));
+                // Perform a complete flush if the number of PTEs exceeds the
+                // threshold.
+                if page_count > TLB_FLUSH_ALL_THRESHOLD {
+                    self.flush_percpu_all();
+                } else {
+                    for page in region.iter_pages(pgsize) {
+                        flush_address_percpu(page);
+                    }
+                }
+            }
         }
     }
 
-    pub fn flush_all(&self) {
+    /// Flushes all the entries in the TLB for the current CPU.
+    fn flush_percpu_all(&self) {
+        match self.global {
+            true => flush_tlb_global_percpu(),
+            false => flush_tlb_percpu(),
+        }
+    }
+
+    /// Flushes the TLB for all CPUs.
+    pub fn flush_all_cpus(&self) {
         // If SMP has not yet been started, then perform all flushes as local only.
         // Prior to SMP startup, there is no need to reach into other processors,
         // and the SVSM platform object may not even exist when flushes are
@@ -64,8 +101,23 @@ pub fn set_tlb_flush_smp() {
 }
 
 pub fn flush_tlb_global_sync() {
-    let flush_scope = TlbFlushScope::AllGlobal;
-    flush_scope.flush_all();
+    let flush_scope = TlbFlushScope {
+        global: true,
+        range: TlbFlushRange::All,
+    };
+    flush_scope.flush_all_cpus();
+}
+
+pub fn flush_tlb_global_sync_range(region: MemoryRegion<VirtAddr>, pgsize: PageSize) {
+    let flush_scope = TlbFlushScope {
+        global: true,
+        range: TlbFlushRange::Range { region, pgsize },
+    };
+    flush_scope.flush_all_cpus();
+}
+
+pub fn flush_tlb_global_sync_page(vaddr: VirtAddr, pgsize: PageSize) {
+    flush_tlb_global_sync_range(MemoryRegion::new(vaddr, pgsize.into()), pgsize);
 }
 
 pub fn flush_tlb_global_percpu() {

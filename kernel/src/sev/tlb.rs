@@ -4,15 +4,64 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use bitfield_struct::bitfield;
+
 use crate::address::{Address, VirtAddr};
+use crate::cpu::TlbFlushRange;
+use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::tlb::TlbFlushScope;
+use crate::types::PageSize;
+use crate::utils::MemoryRegion;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 use core::arch::asm;
 
-const INVLPGB_VALID_VA: u64 = 1u64 << 0;
-//const INVLPGB_VALID_PCID: u64 = 1u64 << 1;
-const INVLPGB_VALID_ASID: u64 = 1u64 << 2;
-const INVLPGB_VALID_GLOBAL: u64 = 1u64 << 3;
+#[bitfield(u64)]
+struct InvlpgbRax {
+    valid_va: bool,
+    valid_pcid: bool,
+    valid_asid: bool,
+    global: bool,
+    final_translation_only: bool,
+    nested: bool,
+    #[bits(6)]
+    _rsvd: u8,
+    #[bits(52)]
+    va: usize,
+}
+
+#[bitfield(u32)]
+struct InvlpgbEcx {
+    count: u16,
+    #[bits(15)]
+    _rsvd: u16,
+    huge: bool,
+}
+
+/// Determines the maximum amount of pages that may be flushed with
+/// a single INVLPGB instruction by querying CPUID.
+fn __invlpgb_max_count() -> u32 {
+    let cpuid = CpuidResult::get(0x80000008, 0);
+    // EDX[15:0] contains the maximum number of pages that can be
+    // invalidated in one instruction. A value of 0 indicates a
+    // single page.
+    (cpuid.edx & ((1 << 16) - 1)) + 1
+}
+
+/// Determines the maximum amount of pages that may be flushed with
+/// a single INVLPGB instruction, by lazily querying CPUID if the
+/// value has not been cached from a previous query.
+fn invlpgb_max_count() -> u32 {
+    static MAX_COUNT: ImmutAfterInitCell<u32> = ImmutAfterInitCell::uninit();
+    if let Ok(count) = MAX_COUNT.try_get_inner() {
+        return *count;
+    }
+    let count = __invlpgb_max_count();
+    // If this fails, someone else initialized the cell, which is not an issue,
+    // as probing CPUID multiple times is benign.
+    let _ = MAX_COUNT.init(count);
+    count
+}
 
 #[inline]
 fn do_invlpgb(rax: u64, rcx: u64, rdx: u64) {
@@ -23,7 +72,7 @@ fn do_invlpgb(rax: u64, rcx: u64, rdx: u64) {
              in("rax") rax,
              in("rcx") rcx,
              in("rdx") rdx,
-             options(att_syntax));
+             options(att_syntax, nostack, preserves_flags));
     }
 }
 
@@ -32,36 +81,55 @@ fn do_tlbsync() {
     // SAFETY: Inline assembly to synchronize TLB invalidations. It does not
     // change any state.
     unsafe {
-        asm!("tlbsync", options(att_syntax));
+        asm!("tlbsync", options(att_syntax, nomem, preserves_flags));
     }
 }
 
-pub fn flush_tlb() {
-    let rax: u64 = INVLPGB_VALID_ASID;
-    do_invlpgb(rax, 0, 0);
+fn flush_tlb(global: bool) {
+    let rax = InvlpgbRax::new().with_valid_asid(true).with_global(global);
+    do_invlpgb(rax.into_bits(), 0, 0);
 }
 
-pub fn flush_tlb_sync() {
-    flush_tlb();
+fn flush_tlb_sync(global: bool) {
+    flush_tlb(global);
     do_tlbsync();
 }
 
-pub fn flush_tlb_global() {
-    let rax: u64 = INVLPGB_VALID_ASID | INVLPGB_VALID_GLOBAL;
-    do_invlpgb(rax, 0, 0);
-}
+fn flush_tlb_sync_range(global: bool, region: MemoryRegion<VirtAddr>, pgsize: PageSize) {
+    let max_count = invlpgb_max_count() as usize;
 
-pub fn flush_tlb_global_sync() {
-    flush_tlb_global();
+    for start in region.iter_pages(pgsize).step_by(max_count) {
+        // Take up to `max_count` pages
+        let end = region
+            .end()
+            .min(start + usize::from(pgsize) * max_count)
+            .page_align_up();
+        let subregion = MemoryRegion::from_addresses(start, end);
+        let page_count = u16::try_from(subregion.len() / usize::from(pgsize)).unwrap();
+
+        let ecx = InvlpgbEcx::new()
+            .with_count(page_count)
+            .with_huge(pgsize == PageSize::Huge);
+
+        let rax = InvlpgbRax::new()
+            .with_valid_asid(true)
+            .with_global(global)
+            .with_valid_va(true)
+            .with_va(start.pfn());
+
+        do_invlpgb(rax.into_bits(), ecx.into_bits() as u64, 0);
+    }
+
     do_tlbsync();
 }
 
-pub fn flush_address(va: VirtAddr) {
-    let rax: u64 = (va.page_align().bits() as u64)
-        | INVLPGB_VALID_VA
-        | INVLPGB_VALID_ASID
-        | INVLPGB_VALID_GLOBAL;
-    do_invlpgb(rax, 0, 0);
+fn flush_address(va: VirtAddr) {
+    let rax = InvlpgbRax::new()
+        .with_valid_asid(true)
+        .with_global(true)
+        .with_valid_va(true)
+        .with_va(va.pfn());
+    do_invlpgb(rax.into_bits(), 0, 0);
 }
 
 pub fn flush_address_sync(va: VirtAddr) {
@@ -70,8 +138,10 @@ pub fn flush_address_sync(va: VirtAddr) {
 }
 
 pub fn flush_tlb_scope(flush_scope: &TlbFlushScope) {
-    match flush_scope {
-        TlbFlushScope::AllGlobal => flush_tlb_global_sync(),
-        TlbFlushScope::AllNonGlobal => flush_tlb_sync(),
+    match flush_scope.range {
+        TlbFlushRange::All => flush_tlb_sync(flush_scope.global),
+        TlbFlushRange::Range { region, pgsize } => {
+            flush_tlb_sync_range(flush_scope.global, region, pgsize)
+        }
     }
 }

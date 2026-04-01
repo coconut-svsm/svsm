@@ -5,8 +5,8 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::percpu::{PERCPU_AREAS, PERCPU_VMSAS, this_cpu, this_cpu_shared};
+use crate::cpu::{flush_tlb_global_sync, flush_tlb_global_sync_page};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
@@ -138,8 +138,8 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         }
     })?;
 
-    // TLB flush needed to propagate new permissions
-    flush_tlb_global_sync();
+    // TLB flush needed to propagate new permissions for the VMSA page
+    flush_tlb_global_sync_page(vaddr, PageSize::Regular);
 
     let svme_mask: u64 = 1u64 << 12;
 
@@ -184,18 +184,17 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     // Clear EFER.SVME on deleted VMSA. If the VMSA is executing
     // disable() will loop until that is not the case
     del_vmsa.disable();
+    let vaddr = del_vmsa.virt_addr();
 
     // Do not return early here, as we need to do a TLB flush
     // SAFETY: this page is known to already be in use as a guest VMSA.
-    let res = unsafe {
-        rmp_clear_guest_vmsa(del_vmsa.virt_addr()).map_err(|_| SvsmReqError::invalid_address())
-    };
+    let res = unsafe { rmp_clear_guest_vmsa(vaddr).map_err(|_| SvsmReqError::invalid_address()) };
 
     // Unmap the page
     drop(del_vmsa);
 
     // Tell everyone the news and flush temporary mapping
-    flush_tlb_global_sync();
+    flush_tlb_global_sync_page(vaddr, PageSize::Regular);
 
     res
 }
@@ -270,7 +269,9 @@ fn core_configure_vtom(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     }
 }
 
-fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> {
+fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
+    let mut flush = false;
+
     let (page_size_bytes, valign, huge) = match entry & 3 {
         0 => (PAGE_SIZE, VIRT_ALIGN_4K, PageSize::Regular),
         1 => (PAGE_SIZE_2M, VIRT_ALIGN_2M, PageSize::Huge),
@@ -301,7 +302,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
     let lock = PVALIDATE_LOCK.lock_read();
 
     if valid == PvalidateOp::Invalid {
-        *flush |= true;
+        flush = true;
         rmp_revoke_guest_access(vaddr, huge)?;
     }
 
@@ -360,6 +361,10 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         }
     }
 
+    if flush {
+        flush_tlb_global_sync_page(vaddr, huge);
+    }
+
     Ok(())
 }
 
@@ -394,7 +399,6 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     }
 
     let mut loop_result = Ok(());
-    let mut flush = false;
 
     let guest_entries = guest_page.offset(1).cast::<u64>();
     for i in next..entries {
@@ -410,7 +414,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
             }
         };
 
-        loop_result = core_pvalidate_one(entry, &mut flush);
+        loop_result = core_pvalidate_one(entry);
         match loop_result {
             Ok(()) => request.next += 1,
             Err(SvsmReqError::RequestError(..)) => break,
@@ -424,10 +428,6 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     // called at the beginning of SVSM_CORE_PVALIDATE handler (this one).
     if let Err(e) = unsafe { guest_page.write_ref(&request) } {
         loop_result = Err(e.into());
-    }
-
-    if flush {
-        flush_tlb_global_sync();
     }
 
     loop_result
