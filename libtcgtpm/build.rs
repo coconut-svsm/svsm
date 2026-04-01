@@ -10,8 +10,14 @@ use std::process::Command;
 use std::process::Stdio;
 
 fn main() {
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+
     // Build libtcgtpm.
-    let status = Command::new("make")
+    let mut cmd = Command::new("make");
+    if target_os != "none" {
+        cmd.arg("USE_LIBCRT=0");
+    }
+    let status = cmd
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
