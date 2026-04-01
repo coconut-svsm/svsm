@@ -95,8 +95,8 @@ impl TlbFlushScope {
     /// Flushes all the entries in the TLB for the current CPU.
     fn flush_percpu_all(&self) {
         match self.global {
-            true => flush_tlb_global_percpu(),
-            false => flush_tlb_percpu(),
+            true => __flush_tlb_global_percpu(),
+            false => __flush_tlb_percpu(),
         }
     }
 
@@ -147,6 +147,26 @@ pub fn flush_tlb_global_sync_page(vaddr: VirtAddr, pgsize: PageSize) {
 }
 
 pub fn flush_tlb_global_percpu() {
+    TlbFlushScope::all().with_global(true).flush_percpu();
+}
+
+pub fn flush_tlb_global_percpu_range(region: MemoryRegion<VirtAddr>, pgsize: PageSize) {
+    TlbFlushScope::range(region, pgsize)
+        .with_global(true)
+        .flush_percpu();
+}
+
+pub fn flush_tlb_global_percpu_page(vaddr: VirtAddr, pgsize: PageSize) {
+    TlbFlushScope::page(vaddr, pgsize)
+        .with_global(true)
+        .flush_percpu();
+}
+
+pub fn flush_tlb_percpu() {
+    TlbFlushScope::all().with_global(false).flush_percpu();
+}
+
+fn __flush_tlb_global_percpu() {
     let cr4 = read_cr4();
 
     // SAFETY: we are not changing any execution-state relevant flags
@@ -156,7 +176,7 @@ pub fn flush_tlb_global_percpu() {
     }
 }
 
-pub fn flush_tlb_percpu() {
+fn __flush_tlb_percpu() {
     // SAFETY: reloading CR3 with its current value is always safe.
     unsafe {
         write_cr3(read_cr3());
