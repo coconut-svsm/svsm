@@ -6,6 +6,9 @@ OPENSSL_CONFIG_TYPE = --debug
 TCGTPM_CFLAGS = -g -O0 -DDEBUG=YES
 endif
 
+# Allow user to not link in libcrt
+USE_LIBCRT ?= 1
+
 ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 DEPS_DIR := $(ROOT_DIR)/deps
 OUT_DIR ?= $(ROOT_DIR)
@@ -31,7 +34,11 @@ LIBCRT_BUILD_DIR = $(OUT_DIR)/libcrt-build
 OPENSSL_BUILD_DIR = $(OUT_DIR)/openssl-build
 TCGTPM_BUILD_DIR = $(OUT_DIR)/tcgtpm-build
 
+ifeq ($(USE_LIBCRT),1)
 LIBCRT = $(LIBCRT_BUILD_DIR)/libcrt.a
+else
+LIBCRT =
+endif
 LIBCRYPTO = $(OPENSSL_BUILD_DIR)/libcrypto.a
 
 LIBTPM_TARGET = Tpm_CoreLib
@@ -50,6 +57,16 @@ OPENSSL_MAKEFILE = $(OPENSSL_BUILD_DIR)/Makefile
 TCGTPM_MAKEFILE = $(TCGTPM_BUILD_DIR)/Makefile
 
 LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
+
+ifeq ($(USE_LIBCRT),1)
+LIBCRT_INCLUDE = -I$(LIBCRT_SRC_DIR)/include
+LIBCRT_LINK = -Wl,rpath=$(LIBCRT_BUILD_DIR) -lcrt
+TCGTPM_CFLAGS += -static -nostdinc -fno-stack-protector -mno-sse -mno-red-zone
+OPENSSL_CFLAGS = -static -nostdinc -nostdlib -fno-stack-protector -mno-red-zone
+else
+LIBCRT_INCLUDE =
+LIBCRT_LINK =
+endif
 
 # Avoid running jobs of this Makefile in parallel to avoid possible conflicts
 # when building the TPM libraries, which use the same Makefile and subdirectory.
@@ -176,8 +193,9 @@ $(OPENSSL_MAKEFILE):
 			no-whirlpool \
 			--with-rand-seed=getrandom \
 			$(OPENSSL_CONFIG_TYPE) \
-			-I$(LIBCRT_SRC_DIR)/include \
-			-Wl,rpath=$(LIBCRT_BUILD_DIR) -lcrt)
+			$(OPENSSL_CFLAGS) \
+			$(LIBCRT_INCLUDE) \
+			$(LIBCRT_LINK))
 
 # tcgtpm
 $(LIBBNMATH): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
@@ -192,9 +210,9 @@ $(LIBTPM): $(TCGTPM_MAKEFILE) $(LIBTPMBIGNUM)
 $(LIBPLATFORM): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
 	$(MAKE) -C $(TCGTPM_BUILD_DIR) $(LIBPLATFORM_TARGET)
 
-TCGTPM_CFLAGS += -static -nostdinc -fno-stack-protector -fPIE -mno-sse -mno-red-zone
+TCGTPM_CFLAGS += -fPIE
 TCGTPM_CFLAGS += -DFILE_BACKED_NV=NO
-TCGTPM_CFLAGS += -I$(LIBCRT_SRC_DIR)/include
+TCGTPM_CFLAGS += $(LIBCRT_INCLUDE)
 TCGTPM_CFLAGS += -I$(OPENSSL_BUILD_DIR)/include
 TCGTPM_CFLAGS += -I$(OPENSSL_SRC_DIR)/include
 
