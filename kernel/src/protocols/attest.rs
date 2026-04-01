@@ -197,6 +197,24 @@ impl AttestServicesOp {
     }
 }
 
+// Compile-time ABI layout guard: any change to field order or padding that
+// breaks the wire format with the guest will be caught here.
+const _: () = assert!(
+    core::mem::offset_of!(AttestServicesOp, report_gpa) == 0x00
+        && core::mem::offset_of!(AttestServicesOp, report_size) == 0x08
+        && core::mem::offset_of!(AttestServicesOp, reserved_1) == 0x0c
+        && core::mem::offset_of!(AttestServicesOp, nonce_gpa) == 0x10
+        && core::mem::offset_of!(AttestServicesOp, nonce_size) == 0x18
+        && core::mem::offset_of!(AttestServicesOp, reserved_2) == 0x1a
+        && core::mem::offset_of!(AttestServicesOp, manifest_gpa) == 0x20
+        && core::mem::offset_of!(AttestServicesOp, manifest_size) == 0x28
+        && core::mem::offset_of!(AttestServicesOp, reserved_3) == 0x2c
+        && core::mem::offset_of!(AttestServicesOp, certificate_gpa) == 0x30
+        && core::mem::offset_of!(AttestServicesOp, certificate_size) == 0x38
+        && core::mem::offset_of!(AttestServicesOp, reserved_4) == 0x3c
+        && core::mem::size_of::<AttestServicesOp>() == 0x40
+);
+
 #[derive(Clone)]
 struct GuidTableEntry {
     guid: uuid::Uuid,
@@ -331,6 +349,16 @@ impl AttestSingleServiceOp {
         self.op.is_extended_report()
     }
 }
+
+// Compile-time ABI layout guard for the extended single-service structure
+// that wraps AttestServicesOp.
+const _: () = assert!(
+    core::mem::offset_of!(AttestSingleServiceOp, op) == 0x00
+        && core::mem::offset_of!(AttestSingleServiceOp, guid) == 0x40
+        && core::mem::offset_of!(AttestSingleServiceOp, manifest_ver) == 0x50
+        && core::mem::offset_of!(AttestSingleServiceOp, reserved_5) == 0x54
+        && core::mem::size_of::<AttestSingleServiceOp>() == 0x58
+);
 
 fn get_attestation_report_standard(nonce: &[u8]) -> Result<Box<SnpReportResponse>, SvsmReqError> {
     let mut resp = SnpReportResponse::new_box_zeroed()
@@ -554,5 +582,111 @@ pub fn attest_protocol_request(
         SVSM_ATTEST_SERVICES => attest_multiple_services(params),
         SVSM_ATTEST_SINGLE_SERVICE => attest_single_service_handler(params),
         _ => Err(SvsmReqError::unsupported_protocol()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocols::errors::SvsmResultCode;
+    use core::mem::offset_of;
+    use zerocopy::FromZeros;
+
+    fn is_invalid_parameter(err: &SvsmReqError) -> bool {
+        matches!(
+            err,
+            SvsmReqError::RequestError(SvsmResultCode::INVALID_PARAMETER)
+        )
+    }
+
+    mod attest_services {
+        use super::*;
+
+        fn base_op() -> AttestServicesOp {
+            AttestServicesOp::new_zeroed()
+        }
+
+        /// Parsing must reject requests with non-zero reserved fields
+        /// to enforce forward-compatibility with future spec revisions.
+        #[test]
+        fn check_valid_rejects_nonzero_reserved() {
+            for offset in [
+                offset_of!(AttestServicesOp, reserved_1),
+                offset_of!(AttestServicesOp, reserved_2),
+                offset_of!(AttestServicesOp, reserved_3),
+                offset_of!(AttestServicesOp, reserved_4),
+            ] {
+                let mut bytes = base_op().as_bytes().to_vec();
+                bytes[offset] = 1;
+                let op = AttestServicesOp::ref_from_bytes(&bytes).unwrap();
+                let err = op.check_valid().unwrap_err();
+                assert!(
+                    is_invalid_parameter(&err),
+                    "should reject nonzero reserved at offset {offset:#x}"
+                );
+            }
+        }
+
+        /// The certificate region is optional (size == 0 means absent).
+        /// When present, it must enforce MAX_CERTIFICATE_SIZE as an upper
+        /// bound to prevent guests from requesting unbounded allocations.
+        #[test]
+        fn certificate_region_boundary() {
+            let mut op = base_op();
+            assert!(op.get_certificate_region().unwrap().is_none());
+
+            // 0x4000 is an arbitrary page-aligned GPA; any page-aligned
+            // value would work here.
+            op.certificate_gpa = 0x4000;
+            op.certificate_size = MAX_CERTIFICATE_SIZE as u32;
+            assert!(op.get_certificate_region().unwrap().is_some());
+
+            op.certificate_size = (MAX_CERTIFICATE_SIZE + 1) as u32;
+            let err = op.get_certificate_region().unwrap_err();
+            assert!(is_invalid_parameter(&err));
+        }
+
+        /// The certificate GPA must be page-aligned when a certificate
+        /// region is requested.
+        #[test]
+        fn certificate_region_rejects_unaligned_gpa() {
+            let mut op = base_op();
+            op.certificate_gpa = 0x4001; // not page-aligned
+            op.certificate_size = MAX_CERTIFICATE_SIZE as u32;
+            let err = op.get_certificate_region().unwrap_err();
+            assert!(is_invalid_parameter(&err));
+        }
+    }
+
+    mod attest_single_service {
+        use super::*;
+
+        fn base_op() -> AttestSingleServiceOp {
+            AttestSingleServiceOp::new_zeroed()
+        }
+
+        /// Only manifest version 0 is currently defined by the protocol.
+        /// Parsing must reject any other version to prevent silent
+        /// misinterpretation of the manifest payload.
+        #[test]
+        fn check_valid_rejects_invalid_manifest_version() {
+            let mut bytes = base_op().as_bytes().to_vec();
+            bytes[offset_of!(AttestSingleServiceOp, manifest_ver)] = 1;
+            let op = AttestSingleServiceOp::ref_from_bytes(&bytes).unwrap();
+            let err = op.check_valid().unwrap_err();
+            assert!(is_invalid_parameter(&err));
+        }
+
+        /// check_valid() must reject a non-zero reserved_5. The reserved fields
+        /// of the embedded AttestServicesOp are already covered by the
+        /// attest_services::check_valid_rejects_nonzero_reserved test.
+        #[test]
+        fn check_valid_rejects_nonzero_reserved() {
+            let mut bytes = base_op().as_bytes().to_vec();
+            bytes[offset_of!(AttestSingleServiceOp, reserved_5)] = 1;
+            let op = AttestSingleServiceOp::ref_from_bytes(&bytes).unwrap();
+            let err = op.check_valid().unwrap_err();
+            assert!(is_invalid_parameter(&err));
+        }
     }
 }
