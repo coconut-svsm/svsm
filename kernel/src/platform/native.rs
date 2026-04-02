@@ -131,7 +131,10 @@ impl SvsmPlatform for NativePlatform {
         unsafe { hyperv::execute_hypercall(input_control, hypercall_pages) }
     }
 
-    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult> {
+    fn cpuid(eax: u32, ecx: u32) -> Option<CpuidResult>
+    where
+        Self: Sized,
+    {
         Some(CpuidResult::get(eax, ecx))
     }
 

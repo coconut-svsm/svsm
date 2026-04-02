@@ -324,7 +324,7 @@ unsafe fn svsm_start(
 
     cr0_init();
     determine_cet_support(platform);
-    cr4_init(platform);
+    cr4_init();
 
     install_console_logger("SVSM").expect("Console logger already initialized");
     platform
