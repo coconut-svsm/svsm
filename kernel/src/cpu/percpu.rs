@@ -6,11 +6,12 @@
 
 extern crate alloc;
 
+use super::features::{Feature, cpu_has_feat};
 use super::gdt::GDT;
 use super::ipi::IpiState;
 use super::isst::Isst;
 use super::msr::write_msr;
-use super::shadow_stack::{ISST_ADDR, init_shadow_stack, is_cet_ss_enabled, is_cet_ss_supported};
+use super::shadow_stack::{ISST_ADDR, init_shadow_stack, is_cet_ss_enabled};
 use super::tss::{IST_DF, X86Tss};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::control_regs::{read_cr0, read_cr4};
@@ -797,14 +798,14 @@ impl PerCpu {
         // Reserve ranges for temporary mappings
         self.initialize_vm_ranges()?;
 
-        if is_cet_ss_supported() {
+        if cpu_has_feat(Feature::CetSS) {
             self.allocate_init_shadow_stack()?;
         }
 
         // Allocate per-cpu context switch stack
         self.allocate_context_switch_stack()?;
 
-        if is_cet_ss_supported() {
+        if cpu_has_feat(Feature::CetSS) {
             self.allocate_context_switch_shadow_stack()?;
         }
 
@@ -814,7 +815,7 @@ impl PerCpu {
         // Setup TSS
         self.setup_tss();
 
-        if is_cet_ss_supported() {
+        if cpu_has_feat(Feature::CetSS) {
             // Allocate ISST shadow stacks
             self.allocate_isst_shadow_stacks()?;
 

@@ -27,7 +27,6 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::cpu::IrqGuard;
 use crate::cpu::percpu::PerCpu;
-use crate::cpu::shadow_stack::determine_cet_support_from_cpuid;
 use crate::cpu::tlb::{TlbFlushScope, flush_tlb};
 use crate::error::SvsmError;
 use crate::hyperv;
@@ -149,11 +148,6 @@ pub trait SvsmPlatform: Sync {
 
     /// Determines the paging encryption masks for the current architecture.
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks;
-
-    /// Determine whether shadow stacks are supported.
-    fn determine_cet_support(&self) -> bool {
-        determine_cet_support_from_cpuid()
-    }
 
     /// Get the features and the capabilities of the platform.
     fn capabilities(&self) -> Caps;

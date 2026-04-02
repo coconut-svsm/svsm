@@ -6,7 +6,6 @@
 
 use crate::address::{Address, PhysAddr};
 use crate::cpu::features::{Feature, cpu_has_feat};
-use crate::cpu::shadow_stack::is_cet_ss_supported;
 use bitflags::bitflags;
 use core::arch::asm;
 
@@ -51,7 +50,7 @@ pub fn cr4_init() {
         cr4.insert(CR4Flags::UMIP);
     }
 
-    if is_cet_ss_supported() {
+    if cpu_has_feat(Feature::CetSS) {
         cr4.insert(CR4Flags::CET);
     }
 

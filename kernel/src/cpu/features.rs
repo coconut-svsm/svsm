@@ -159,4 +159,5 @@ define_cpu_feats! {
     Smep => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ebx, 7),
     Smap => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ebx, 20),
     Umip => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ecx, 2),
+    CetSS => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ecx, 7),
 }
