@@ -8,7 +8,7 @@ use super::idt::common::X86ExceptionContext;
 use crate::address::Address;
 use crate::address::VirtAddr;
 use crate::cpu::X86GeneralRegs;
-use crate::cpu::cpuid::{CpuidLeaf, cpuid_table_raw};
+use crate::cpu::cpuid::cpuid_table_raw;
 use crate::cpu::percpu::current_ghcb;
 use crate::cpu::percpu::this_cpu;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
@@ -248,26 +248,22 @@ fn handle_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
 }
 
 fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
-    let mut leaf = CpuidLeaf::new(ctx.regs.rax as u32, ctx.regs.rcx as u32);
-    let xcr0_in = if leaf.cpuid_fn == 0xD && (leaf.cpuid_subfn == 1 || leaf.cpuid_subfn == 0) {
+    let cpuid_fn = ctx.regs.rax as u32;
+    let cpuid_subfn = ctx.regs.rcx as u32;
+    let xcr0_in = if cpuid_fn == 0xD && (cpuid_subfn == 1 || cpuid_subfn == 0) {
         1
     } else {
         0
     };
 
-    let Some(ret) = cpuid_table_raw(leaf.cpuid_fn, leaf.cpuid_subfn, xcr0_in, 0) else {
+    let Some(ret) = cpuid_table_raw(cpuid_fn, cpuid_subfn, xcr0_in, 0) else {
         return Err(VcError::new(ctx, VcErrorType::UnknownCpuidLeaf).into());
     };
 
-    leaf.eax = ret.eax;
-    leaf.ebx = ret.ebx;
-    leaf.ecx = ret.ecx;
-    leaf.edx = ret.edx;
-
-    ctx.regs.rax = leaf.eax as usize;
-    ctx.regs.rbx = leaf.ebx as usize;
-    ctx.regs.rcx = leaf.ecx as usize;
-    ctx.regs.rdx = leaf.edx as usize;
+    ctx.regs.rax = ret.eax as usize;
+    ctx.regs.rbx = ret.ebx as usize;
+    ctx.regs.rcx = ret.ecx as usize;
+    ctx.regs.rdx = ret.edx as usize;
 
     Ok(())
 }
