@@ -4,27 +4,12 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use crate::error::BootImageError;
 use crate::page_tables::page_align_up;
 
 use bootdefs::boot_params::BootParamBlock;
 
 pub const PAGE_SIZE_2M: u64 = 0x00200000;
-
-/// Define a simple error type to describe the error results from boot image
-/// operations.
-#[derive(Clone, Copy, Debug)]
-pub enum BootImageError {
-    Elf,
-    ElfRelocs,
-    ElfAlignment,
-    ElfSymbols,
-    SelfMapConflict,
-    KernelRangeTooLarge,
-    BadKernelAddress,
-    KernelTooBig,
-    HeapTooSmall,
-    Host,
-}
 
 /// Page table self-map level 3 index
 pub const PGTABLE_LVL3_IDX_PTE_SELFMAP: usize = 493;
@@ -59,6 +44,7 @@ pub struct BootImageInfo {
     pub context: BootImageContext,
     pub kernel_page_tables_base: u64,
     pub total_pt_pages: u64,
+    pub kernel_launch_info: u64,
     pub boot_params_paddr: u64,
     pub cpuid_paddr: u64,
     pub secrets_paddr: u64,

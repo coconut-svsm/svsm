@@ -3,12 +3,12 @@
 // Copyright (c) 2023 SUSE LLC
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
-#![forbid(unsafe_code)]
 
 use gpa_map::GpaMap;
 use igvm_builder::IgvmBuilder;
 use std::error::Error;
 
+mod boot_params;
 mod cmd_options;
 mod context;
 mod cpuid;
@@ -22,8 +22,12 @@ mod platform;
 mod sipi;
 mod stage2_stack;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn build_igvm() -> Result<(), Box<dyn Error>> {
     let builder = IgvmBuilder::new()?;
     builder.build()?;
     Ok(())
+}
+
+fn main() -> Result<(), String> {
+    build_igvm().map_err(|e| e.to_string())
 }

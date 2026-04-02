@@ -8,6 +8,7 @@
 
 mod defs;
 mod elf;
+mod error;
 mod heap;
 mod page_tables;
 mod symbols;
@@ -22,6 +23,7 @@ use crate::page_tables::setup_kernel_page_tables;
 use crate::symbols::load_kernel_symbols;
 
 pub use crate::defs::*;
+pub use crate::error::BootImageError;
 
 use ::elf::Elf64File;
 use bootdefs::kernel_launch::INITIAL_KERNEL_STACK_WORDS;
@@ -171,6 +173,7 @@ where
         kernel_page_table_vaddr: kernel_page_tables.root_vaddr(),
         suppress_svsm_interrupts: false,
         vmsa_in_kernel_heap,
+        lowmem_validated: false,
         _reserved: Default::default(),
     };
     add_page_contents(add_page_data, launch_info_paddr, launch_info.as_bytes())?;
@@ -194,6 +197,7 @@ where
 
     let info = BootImageInfo {
         boot_params_paddr,
+        kernel_launch_info: launch_info_vaddr,
         cpuid_paddr,
         secrets_paddr,
         kernel_pdpt_paddr: kernel_page_tables.kernel_pdpt_paddr(),

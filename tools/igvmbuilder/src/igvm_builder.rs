@@ -6,16 +6,20 @@
 
 use std::cmp::Ordering;
 use std::error::Error;
+use std::fs;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Read;
+use std::io::Write;
 use std::mem::size_of;
 
 use bootdefs::boot_params::BootParamBlock;
 use bootdefs::boot_params::GuestFwInfoBlock;
 use bootdefs::boot_params::InitialGuestContext;
 use bootdefs::platform::SvsmPlatformType;
+use bootimg::BootImageError;
+use bootimg::BootImageParams;
+use bootimg::prepare_boot_image;
 use clap::Parser;
-use igvm::registers::X86Register;
 use igvm::{
     Arch, IgvmDirectiveHeader, IgvmFile, IgvmInitializationHeader, IgvmPlatformHeader, IgvmRevision,
 };
@@ -26,6 +30,7 @@ use igvm_defs::{
 use zerocopy::IntoBytes;
 
 use crate::GpaMap;
+use crate::boot_params::BootParamType;
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::context::construct_native_start_context;
 use crate::context::construct_stage1_image;
@@ -54,6 +59,12 @@ const IGVM_PARAMETER_COUNT: u32 = 3;
 
 const _: () = assert!(size_of::<BootParamBlock>() as u64 <= PAGE_SIZE_4K);
 const _: () = assert!(size_of::<InitialGuestContext>() as u64 <= PAGE_SIZE_4K);
+
+#[derive(Clone, Copy, Debug)]
+struct ImageLayout {
+    cpuid_addr: u64,
+    boot_params_gpa: u64,
+}
 
 pub struct IgvmBuilder {
     options: CmdOptions,
@@ -150,16 +161,7 @@ impl IgvmBuilder {
     pub fn build(mut self) -> Result<(), Box<dyn Error>> {
         let param_block = self.create_param_block()?;
 
-        // Construct a native context object to capture the start context.
-        let start_rip = self.gpa_map.stage2_image.get_start();
-        let start_rsp = self.gpa_map.stage2_stack.get_end() - size_of::<Stage2Stack>() as u64;
-        let start_context = construct_start_context(
-            start_rip,
-            start_rsp,
-            self.gpa_map.init_page_tables.get_start(),
-        );
-
-        self.build_directives(&param_block, &start_context)?;
+        self.build_directives(&param_block)?;
         self.build_initialization()?;
         self.build_platforms();
 
@@ -212,21 +214,6 @@ impl IgvmBuilder {
     }
 
     fn create_param_block(&self) -> Result<BootParamBlock, Box<dyn Error>> {
-        let param_page_offset = PAGE_SIZE_4K as u32;
-        let madt_offset = param_page_offset + PAGE_SIZE_4K as u32;
-        let memory_map_offset = madt_offset + self.gpa_map.madt.get_size() as u32;
-        let (guest_context_offset, param_area_size) = if self.gpa_map.guest_context.get_size() == 0
-        {
-            (0, memory_map_offset + PAGE_SIZE_4K as u32)
-        } else {
-            (
-                memory_map_offset + PAGE_SIZE_4K as u32,
-                memory_map_offset
-                    + PAGE_SIZE_4K as u32
-                    + self.gpa_map.guest_context.get_size() as u32,
-            )
-        };
-
         // Populate the firmware metadata.
         let fw_info = if let Some(firmware) = &self.firmware {
             firmware.get_fw_info()
@@ -256,12 +243,27 @@ impl IgvmBuilder {
 
         // Most of the parameter block can be initialised with constants.
         Ok(BootParamBlock {
-            param_area_size,
-            param_page_offset,
-            memory_map_offset,
-            madt_offset,
-            madt_size: self.gpa_map.madt.get_size().try_into().unwrap(),
-            guest_context_offset,
+            param_area_size: self.gpa_map.boot_param_layout.total_size(),
+            param_page_offset: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_offset(BootParamType::General),
+            memory_map_offset: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_offset(BootParamType::MemoryMap),
+            madt_offset: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_offset(BootParamType::Madt),
+            madt_size: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_size(BootParamType::Madt),
+            guest_context_offset: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_size(BootParamType::GuestContext),
             debug_serial_port: self.options.get_port_address(),
             firmware: fw_info,
             vmsa_in_kernel_range: self.gpa_map.vmsa_in_kernel_range as u8,
@@ -339,20 +341,7 @@ impl IgvmBuilder {
         Ok(())
     }
 
-    fn build_directives(
-        &mut self,
-        param_block: &BootParamBlock,
-        start_context: &[X86Register],
-    ) -> Result<(), Box<dyn Error>> {
-        // Populate firmware directives.
-        if let Some(firmware) = &self.firmware {
-            self.directives.extend_from_slice(firmware.directives());
-            // If the firmware has a guest context then add it.
-            if let Some(guest_context) = firmware.get_guest_context() {
-                self.add_guest_context(&guest_context);
-            }
-        }
-
+    fn build_directives(&mut self, param_block: &BootParamBlock) -> Result<(), Box<dyn Error>> {
         // Describe the kernel RAM region
         if COMPATIBILITY_MASK.contains(!VSM_COMPATIBILITY_MASK) {
             self.directives.push(IgvmDirectiveHeader::RequiredMemory {
@@ -372,19 +361,149 @@ impl IgvmBuilder {
             });
         }
 
+        // Read the kernel image into a byte vector to be used by the boot
+        // image builder.
+        let kernel_image = fs::read(self.options.kernel.clone()).inspect_err(|_| {
+            eprintln!("Failed to read kernel image {}", self.options.kernel);
+        })?;
+
+        // Invoke the boot image builder to construct the boot image.
+        let boot_image_params = BootImageParams {
+            boot_params: param_block,
+            kernel_fs_start: self.gpa_map.kernel_fs.get_start(),
+            kernel_fs_end: self.gpa_map.kernel_fs.get_start() + self.gpa_map.kernel_fs.get_size(),
+            kernel_region_start: self.gpa_map.kernel.get_start(),
+            kernel_region_page_count: self.gpa_map.kernel.get_page_count(),
+            stage2_start: self.gpa_map.base_addr,
+            vtom: self.vtom,
+        };
+        let boot_image_info = prepare_boot_image(
+            &boot_image_params,
+            kernel_image.as_slice(),
+            &mut |gpa, data, length| {
+                self.add_data_pages(gpa, data, length, COMPATIBILITY_MASK.get())
+                    .map_err(|e| {
+                        eprintln!("{e}");
+                        BootImageError::Host
+                    })
+            },
+        )?;
+
+        // Process stage2 data if present.
+        let (start_context, image_layout) = if let Some(stage2) = self.options.stage2.as_ref() {
+            // Populate the stage 2 binary.
+            self.add_data_pages_from_file(
+                &stage2.clone(),
+                self.gpa_map.stage2_image.get_start(),
+                COMPATIBILITY_MASK.get(),
+            )?;
+
+            // Populate the stage 2 stack.  This has different contents on each
+            // platform.
+            let stage2_stack = Stage2Stack::new(&self.gpa_map, &boot_image_info);
+            if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
+                stage2_stack.add_directive(
+                    self.gpa_map.stage2_stack.get_start(),
+                    SvsmPlatformType::Snp,
+                    SNP_COMPATIBILITY_MASK,
+                    &mut self.directives,
+                );
+            }
+            if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
+                stage2_stack.add_directive(
+                    self.gpa_map.stage2_stack.get_start(),
+                    SvsmPlatformType::Tdp,
+                    TDP_COMPATIBILITY_MASK,
+                    &mut self.directives,
+                );
+            }
+            if COMPATIBILITY_MASK.contains(ANY_NATIVE_COMPATIBILITY_MASK) {
+                stage2_stack.add_directive(
+                    self.gpa_map.stage2_stack.get_start(),
+                    SvsmPlatformType::Native,
+                    ANY_NATIVE_COMPATIBILITY_MASK,
+                    &mut self.directives,
+                );
+            }
+
+            if COMPATIBILITY_MASK.contains(ANY_NATIVE_COMPATIBILITY_MASK) {
+                // Include initial page tables.
+                construct_init_page_tables(
+                    self.gpa_map.init_page_tables.get_start(),
+                    ANY_NATIVE_COMPATIBILITY_MASK,
+                    &mut self.directives,
+                );
+            }
+
+            // Construct a native context object to capture the start context.
+            let start_rip = self.gpa_map.stage2_image.get_start();
+            let start_rsp = self.gpa_map.stage2_stack.get_end() - size_of::<Stage2Stack>() as u64;
+            let start_context = construct_start_context(
+                start_rip,
+                start_rsp,
+                self.gpa_map.init_page_tables.get_start(),
+                false,
+            );
+            let image_layout = ImageLayout {
+                cpuid_addr: self.gpa_map.cpuid_page.get_start(),
+                boot_params_gpa: self.gpa_map.boot_param_block.get_start(),
+            };
+            (start_context, image_layout)
+        } else {
+            // Stage2 is required on TDP and on SNP when VTOM is not enabled.
+            if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK)
+                || (COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) && self.vtom == 0)
+            {
+                return Err("stage2 required but not specified".into());
+            }
+
+            // Generate a start context that describes the kernel entry point.
+            let start_rip = boot_image_info.context.entry_point;
+            let start_rsp = boot_image_info.context.initial_stack;
+            let start_context = construct_start_context(
+                start_rip,
+                start_rsp,
+                boot_image_info.context.paging_root,
+                true,
+            );
+            let image_layout = ImageLayout {
+                cpuid_addr: boot_image_info.cpuid_paddr,
+                boot_params_gpa: boot_image_info.boot_params_paddr,
+            };
+            (start_context, image_layout)
+        };
+
+        // Populate firmware directives.
+        if let Some(firmware) = &self.firmware {
+            self.directives.extend_from_slice(firmware.directives());
+            // If the firmware has a guest context then add it.
+            if let Some(guest_context) = firmware.get_guest_context() {
+                self.add_guest_context(&guest_context, &image_layout);
+            }
+        }
+
         // Create the parameter areas for all host-supplied parameters.
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
-            number_of_bytes: PAGE_SIZE_4K,
+            number_of_bytes: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_size(BootParamType::MemoryMap) as u64,
             parameter_area_index: IGVM_MEMORY_MAP_PA,
             initial_data: vec![],
         });
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
-            number_of_bytes: self.gpa_map.madt.get_size(),
+            number_of_bytes: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_size(BootParamType::Madt) as u64,
             parameter_area_index: IGVM_MADT_PA,
             initial_data: vec![],
         });
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
-            number_of_bytes: PAGE_SIZE_4K,
+            number_of_bytes: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_size(BootParamType::General) as u64,
             parameter_area_index: IGVM_GENERAL_PARAMS_PA,
             initial_data: vec![],
         });
@@ -410,21 +529,30 @@ impl IgvmBuilder {
             }));
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
             IGVM_VHS_PARAMETER_INSERT {
-                gpa: self.gpa_map.memory_map.get_start(),
+                gpa: self
+                    .gpa_map
+                    .boot_param_layout
+                    .get_param_gpa(image_layout.boot_params_gpa, BootParamType::MemoryMap),
                 compatibility_mask: COMPATIBILITY_MASK.get(),
                 parameter_area_index: IGVM_MEMORY_MAP_PA,
             },
         ));
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
             IGVM_VHS_PARAMETER_INSERT {
-                gpa: self.gpa_map.madt.get_start(),
+                gpa: self
+                    .gpa_map
+                    .boot_param_layout
+                    .get_param_gpa(image_layout.boot_params_gpa, BootParamType::Madt),
                 compatibility_mask: COMPATIBILITY_MASK.get(),
                 parameter_area_index: IGVM_MADT_PA,
             },
         ));
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
             IGVM_VHS_PARAMETER_INSERT {
-                gpa: self.gpa_map.general_params.get_start(),
+                gpa: self
+                    .gpa_map
+                    .boot_param_layout
+                    .get_param_gpa(image_layout.boot_params_gpa, BootParamType::General),
                 compatibility_mask: COMPATIBILITY_MASK.get(),
                 parameter_area_index: IGVM_GENERAL_PARAMS_PA,
             },
@@ -435,7 +563,7 @@ impl IgvmBuilder {
             let vtom = if self.options.no_vtom { 0 } else { self.vtom };
             // Add the VMSA.
             self.directives.push(construct_vmsa(
-                start_context,
+                &start_context,
                 self.gpa_map.vmsa.get_start(),
                 vtom,
                 SNP_COMPATIBILITY_MASK,
@@ -456,7 +584,7 @@ impl IgvmBuilder {
         if COMPATIBILITY_MASK.contains(NATIVE_COMPATIBILITY_MASK) {
             // Include the native start context.
             self.directives.push(construct_native_start_context(
-                start_context,
+                &start_context,
                 NATIVE_COMPATIBILITY_MASK,
             ));
         }
@@ -467,13 +595,13 @@ impl IgvmBuilder {
             self.directives.push(construct_stage1_image(
                 self.options.tdx_stage1.as_ref().unwrap(),
                 self.gpa_map.stage1_image.get_start(),
-                start_context,
+                &start_context,
                 TDP_COMPATIBILITY_MASK,
             )?);
         }
 
         // Add the boot parameter block
-        self.add_param_block(param_block);
+        self.add_param_block(param_block, &image_layout);
 
         // Add optional filesystem image
         if let Some(fs) = &self.options.filesystem {
@@ -484,26 +612,19 @@ impl IgvmBuilder {
             )?;
         }
 
-        // Add the kernel elf binary
-        self.add_data_pages_from_file(
-            &self.options.kernel.clone(),
-            self.gpa_map.kernel_elf.get_start(),
-            COMPATIBILITY_MASK.get(),
-        )?;
-
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
             // CPUID page
             let cpuid_page = SnpCpuidPage::new()?;
             cpuid_page.add_directive(
-                self.gpa_map.cpuid_page.get_start(),
+                image_layout.cpuid_addr,
                 SNP_COMPATIBILITY_MASK,
                 &mut self.directives,
             );
 
             // Secrets page
             self.add_empty_pages(
-                self.gpa_map.secrets_page.get_start(),
-                self.gpa_map.secrets_page.get_size(),
+                boot_image_info.secrets_paddr,
+                PAGE_SIZE_4K,
                 SNP_COMPATIBILITY_MASK,
                 IgvmPageDataType::SECRETS,
             )?;
@@ -511,16 +632,16 @@ impl IgvmBuilder {
         if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
             // Insert a zero page in place of the CPUID page
             self.add_empty_pages(
-                self.gpa_map.cpuid_page.get_start(),
-                self.gpa_map.cpuid_page.get_size(),
+                image_layout.cpuid_addr,
+                PAGE_SIZE_4K,
                 TDP_COMPATIBILITY_MASK,
                 IgvmPageDataType::NORMAL,
             )?;
 
             // Insert a zero page in place of the secrets page
             self.add_empty_pages(
-                self.gpa_map.secrets_page.get_start(),
-                self.gpa_map.secrets_page.get_size(),
+                boot_image_info.secrets_paddr,
+                PAGE_SIZE_4K,
                 TDP_COMPATIBILITY_MASK,
                 IgvmPageDataType::NORMAL,
             )?;
@@ -528,55 +649,14 @@ impl IgvmBuilder {
 
         // Populate the empty region below the stage2 stack page.
         // This region is used for stage2 stack at runtime.
-        self.add_empty_pages(
-            self.gpa_map.base_addr,
-            self.gpa_map.stage2_stack.get_start() - self.gpa_map.base_addr,
-            COMPATIBILITY_MASK.get(),
-            IgvmPageDataType::NORMAL,
-        )?;
-
-        // Populate the stage 2 binary.
-        self.add_data_pages_from_file(
-            &self.options.stage2.clone(),
-            self.gpa_map.stage2_image.get_start(),
-            COMPATIBILITY_MASK.get(),
-        )?;
-
-        // Populate the stage 2 stack.  This has different contents on each
-        // platform.
-        let stage2_stack = Stage2Stack::new(&self.gpa_map);
-        if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
-            stage2_stack.add_directive(
-                self.gpa_map.stage2_stack.get_start(),
-                SvsmPlatformType::Snp,
-                SNP_COMPATIBILITY_MASK,
-                &mut self.directives,
-            );
-        }
-        if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
-            stage2_stack.add_directive(
-                self.gpa_map.stage2_stack.get_start(),
-                SvsmPlatformType::Tdp,
-                TDP_COMPATIBILITY_MASK,
-                &mut self.directives,
-            );
-        }
-        if COMPATIBILITY_MASK.contains(ANY_NATIVE_COMPATIBILITY_MASK) {
-            stage2_stack.add_directive(
-                self.gpa_map.stage2_stack.get_start(),
-                SvsmPlatformType::Native,
-                ANY_NATIVE_COMPATIBILITY_MASK,
-                &mut self.directives,
-            );
-        }
-
-        if COMPATIBILITY_MASK.contains(ANY_NATIVE_COMPATIBILITY_MASK) {
-            // Include initial page tables.
-            construct_init_page_tables(
-                self.gpa_map.init_page_tables.get_start(),
-                ANY_NATIVE_COMPATIBILITY_MASK,
-                &mut self.directives,
-            );
+        let stack_base = self.gpa_map.stage2_stack.get_start();
+        if stack_base > self.gpa_map.base_addr {
+            self.add_empty_pages(
+                self.gpa_map.base_addr,
+                stack_base - self.gpa_map.base_addr,
+                COMPATIBILITY_MASK.get(),
+                IgvmPageDataType::NORMAL,
+            )?;
         }
 
         // If the target includes a non-isolated platform, then insert the
@@ -624,12 +704,12 @@ impl IgvmBuilder {
         Ok(())
     }
 
-    fn add_param_block(&mut self, param_block: &BootParamBlock) {
+    fn add_param_block(&mut self, param_block: &BootParamBlock, image_layout: &ImageLayout) {
         let mut data = param_block.as_bytes().to_vec();
         data.resize(PAGE_SIZE_4K as usize, 0);
 
         self.directives.push(IgvmDirectiveHeader::PageData {
-            gpa: self.gpa_map.boot_param_block.get_start(),
+            gpa: image_layout.boot_params_gpa,
             compatibility_mask: COMPATIBILITY_MASK.get(),
             flags: IgvmPageDataFlags::new(),
             data_type: IgvmPageDataType::NORMAL,
@@ -637,17 +717,65 @@ impl IgvmBuilder {
         });
     }
 
-    fn add_guest_context(&mut self, guest_context: &InitialGuestContext) {
+    fn add_guest_context(
+        &mut self,
+        guest_context: &InitialGuestContext,
+        image_layout: &ImageLayout,
+    ) {
         let mut data = guest_context.as_bytes().to_vec();
         data.resize(PAGE_SIZE_4K as usize, 0);
 
         self.directives.push(IgvmDirectiveHeader::PageData {
-            gpa: self.gpa_map.guest_context.get_start(),
+            gpa: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_gpa(image_layout.boot_params_gpa, BootParamType::GuestContext),
             compatibility_mask: COMPATIBILITY_MASK.get(),
             flags: IgvmPageDataFlags::new(),
             data_type: IgvmPageDataType::NORMAL,
             data,
         });
+    }
+
+    fn add_data_pages(
+        &mut self,
+        mut gpa: u64,
+        data: Option<&[u8]>,
+        mut length: u64,
+        compatibility_mask: u32,
+    ) -> Result<(), Box<dyn Error>> {
+        if let Some(data_slice) = data {
+            assert!(length >= data_slice.len() as u64);
+            for chunk in data_slice.chunks(PAGE_SIZE_4K as usize) {
+                self.directives.push(IgvmDirectiveHeader::PageData {
+                    gpa,
+                    compatibility_mask,
+                    flags: IgvmPageDataFlags::new(),
+                    data_type: IgvmPageDataType::NORMAL,
+                    data: chunk.to_vec(),
+                });
+                // The page data added above will always amount to 4 KB in
+                // size, even if the enumerated chunk is less than 4 KB.
+                // If the remaining length to add is less than a page, then
+                // this chunk will serve as the last portion of the data.
+                // Otherwise, advance the full 4 KB that corresponds to the
+                // page data added here regardless of how much data was in
+                // the chunk.  If it was less than 4 KB, then the loop will
+                // end and eny remaining space will be added below as
+                // zero-filled data.
+                if length <= PAGE_SIZE_4K {
+                    return Ok(());
+                }
+
+                gpa += PAGE_SIZE_4K;
+                length -= PAGE_SIZE_4K;
+            }
+        }
+        if length != 0 {
+            self.add_empty_pages(gpa, length, compatibility_mask, IgvmPageDataType::NORMAL)?;
+        }
+
+        Ok(())
     }
 
     fn add_empty_pages(

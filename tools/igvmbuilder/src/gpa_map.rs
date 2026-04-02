@@ -8,7 +8,6 @@ use std::error::Error;
 use std::fs::metadata;
 
 use bootdefs::kernel_launch::CPUID_PAGE;
-use bootdefs::kernel_launch::SECRETS_PAGE;
 use bootdefs::kernel_launch::STAGE2_BASE;
 use bootdefs::kernel_launch::STAGE2_MAXLEN;
 use bootdefs::kernel_launch::STAGE2_STACK_PAGE;
@@ -16,6 +15,7 @@ use bootdefs::kernel_launch::STAGE2_START;
 
 use igvm_defs::PAGE_SIZE_4K;
 
+use crate::boot_params::BootParamLayout;
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::firmware::Firmware;
 use crate::igvm_builder::{COMPATIBILITY_MASK, TDP_COMPATIBILITY_MASK};
@@ -25,6 +25,7 @@ pub struct GpaRange {
     start: u64,
     end: u64,
     size: u64,
+    page_count: u64,
 }
 
 impl GpaRange {
@@ -37,6 +38,7 @@ impl GpaRange {
             start,
             end: start + page_size,
             size,
+            page_count: page_size / PAGE_SIZE_4K,
         })
     }
 
@@ -55,6 +57,10 @@ impl GpaRange {
     pub fn get_size(&self) -> u64 {
         self.size
     }
+
+    pub fn get_page_count(&self) -> u64 {
+        self.page_count
+    }
 }
 
 #[derive(Debug)]
@@ -63,15 +69,10 @@ pub struct GpaMap {
     pub stage1_image: GpaRange,
     pub stage2_stack: GpaRange,
     pub stage2_image: GpaRange,
-    pub secrets_page: GpaRange,
     pub cpuid_page: GpaRange,
-    pub kernel_elf: GpaRange,
     pub kernel_fs: GpaRange,
     pub boot_param_block: GpaRange,
-    pub general_params: GpaRange,
-    pub memory_map: GpaRange,
-    pub madt: GpaRange,
-    pub guest_context: GpaRange,
+    pub boot_param_layout: BootParamLayout,
     // The kernel region represents the maximum allowable size. The hypervisor may request that it
     // be smaller to save memory on smaller machine shapes. However, the entire region should not
     // overlap any other regions.
@@ -88,13 +89,12 @@ impl GpaMap {
         options: &CmdOptions,
         firmware: &Option<Box<dyn Firmware>>,
     ) -> Result<Self, Box<dyn Error>> {
-        //   0x010000-0x010FFF: initial page tables for VSM platforms
-        //   0x800000-0x804FFF: zero-filled (must be pre-validated)
-        //   0x805000-0x805FFF: initial stage 2 stack page
-        //   0x806000-0x806FFF: Secrets page
+        //   0x00D000-0x00EFFF: initial page tables for SIPI stub
+        //   0x00F000-0x00FFFF: SIPI stub
+        //   0x800000-0x805FFF: zero-filled (must be pre-validated)
+        //   0x806000-0x806FFF: initial stage 2 stack page
         //   0x807000-0x807FFF: CPUID page
         //   0x808000-0x8nnnnn: stage 2 image
-        //   0x8nnnnn-0x8nnnnn: kernel
         //   0x8nnnnn-0x8nnnnn: IGVM parameter block
         //   0x8nnnnn-0x8nnnnn: general and memory map parameter pages
         //   0x8nnnnn-0x8nnnnn: filesystem
@@ -116,104 +116,106 @@ impl GpaMap {
             GpaRange::new(0, 0)?
         };
 
-        // Obtain the lengths of the binary files
-        let stage2_len = Self::get_metadata(&options.stage2)?.len() as usize;
-        if stage2_len > STAGE2_MAXLEN as usize {
-            return Err(format!(
-                "Stage2 binary size ({stage2_len:#x}) exceeds limit: {STAGE2_MAXLEN:#x}"
-            )
-            .into());
+        // Choose the kernel base and maximum size.
+        let (kernel_base, kernel_max_size) = match options.hypervisor {
+            Hypervisor::Qemu => {
+                // Place the kernel area at 512 GB with a maximum size of 16 MB.
+                (0x0000008000000000, 0x01000000)
+            }
+            Hypervisor::HyperV => {
+                // Place the kernel area at 64 MB with a maximum size of 16 MB.
+                (0x04000000, 0x01000000)
+            }
+            Hypervisor::Vanadium => {
+                // Place the kernel area at 8TiB-2GiB with a maximum size of 2 GiB.
+                (0x7ff80000000, 0x80000000)
+            }
+        };
+        // Give the kernel at least 16 MiB
+        let kernel_min_size = 0x1000000;
+        if let Some(firmware) = firmware {
+            let fw_info = firmware.get_fw_info();
+            let fw_start = fw_info.start as u64;
+            let fw_end = fw_start + fw_info.size as u64;
+            let kernel_max_end = kernel_base + kernel_max_size as u64;
+            if fw_start < kernel_max_end && fw_end > kernel_base {
+                return Err("Firmware region overlaps kernel region".into());
+            }
         }
 
-        let kernel_elf_len = Self::get_metadata(&options.kernel)?.len() as usize;
+        // Determine the layout of the boot parameters.
+        let include_guest_context = match firmware {
+            Some(fw) => fw.get_guest_context().is_some(),
+            None => false,
+        };
+        let boot_param_layout = BootParamLayout::new(include_guest_context);
+
+        // If stage2 is present, then get its size and configure the data it
+        // requires.
+        let (stage2_image, stage2_stack, boot_param_block, kernel_fs_start) =
+            if let Some(stage2) = options.stage2.as_ref() {
+                let stage2_len = Self::get_metadata(stage2)?.len() as usize;
+                if stage2_len > STAGE2_MAXLEN as usize {
+                    return Err(format!(
+                        "Stage2 binary size ({stage2_len:#x}) exceeds limit: {STAGE2_MAXLEN:#x}"
+                    )
+                    .into());
+                }
+
+                let stage2_image = GpaRange::new(STAGE2_START.into(), stage2_len as u64)?;
+                let boot_param_block = GpaRange::new(
+                    stage2_image.get_end(),
+                    boot_param_layout.total_size() as u64,
+                )?;
+                (
+                    stage2_image,
+                    GpaRange::new_page(STAGE2_STACK_PAGE.into())?,
+                    boot_param_block,
+                    boot_param_block.get_end(),
+                )
+            } else {
+                let stage2_image = GpaRange::new(STAGE2_BASE.into(), 0)?;
+                (
+                    stage2_image,
+                    stage2_image,
+                    GpaRange::new(0, 0)?,
+                    stage2_image.get_start(),
+                )
+            };
+
+        // Obtain the length of the kernel filesystem.
         let kernel_fs_len = if let Some(fs) = &options.filesystem {
             metadata(fs)?.len() as usize
         } else {
             0
         };
 
-        let stage2_image = GpaRange::new(STAGE2_START.into(), stage2_len as u64)?;
-
-        // The kernel image is loaded beyond the end of the stage2 image,
-        // rounded up to a 4 KB boundary.
-        let kernel_address = stage2_image.get_end().next_multiple_of(0x1000);
-        let kernel_elf = GpaRange::new(kernel_address, kernel_elf_len as u64)?;
-
-        // Choose the kernel base and maximum size.
-        let kernel = match options.hypervisor {
-            Hypervisor::Qemu => {
-                // Place the kernel area at 512 GB with a maximum size of 16 MB.
-                GpaRange::new(0x0000008000000000, 0x01000000)?
-            }
-            Hypervisor::HyperV => {
-                // Place the kernel area at 64 MB with a maximum size of 16 MB.
-                GpaRange::new(0x04000000, 0x01000000)?
-            }
-            Hypervisor::Vanadium => {
-                // Place the kernel area at 8TiB-2GiB with a maximum size of 2 GiB.
-                GpaRange::new(0x7ff80000000, 0x80000000)?
-            }
-        };
-        // Give the kernel at least 16 MiB
-        let kernel_min_size = 0x1000000;
-        // Make sure that kernel max size is page-aligned
-        let kernel_max_size = u32::try_from(kernel.get_end() - kernel.get_start())?;
-        if let Some(firmware) = firmware {
-            let fw_info = firmware.get_fw_info();
-            let fw_start = fw_info.start as u64;
-            let fw_end = fw_start + fw_info.size as u64;
-            let kernel_start = kernel.get_start();
-            let kernel_max_end = kernel_start + kernel_max_size as u64;
-            if fw_start < kernel_max_end && fw_end > kernel_start {
-                return Err("Firmware region overlaps kernel region".into());
-            }
-        }
-
-        let boot_param_block = GpaRange::new_page(kernel_elf.get_end())?;
-        let general_params = GpaRange::new_page(boot_param_block.get_end())?;
-        let madt = GpaRange::new_page(general_params.get_end())?;
-        let memory_map = GpaRange::new_page(madt.get_end())?;
-        let guest_context = if let Some(firmware) = firmware {
-            if firmware.get_guest_context().is_some() {
-                // Locate the guest context after the memory map parameter page
-                GpaRange::new_page(memory_map.get_end())?
-            } else {
-                GpaRange::new(0, 0)?
-            }
-        } else {
-            GpaRange::new(0, 0)?
-        };
-
-        let next_addr = memory_map.get_end() + guest_context.get_size();
-
         // The kernel filesystem is placed after all other images so it can
         // mark the end of the valid stage2 memory area.
-        let kernel_fs = GpaRange::new(next_addr, kernel_fs_len as u64)?;
+        let kernel_fs = GpaRange::new(kernel_fs_start, kernel_fs_len as u64)?;
 
         let (vmsa, vmsa_in_kernel_range) = match options.hypervisor {
             Hypervisor::Qemu | Hypervisor::Vanadium => {
                 // VMSA address is currently hardcoded in kvm
                 (GpaRange::new_page(0xFFFFFFFFF000)?, false)
             }
-            Hypervisor::HyperV => (GpaRange::new_page(kernel.end - PAGE_SIZE_4K)?, true),
+            Hypervisor::HyperV => (
+                GpaRange::new_page(kernel_base + kernel_min_size - PAGE_SIZE_4K)?,
+                true,
+            ),
         };
 
         let gpa_map = Self {
             base_addr: STAGE2_BASE.into(),
             stage1_image,
-            stage2_stack: GpaRange::new_page(STAGE2_STACK_PAGE.into())?,
+            stage2_stack,
             stage2_image,
-            secrets_page: GpaRange::new_page(SECRETS_PAGE.into())?,
             cpuid_page: GpaRange::new_page(CPUID_PAGE.into())?,
-            kernel_elf,
             kernel_fs,
             boot_param_block,
-            general_params,
-            memory_map,
-            madt,
-            guest_context,
-            kernel,
-            kernel_min_size,
+            boot_param_layout,
+            kernel: GpaRange::new(kernel_base, kernel_min_size)?,
+            kernel_min_size: kernel_min_size.try_into().unwrap(),
             kernel_max_size,
             vmsa,
             vmsa_in_kernel_range,

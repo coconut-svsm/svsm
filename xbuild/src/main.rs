@@ -350,7 +350,7 @@ impl RecipePartsBuilder {
     fn build(self) -> BuildResult<RecipeParts> {
         Ok(RecipeParts {
             stage1: self.stage1,
-            stage2: self.stage2.ok_or("kernel: missing stage2")?,
+            stage2: self.stage2,
             kernel: self.kernel.ok_or("kernel: missing main kernel")?,
             firmware: self.firmware,
             fs: self.fs,
@@ -363,7 +363,7 @@ impl RecipePartsBuilder {
 #[derive(Clone, Debug)]
 struct RecipeParts {
     stage1: Option<PathBuf>,
-    stage2: PathBuf,
+    stage2: Option<PathBuf>,
     kernel: PathBuf,
     firmware: Option<PathBuf>,
     fs: Option<PathBuf>,
