@@ -8,8 +8,8 @@ use bitfield_struct::bitfield;
 
 use crate::address::{Address, VirtAddr};
 use crate::cpu::TlbFlushRange;
-use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::tlb::TlbFlushScope;
+use crate::platform::cpuid;
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -41,11 +41,11 @@ struct InvlpgbEcx {
 /// Determines the maximum amount of pages that may be flushed with
 /// a single INVLPGB instruction by querying CPUID.
 fn __invlpgb_max_count() -> u32 {
-    let cpuid = CpuidResult::get(0x80000008, 0);
+    let edx = cpuid(0x80000008, 0).map_or(0, |c| c.edx);
     // EDX[15:0] contains the maximum number of pages that can be
     // invalidated in one instruction. A value of 0 indicates a
     // single page.
-    (cpuid.edx & ((1 << 16) - 1)) + 1
+    (edx & ((1 << 16) - 1)) + 1
 }
 
 /// Determines the maximum amount of pages that may be flushed with

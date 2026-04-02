@@ -5,14 +5,13 @@
 // Author: Tom Dohrmann <erbse.13@gmx.de>
 
 use crate::address::{Address, VirtAddr};
-use crate::platform::SvsmPlatform;
+use crate::platform::{SvsmPlatform, cpuid};
 
 use crate::mm::{PAGE_SIZE, PageRef};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use bitflags::bitflags;
 
-use super::cpuid::CpuidResult;
 use super::msr::read_msr;
 
 pub const S_CET: u32 = 0x6a2;
@@ -37,8 +36,8 @@ pub fn set_cet_ss_enabled() {
 }
 
 pub fn determine_cet_support_from_cpuid() -> bool {
-    let cpuid = CpuidResult::get(7, 0);
-    (cpuid.ecx & 0x80) != 0
+    let ecx = cpuid(7, 0).map_or(0, |res| res.ecx);
+    (ecx & 0x80) != 0
 }
 
 /// Returns whether shadow stacks are supported by the CPU and the kernel.
