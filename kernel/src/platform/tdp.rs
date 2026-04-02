@@ -8,7 +8,7 @@ use super::capabilities::Caps;
 use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, Stage2Platform, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
-use crate::cpu::features::{Feature, cpu_has_feat};
+use crate::cpu::features::{Feature, cpu_get_feat, cpu_has_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
@@ -95,13 +95,13 @@ impl SvsmPlatform for TdpPlatform {
 
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
         // Find physical address size.
-        let res = Self::cpuid(0x80000008, 0).unwrap();
+        let phys_addr_sizes = cpu_get_feat(Feature::PhysAddrSizes);
         let vtom = *VTOM;
         PageEncryptionMasks {
             private_pte_mask: 0,
             shared_pte_mask: vtom,
             addr_mask_width: vtom.trailing_zeros(),
-            phys_addr_sizes: res.eax,
+            phys_addr_sizes,
         }
     }
 
