@@ -12,7 +12,6 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::IrqGuard;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
-use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
@@ -51,7 +50,7 @@ pub struct NativePlatform {}
 impl NativePlatform {
     pub fn new(_suppress_svsm_interrupts: bool) -> Self {
         // Execution is not possible unless X2APIC is supported.
-        let features = CpuidResult::get(1, 0);
+        let features = Self::cpuid(1, 0).unwrap();
         if (features.ecx & 0x200000) == 0 {
             panic!("X2APIC is not supported");
         }
@@ -99,7 +98,7 @@ impl SvsmPlatform for NativePlatform {
 
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
         // Find physical address size.
-        let res = CpuidResult::get(0x80000008, 0);
+        let res = Self::cpuid(0x80000008, 0).unwrap();
         PageEncryptionMasks {
             private_pte_mask: 0,
             shared_pte_mask: 0,

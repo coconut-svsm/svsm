@@ -19,13 +19,13 @@ use snp::{SnpPlatform, SnpStage2Platform};
 use tdp::{TdpPlatform, TdpStage2Platform};
 
 use core::arch::asm;
+use core::arch::x86_64::{__cpuid_count, CpuidResult};
 use core::fmt::Debug;
 use core::mem::MaybeUninit;
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::cpu::IrqGuard;
-use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::shadow_stack::determine_cet_support_from_cpuid;
 use crate::cpu::tlb::{TlbFlushScope, flush_tlb};
@@ -179,7 +179,8 @@ pub trait SvsmPlatform: Sync {
     where
         Self: Sized,
     {
-        Some(CpuidResult::get(eax, ecx))
+        // SAFETY: CPUID is always safe
+        unsafe { Some(__cpuid_count(eax, ecx)) }
     }
 
     /// Write a host-owned MSR.

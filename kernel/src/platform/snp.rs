@@ -17,7 +17,6 @@ use super::snp_fw::{
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::console::init_svsm_console;
-use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::cpuid::cpuid_table_raw;
 use crate::cpu::cpuid::init_cpuid_table;
@@ -55,6 +54,7 @@ use syscall::GlobalFeatureFlags;
 use bootdefs::kernel_launch::Stage2LaunchInfo;
 #[cfg(test)]
 use bootdefs::platform::SvsmPlatformType;
+use core::arch::x86_64::CpuidResult;
 use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
