@@ -19,6 +19,7 @@ use crate::boot_params::BootParams;
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::cpuid::cpuid_table;
+use crate::cpu::cpuid::cpuid_table_raw;
 use crate::cpu::cpuid::init_cpuid_table;
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::{PerCpu, current_ghcb, this_cpu};
@@ -309,7 +310,12 @@ impl SvsmPlatform for SnpPlatform {
         if (eax >> 28) == 4 {
             current_ghcb().cpuid(eax, ecx).ok()
         } else {
-            cpuid_table(eax, ecx)
+            let xcr0 = if eax == 0xd && (ecx == 1 || ecx == 0) {
+                1
+            } else {
+                0
+            };
+            cpuid_table_raw(eax, ecx, xcr0, 0)
         }
     }
 
