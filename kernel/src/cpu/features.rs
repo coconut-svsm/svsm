@@ -167,4 +167,5 @@ define_cpu_feats! {
     Xcr0Avx => CpuFeat::new_bit(0x0000_000d, CpuidReg::Eax, 2),
     XsaveSize => CpuFeat::new_u32(0x0000_000d, CpuidReg::Ecx, 0),
     XsaveOpt => CpuFeat::new_bit(0x0000_000d, CpuidReg::Eax, 0).with_subfn(1),
+    HyperV => CpuFeat::new_u32(0x40000001, CpuidReg::Eax, 0x31237648),
 }

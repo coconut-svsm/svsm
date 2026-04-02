@@ -23,8 +23,8 @@ use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, s
 use crate::cpu::x86::{ApicAccess, X86Apic};
 use crate::cpu::{IrqGuard, IrqState, LocalApic, ShadowStackInit};
 use crate::error::{ApicError, SvsmError};
+use crate::hyperv::HypercallPagesGuard;
 use crate::hyperv::{self, HypercallPage};
-use crate::hyperv::{HypercallPagesGuard, IS_HYPERV};
 use crate::locking::{
     LockGuard, RWLock, RWLockIrqSafe, ReadLockGuard, ReadLockGuardIrqSafe, SpinLock,
     WriteLockGuard, WriteLockGuardIrqSafe,
@@ -833,7 +833,7 @@ impl PerCpu {
 
         // Allocate hypercall pages if running on Hyper-V, unless this is the
         // BSP (where they will be allocated later).
-        if self.shared.cpu_index() != 0 && *IS_HYPERV {
+        if self.shared.cpu_index() != 0 && cpu_has_feat(Feature::HyperV) {
             self.allocate_hypercall_pages()?;
         }
 
