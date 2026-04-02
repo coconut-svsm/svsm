@@ -12,6 +12,7 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::IrqGuard;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
+use crate::cpu::features::{Feature, cpu_has_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
@@ -21,7 +22,6 @@ use crate::cpu::x86::{
 };
 use crate::error::SvsmError;
 use crate::hyperv;
-use crate::hyperv::IS_HYPERV;
 use crate::hyperv::hyperv_start_cpu;
 use crate::io::{DEFAULT_IO_DRIVER, IOPort};
 use crate::mm::PerCPUMapping;
@@ -215,7 +215,7 @@ impl SvsmPlatform for NativePlatform {
         transition_page_table: &TransitionPageTable,
     ) -> Result<(), SvsmError> {
         let context = cpu.get_initial_context(start_rip);
-        if *IS_HYPERV {
+        if cpu_has_feat(Feature::HyperV) {
             return hyperv_start_cpu(cpu, &context);
         }
 

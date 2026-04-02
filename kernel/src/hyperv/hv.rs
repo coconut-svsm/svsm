@@ -5,6 +5,7 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use crate::address::{PhysAddr, VirtAddr};
+use crate::cpu::features::{Feature, cpu_has_feat};
 use crate::cpu::mem::unsafe_copy_bytes;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{PerCpu, this_cpu};
@@ -18,7 +19,7 @@ use crate::mm::alloc::allocate_pages;
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::{SVSM_HYPERCALL_CODE_PAGE, virt_to_page_frame};
-use crate::platform::{SVSM_PLATFORM, cpuid};
+use crate::platform::SVSM_PLATFORM;
 use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
@@ -281,16 +282,6 @@ pub const HV_STATUS_TIMEOUT: u16 = 0x78;
 
 static HYPERV_HYPERCALL_CODE_PAGE: ImmutAfterInitCell<VirtAddr> = ImmutAfterInitCell::uninit();
 static CURRENT_VTL: ImmutAfterInitCell<u8> = ImmutAfterInitCell::uninit();
-pub static IS_HYPERV: ImmutAfterInitCell<bool> = ImmutAfterInitCell::uninit();
-
-fn is_hyperv_hypervisor() -> bool {
-    // Get the hypervisor interface signature.
-    if let Some(cpuid_result) = cpuid(0x40000001, 0) {
-        cpuid_result.eax == 0x31237648
-    } else {
-        false
-    }
-}
 
 pub fn setup_hypercall_page() -> Result<(), SvsmError> {
     // Allocate a page to use as the hypercall code page.
@@ -342,12 +333,7 @@ fn hyperv_setup_hypercalls() -> Result<(), SvsmError> {
 
 pub fn hyperv_setup() -> Result<(), SvsmError> {
     // First, determine if this is a Hyper-V system.
-    let is_hyperv = is_hyperv_hypervisor();
-    IS_HYPERV
-        .init(is_hyperv)
-        .expect("Hyper-V support already initialized");
-
-    if is_hyperv {
+    if cpu_has_feat(Feature::HyperV) {
         // If this is the BSP, then configure hypercall pages.
         this_cpu().allocate_hypercall_pages()?;
 
