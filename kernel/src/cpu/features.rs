@@ -168,5 +168,6 @@ define_cpu_feats! {
     XsaveSize => CpuFeat::new_u32(0x0000_000d, CpuidReg::Ecx, 0),
     XsaveOpt => CpuFeat::new_bit(0x0000_000d, CpuidReg::Eax, 0).with_subfn(1),
     HyperV => CpuFeat::new_u32(0x40000001, CpuidReg::Eax, 0x31237648),
+    PhysAddrSizes => CpuFeat::new_u32(0x80000008, CpuidReg::Eax, 0),
     InvlpgbMax => CpuFeat::new(0x80000008, CpuidReg::Edx, 0, u16::BITS as u8, 0),
 }

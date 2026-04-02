@@ -12,7 +12,7 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::IrqGuard;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
-use crate::cpu::features::{Feature, cpu_has_feat};
+use crate::cpu::features::{Feature, cpu_get_feat, cpu_has_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
@@ -98,12 +98,12 @@ impl SvsmPlatform for NativePlatform {
 
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
         // Find physical address size.
-        let res = Self::cpuid(0x80000008, 0).unwrap();
+        let phys_addr_sizes = cpu_get_feat(Feature::PhysAddrSizes);
         PageEncryptionMasks {
             private_pte_mask: 0,
             shared_pte_mask: 0,
             addr_mask_width: 64,
-            phys_addr_sizes: res.eax,
+            phys_addr_sizes,
         }
     }
 
