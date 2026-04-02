@@ -155,9 +155,16 @@ pub fn cpu_get_feat(feat: Feature) -> u32 {
 }
 
 define_cpu_feats! {
+    Xsave => CpuFeat::new_bit(0x0000_0001, CpuidReg::Ecx, 26),
     Pge => CpuFeat::new_bit(0x0000_0001, CpuidReg::Edx, 13),
+    Sse1 => CpuFeat::new_bit(0x0000_0001, CpuidReg::Edx, 25),
     Smep => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ebx, 7),
     Smap => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ebx, 20),
     Umip => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ecx, 2),
     CetSS => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ecx, 7),
+    Xcr0X87 => CpuFeat::new_bit(0x0000_000d, CpuidReg::Eax, 0),
+    Xcr0Sse => CpuFeat::new_bit(0x0000_000d, CpuidReg::Eax, 1),
+    Xcr0Avx => CpuFeat::new_bit(0x0000_000d, CpuidReg::Eax, 2),
+    XsaveSize => CpuFeat::new_u32(0x0000_000d, CpuidReg::Ecx, 0),
+    XsaveOpt => CpuFeat::new_bit(0x0000_000d, CpuidReg::Eax, 0).with_subfn(1),
 }
