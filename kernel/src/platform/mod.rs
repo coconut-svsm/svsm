@@ -391,22 +391,24 @@ pub fn init_capabilities() {
     CAPS.init(caps).unwrap();
 }
 
+macro_rules! platform_method {
+    ($fn:ident $(, $arg:expr )*) => {
+        match *SVSM_PLATFORM_TYPE {
+            SvsmPlatformType::Native => NativePlatform::$fn($($arg),*),
+            SvsmPlatformType::Snp => SnpPlatform::$fn($($arg),*),
+            SvsmPlatformType::Tdp => TdpPlatform::$fn($($arg),*),
+        }
+    };
+}
+
 pub fn halt() {
     // Use a platform-specific halt.  However, the SVSM_PLATFORM global may not
     // yet be initialized, so go choose the halt implementation based on the
     // platform-specific halt instead.
-    match *SVSM_PLATFORM_TYPE {
-        SvsmPlatformType::Native => NativePlatform::halt(),
-        SvsmPlatformType::Snp => SnpPlatform::halt(),
-        SvsmPlatformType::Tdp => TdpPlatform::halt(),
-    }
+    platform_method!(halt)
 }
 
 /// Terminates the guest with a platform-specific mechanism
 pub fn terminate() -> ! {
-    match *SVSM_PLATFORM_TYPE {
-        SvsmPlatformType::Native => NativePlatform::terminate(),
-        SvsmPlatformType::Snp => SnpPlatform::terminate(),
-        SvsmPlatformType::Tdp => TdpPlatform::terminate(),
-    }
+    platform_method!(terminate)
 }
