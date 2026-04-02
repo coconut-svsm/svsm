@@ -18,7 +18,7 @@ use crate::mm::alloc::allocate_pages;
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::{SVSM_HYPERCALL_CODE_PAGE, virt_to_page_frame};
-use crate::platform::SVSM_PLATFORM;
+use crate::platform::{SVSM_PLATFORM, cpuid};
 use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
@@ -285,8 +285,7 @@ pub static IS_HYPERV: ImmutAfterInitCell<bool> = ImmutAfterInitCell::uninit();
 
 fn is_hyperv_hypervisor() -> bool {
     // Get the hypervisor interface signature.
-    let result = SVSM_PLATFORM.cpuid(0x40000001, 0);
-    if let Some(cpuid_result) = result {
+    if let Some(cpuid_result) = cpuid(0x40000001, 0) {
         cpuid_result.eax == 0x31237648
     } else {
         false

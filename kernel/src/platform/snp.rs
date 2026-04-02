@@ -299,7 +299,10 @@ impl SvsmPlatform for SnpPlatform {
         })
     }
 
-    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult> {
+    fn cpuid(eax: u32, ecx: u32) -> Option<CpuidResult>
+    where
+        Self: Sized,
+    {
         // If this is an architectural CPUID leaf, then extract the result
         // from the CPUID table.  Otherwise, request the value from the
         // hypervisor.

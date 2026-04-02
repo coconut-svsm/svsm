@@ -127,7 +127,10 @@ impl SvsmPlatform for TdpPlatform {
         })
     }
 
-    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult> {
+    fn cpuid(eax: u32, ecx: u32) -> Option<CpuidResult>
+    where
+        Self: Sized,
+    {
         Some(CpuidResult::get(eax, ecx))
     }
 
