@@ -8,11 +8,10 @@ use bitfield_struct::bitfield;
 
 use crate::address::{Address, VirtAddr};
 use crate::cpu::TlbFlushRange;
+use crate::cpu::features::{Feature, cpu_get_feat};
 use crate::cpu::tlb::TlbFlushScope;
-use crate::platform::cpuid;
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
-use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 use core::arch::asm;
 
@@ -36,31 +35,6 @@ struct InvlpgbEcx {
     #[bits(15)]
     _rsvd: u16,
     huge: bool,
-}
-
-/// Determines the maximum amount of pages that may be flushed with
-/// a single INVLPGB instruction by querying CPUID.
-fn __invlpgb_max_count() -> u32 {
-    let edx = cpuid(0x80000008, 0).map_or(0, |c| c.edx);
-    // EDX[15:0] contains the maximum number of pages that can be
-    // invalidated in one instruction. A value of 0 indicates a
-    // single page.
-    (edx & ((1 << 16) - 1)) + 1
-}
-
-/// Determines the maximum amount of pages that may be flushed with
-/// a single INVLPGB instruction, by lazily querying CPUID if the
-/// value has not been cached from a previous query.
-fn invlpgb_max_count() -> u32 {
-    static MAX_COUNT: ImmutAfterInitCell<u32> = ImmutAfterInitCell::uninit();
-    if let Ok(count) = MAX_COUNT.try_get_inner() {
-        return *count;
-    }
-    let count = __invlpgb_max_count();
-    // If this fails, someone else initialized the cell, which is not an issue,
-    // as probing CPUID multiple times is benign.
-    let _ = MAX_COUNT.init(count);
-    count
 }
 
 #[inline]
@@ -96,7 +70,8 @@ fn flush_tlb_sync(global: bool) {
 }
 
 fn flush_tlb_sync_range(global: bool, region: MemoryRegion<VirtAddr>, pgsize: PageSize) {
-    let max_count = invlpgb_max_count() as usize;
+    // A value of 0 indicates a single page, so add 1
+    let max_count = cpu_get_feat(Feature::InvlpgbMax) as usize + 1;
 
     for start in region.iter_pages(pgsize).step_by(max_count) {
         // Take up to `max_count` pages
