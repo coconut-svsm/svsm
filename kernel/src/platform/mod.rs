@@ -177,7 +177,10 @@ pub trait SvsmPlatform: Sync {
     /// Obtain CPUID using platform-specific tables.
     fn cpuid(eax: u32, ecx: u32) -> Option<CpuidResult>
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        Some(CpuidResult::get(eax, ecx))
+    }
 
     /// Write a host-owned MSR.
     /// # Safety
