@@ -50,8 +50,7 @@ pub struct NativePlatform {}
 impl NativePlatform {
     pub fn new(_suppress_svsm_interrupts: bool) -> Self {
         // Execution is not possible unless X2APIC is supported.
-        let features = Self::cpuid(1, 0).unwrap();
-        if (features.ecx & 0x200000) == 0 {
+        if !cpu_has_feat(Feature::X2Apic) {
             panic!("X2APIC is not supported");
         }
         Self {}

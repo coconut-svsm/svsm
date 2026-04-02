@@ -155,6 +155,7 @@ pub fn cpu_get_feat(feat: Feature) -> u32 {
 }
 
 define_cpu_feats! {
+    X2Apic => CpuFeat::new_bit(0x0000_0001, CpuidReg::Ecx, 21),
     Xsave => CpuFeat::new_bit(0x0000_0001, CpuidReg::Ecx, 26),
     Pge => CpuFeat::new_bit(0x0000_0001, CpuidReg::Edx, 13),
     Sse1 => CpuFeat::new_bit(0x0000_0001, CpuidReg::Edx, 25),
