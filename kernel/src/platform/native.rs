@@ -131,13 +131,6 @@ impl SvsmPlatform for NativePlatform {
         unsafe { hyperv::execute_hypercall(input_control, hypercall_pages) }
     }
 
-    fn cpuid(eax: u32, ecx: u32) -> Option<CpuidResult>
-    where
-        Self: Sized,
-    {
-        Some(CpuidResult::get(eax, ecx))
-    }
-
     unsafe fn write_host_msr(&self, msr: u32, value: u64) {
         // SAFETY: the caller takes responsibility for ensuring the safety
         // of the MSR write.
