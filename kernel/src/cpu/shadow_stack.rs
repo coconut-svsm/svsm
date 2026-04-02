@@ -5,7 +5,6 @@
 // Author: Tom Dohrmann <erbse.13@gmx.de>
 
 use crate::address::{Address, VirtAddr};
-use crate::platform::{SvsmPlatform, cpuid};
 
 use crate::mm::{PAGE_SIZE, PageRef};
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -24,28 +23,8 @@ pub const BUSY: usize = 1;
 pub static IS_CET_SUPPORTED: AtomicBool = AtomicBool::new(false);
 pub static IS_CET_ENABLED: AtomicBool = AtomicBool::new(false);
 
-// Try to enable the CET feature in CR4 and set `IS_CET_SUPPORTED` if successful.
-pub fn determine_cet_support(platform: &dyn SvsmPlatform) {
-    if platform.determine_cet_support() {
-        IS_CET_SUPPORTED.store(true, Ordering::Relaxed);
-    }
-}
-
 pub fn set_cet_ss_enabled() {
     IS_CET_ENABLED.store(true, Ordering::Relaxed);
-}
-
-pub fn determine_cet_support_from_cpuid() -> bool {
-    let ecx = cpuid(7, 0).map_or(0, |res| res.ecx);
-    (ecx & 0x80) != 0
-}
-
-/// Returns whether shadow stacks are supported by the CPU and the kernel.
-#[inline(always)]
-pub fn is_cet_ss_supported() -> bool {
-    // In theory CPUs can have support for CET, but not CET_SS, but in practice
-    // no such CPUs exist. Treat CET being supported as CET_SS being supported.
-    IS_CET_SUPPORTED.load(Ordering::Relaxed)
 }
 
 /// Returns whether shadow stacks are currently enabled.
