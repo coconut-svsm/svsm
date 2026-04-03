@@ -940,6 +940,17 @@ const _: () = assert!(
         && offset_of!(GHCB, rcx) == 0x308
         && offset_of!(GHCB, rdx) == 0x310
         && offset_of!(GHCB, rbx) == 0x318
+        && offset_of!(GHCB, rbp) == 0x328
+        && offset_of!(GHCB, rsi) == 0x330
+        && offset_of!(GHCB, rdi) == 0x338
+        && offset_of!(GHCB, r8) == 0x340
+        && offset_of!(GHCB, r9) == 0x348
+        && offset_of!(GHCB, r10) == 0x350
+        && offset_of!(GHCB, r11) == 0x358
+        && offset_of!(GHCB, r12) == 0x360
+        && offset_of!(GHCB, r13) == 0x368
+        && offset_of!(GHCB, r14) == 0x370
+        && offset_of!(GHCB, r15) == 0x378
         && offset_of!(GHCB, sw_exit_code) == 0x390
         && offset_of!(GHCB, sw_exit_info_1) == 0x398
         && offset_of!(GHCB, sw_exit_info_2) == 0x3a0
