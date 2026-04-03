@@ -1,4 +1,4 @@
-name: SPDX
+name: PR Compliance Checks
 
 on: [pull_request]
 
@@ -7,7 +7,7 @@ permissions:
 
 jobs:
   check:
-    name: Check SPDX headers
+    name: Check Signed-off-by and SPDX
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -21,8 +21,19 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      - name: Check new files for SPDX headers
+      - name: Fetch base branch
         run: |
           git fetch
           git fetch origin ${{ github.event.pull_request.base.ref }}
-          ${GITHUB_WORKSPACE}/scripts/check-spdx.sh ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}
+
+      - name: Signed-off-by
+        run: |
+          ${GITHUB_WORKSPACE}/scripts/check-signed-off.sh \
+            ${{ github.event.pull_request.base.sha }} \
+            ${{ github.event.pull_request.head.sha }}
+
+      - name : SPDX Headers
+        run: |
+          ${GITHUB_WORKSPACE}/scripts/check-spdx.sh \
+            ${{ github.event.pull_request.base.sha }} \
+            ${{ github.event.pull_request.head.sha }}
