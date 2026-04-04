@@ -43,6 +43,34 @@ pub struct TlbFlushScope {
 }
 
 impl TlbFlushScope {
+    /// Construct a TLB flush scope. By default, all TLB addresses, including
+    /// global pages, are flushed. The default scope may be updated with other
+    /// methods.
+    pub const fn new() -> Self {
+        Self {
+            global: true,
+            range: TlbFlushRange::All,
+        }
+    }
+
+    /// Updates the scope to include or exclude global pages, as indicated.
+    pub const fn with_global(mut self, global: bool) -> Self {
+        self.global = global;
+        self
+    }
+
+    /// Updates the flush scope to only include a range of virtual addresses.
+    pub const fn with_range(mut self, region: MemoryRegion<VirtAddr>, pgsize: PageSize) -> Self {
+        self.range = TlbFlushRange::Range { region, pgsize };
+        self
+    }
+
+    /// Updates the flush scope to only include a singe page.
+    pub fn with_page(self, va: VirtAddr, pgsize: PageSize) -> Self {
+        let region = MemoryRegion::new(va, usize::from(pgsize));
+        self.with_range(region, pgsize)
+    }
+
     /// Flushes the TLB for the current CPU.
     pub fn flush_percpu(&self) {
         match self.range {
@@ -65,8 +93,8 @@ impl TlbFlushScope {
     /// Flushes all the entries in the TLB for the current CPU.
     fn flush_percpu_all(&self) {
         match self.global {
-            true => flush_tlb_global_percpu(),
-            false => flush_tlb_percpu(),
+            true => __flush_tlb_global_percpu(),
+            false => __flush_tlb_percpu(),
         }
     }
 
@@ -81,6 +109,12 @@ impl TlbFlushScope {
         } else {
             self.flush_percpu();
         }
+    }
+}
+
+impl Default for TlbFlushScope {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -101,26 +135,46 @@ pub fn set_tlb_flush_smp() {
 }
 
 pub fn flush_tlb_global_sync() {
-    let flush_scope = TlbFlushScope {
-        global: true,
-        range: TlbFlushRange::All,
-    };
-    flush_scope.flush_all_cpus();
+    TlbFlushScope::new().with_global(true).flush_all_cpus();
 }
 
 pub fn flush_tlb_global_sync_range(region: MemoryRegion<VirtAddr>, pgsize: PageSize) {
-    let flush_scope = TlbFlushScope {
-        global: true,
-        range: TlbFlushRange::Range { region, pgsize },
-    };
-    flush_scope.flush_all_cpus();
+    TlbFlushScope::new()
+        .with_global(true)
+        .with_range(region, pgsize)
+        .flush_all_cpus();
 }
 
 pub fn flush_tlb_global_sync_page(vaddr: VirtAddr, pgsize: PageSize) {
-    flush_tlb_global_sync_range(MemoryRegion::new(vaddr, pgsize.into()), pgsize);
+    TlbFlushScope::new()
+        .with_global(true)
+        .with_page(vaddr, pgsize)
+        .flush_all_cpus();
 }
 
 pub fn flush_tlb_global_percpu() {
+    TlbFlushScope::new().with_global(true).flush_percpu();
+}
+
+pub fn flush_tlb_global_percpu_range(region: MemoryRegion<VirtAddr>, pgsize: PageSize) {
+    TlbFlushScope::new()
+        .with_global(true)
+        .with_range(region, pgsize)
+        .flush_percpu();
+}
+
+pub fn flush_tlb_global_percpu_page(vaddr: VirtAddr, pgsize: PageSize) {
+    TlbFlushScope::new()
+        .with_global(true)
+        .with_page(vaddr, pgsize)
+        .flush_percpu();
+}
+
+pub fn flush_tlb_percpu() {
+    TlbFlushScope::new().with_global(false).flush_percpu();
+}
+
+fn __flush_tlb_global_percpu() {
     let cr4 = read_cr4();
 
     // SAFETY: we are not changing any execution-state relevant flags
@@ -130,7 +184,7 @@ pub fn flush_tlb_global_percpu() {
     }
 }
 
-pub fn flush_tlb_percpu() {
+fn __flush_tlb_percpu() {
     // SAFETY: reloading CR3 with its current value is always safe.
     unsafe {
         write_cr3(read_cr3());

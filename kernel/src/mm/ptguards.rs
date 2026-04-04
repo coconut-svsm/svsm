@@ -7,7 +7,7 @@
 use super::pagetable::PTEntryFlags;
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::percpu::this_cpu;
-use crate::cpu::tlb::flush_address_percpu;
+use crate::cpu::tlb::flush_tlb_global_percpu_range;
 use crate::error::SvsmError;
 use crate::mm::virtualrange::VRangeAlloc;
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
@@ -128,11 +128,8 @@ impl Drop for PerCPUPageMappingGuard {
             this_cpu().get_pgtable().unmap_region_4k(region);
             PageSize::Regular
         };
-        // This iterative flush is acceptable for same-CPU mappings because no
-        // broadcast is involved for each iteration.
-        for page in region.iter_pages(size) {
-            flush_address_percpu(page);
-        }
+
+        flush_tlb_global_percpu_range(region, size);
     }
 }
 
