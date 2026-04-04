@@ -131,6 +131,9 @@ impl IgvmTargetConfig {
         if let Some(s2) = parts.stage2.as_ref() {
             cmd.arg("--stage2").arg(s2);
         }
+        if let Some(bldr) = parts.bldr.as_ref() {
+            cmd.arg("--bldr").arg(bldr);
+        }
         if let Some(fw) = parts.firmware.as_ref() {
             cmd.arg("--firmware").arg(fw);
         }

@@ -133,7 +133,7 @@ impl Objcopy {
 }
 
 /// The recipe for a single kernel component (e.g. `tdx-stage1`,
-/// `stage2` or `svsm`.
+/// `bldr` or `svsm`.
 #[derive(Clone, Debug, Deserialize, Default)]
 struct ComponentConfig {
     #[serde(rename = "type", default)]
@@ -284,6 +284,7 @@ impl Recipe {
             match obj.file_name().and_then(|s| s.to_str()).unwrap_or_default() {
                 "tdx-stage1" => parts.set_stage1(obj),
                 "stage2" => parts.set_stage2(obj),
+                "bldr" => parts.set_bldr(obj),
                 "svsm" => parts.set_kernel(obj),
                 n => eprintln!("WARN: kernel: ignoring unknown component: {n}"),
             }
@@ -315,6 +316,7 @@ impl Recipe {
 struct RecipePartsBuilder {
     stage1: Option<PathBuf>,
     stage2: Option<PathBuf>,
+    bldr: Option<PathBuf>,
     kernel: Option<PathBuf>,
     firmware: Option<PathBuf>,
     fs: Option<PathBuf>,
@@ -331,6 +333,10 @@ impl RecipePartsBuilder {
 
     fn set_stage2(&mut self, v: PathBuf) {
         self.stage2 = Some(v);
+    }
+
+    fn set_bldr(&mut self, v: PathBuf) {
+        self.bldr = Some(v);
     }
 
     fn set_kernel(&mut self, v: PathBuf) {
@@ -351,6 +357,7 @@ impl RecipePartsBuilder {
         Ok(RecipeParts {
             stage1: self.stage1,
             stage2: self.stage2,
+            bldr: self.bldr,
             kernel: self.kernel.ok_or("kernel: missing main kernel")?,
             firmware: self.firmware,
             fs: self.fs,
@@ -364,6 +371,7 @@ impl RecipePartsBuilder {
 struct RecipeParts {
     stage1: Option<PathBuf>,
     stage2: Option<PathBuf>,
+    bldr: Option<PathBuf>,
     kernel: PathBuf,
     firmware: Option<PathBuf>,
     fs: Option<PathBuf>,

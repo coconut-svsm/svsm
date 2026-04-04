@@ -7,7 +7,6 @@
 use super::idt::load_static_idt;
 use crate::acpi::tables::ACPICPUInfo;
 use crate::address::{Address, VirtAddr};
-use crate::cpu::efer::EFERFlags;
 use crate::cpu::ipi::ipi_start_cpu;
 use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu, this_cpu_shared};
 use crate::cpu::shadow_stack::{MODE_64BIT, S_CET, SCetFlags, is_cet_ss_enabled};
@@ -21,6 +20,7 @@ use crate::mm::TransitionPageTable;
 use crate::platform::{SVSM_PLATFORM, SvsmPlatform};
 use crate::task::schedule_init;
 use crate::utils::MemoryRegion;
+use cpuarch::x86::EFERFlags;
 
 use bootdefs::kernel_launch::ApStartContext;
 use core::arch::global_asm;

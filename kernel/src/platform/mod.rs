@@ -190,6 +190,13 @@ pub trait SvsmPlatform: Sync {
     /// platform.
     fn get_io_port(&self) -> &'static dyn IOPort;
 
+    /// Revokes validation of page tables stored in low memory and used by
+    /// early boot.
+    fn invalidate_lowmem_page_tables(&self) -> Result<(), SvsmError> {
+        // By default, platforms have no work to do here.
+        Ok(())
+    }
+
     /// Validates low memory below the specified physical address, with the
     /// exception of addresses reserved for use by the platform object which
     /// may pre-validated.  Intended only for use during early boot.

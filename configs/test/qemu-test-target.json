@@ -15,8 +15,8 @@
             "type": "make",
             "output_file": "bin/test-kernel.elf"
         },
-        "stage2": {
-            "manifest": "kernel/Cargo.toml",
+        "bldr": {
+            "manifest": "boot/bldr/Cargo.toml",
             "binary": true,
             "objcopy": "binary"
         },

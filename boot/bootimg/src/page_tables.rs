@@ -225,7 +225,7 @@ impl KernelPageTables {
         }
     }
 
-    pub fn add_to_image<F>(&self, add_page_data: &mut F) -> Result<(u64, u64), BootImageError>
+    pub fn add_to_image<F>(&self, add_page_data: &mut F) -> Result<(u64, u64, u64), BootImageError>
     where
         F: FnMut(u64, Option<&[u8]>, u64) -> Result<(), BootImageError>,
     {
@@ -234,7 +234,7 @@ impl KernelPageTables {
             self.starting_paddr,
             self.pte_allocation.as_bytes(),
         )
-        .and(Ok((self.paging_root, self.total_pt_pages)))
+        .and(Ok((self.paging_root, self.root_vaddr, self.total_pt_pages)))
     }
 }
 

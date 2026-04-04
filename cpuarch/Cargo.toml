@@ -4,6 +4,7 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+bitflags.workspace = true
 bitfield-struct.workspace = true
 zerocopy.workspace = true
 

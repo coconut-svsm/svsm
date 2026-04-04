@@ -100,10 +100,11 @@ impl Instruction {
 
 #[cfg(any(test, fuzzing))]
 pub mod test_utils {
-    use crate::cpu::control_regs::{CR0Flags, CR4Flags};
-    use crate::cpu::efer::EFERFlags;
     use crate::insn_decode::*;
     use crate::types::Bytes;
+    use cpuarch::x86::CR0Flags;
+    use cpuarch::x86::CR4Flags;
+    use cpuarch::x86::EFERFlags;
     use zerocopy::{FromBytes, IntoBytes};
 
     pub const TEST_PORT: u16 = 0xE0;
