@@ -8,7 +8,7 @@
 //! Reference Implementation (by Microsoft)
 
 /// Functions required to build the TPM 2.0 Reference Implementation libraries
-#[cfg(not(any(test, fuzzing)))]
+#[cfg(target_os = "none")]
 mod wrapper;
 
 pub mod ek_templates;

@@ -2484,6 +2484,7 @@ name = "xbuild"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "packit",
  "serde",
  "serde_json",
 ]
