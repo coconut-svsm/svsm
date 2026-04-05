@@ -8,7 +8,6 @@ use super::error::TdVmcallError::Retry;
 use super::error::{TdxError, TdxSuccess, tdvmcall_result, tdx_recoverable_error, tdx_result};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::X86GeneralRegs;
-use crate::cpu::cpuid::CpuidResult;
 use crate::error::SvsmError;
 use crate::mm::pagetable::PageFrame;
 use crate::mm::{PerCPUPageMappingGuard, virt_to_frame};
@@ -18,6 +17,7 @@ use crate::utils::MemoryRegion;
 use bitfield_struct::bitfield;
 use bitflags::bitflags;
 use core::arch::asm;
+use core::arch::x86_64::CpuidResult;
 
 const TDG_VP_TDVMCALL: u32 = 0;
 const TDG_VP_VEINFO_GET: u32 = 3;

@@ -19,15 +19,14 @@ use snp::{SnpPlatform, SnpStage2Platform};
 use tdp::{TdpPlatform, TdpStage2Platform};
 
 use core::arch::asm;
+use core::arch::x86_64::{__cpuid_count, CpuidResult};
 use core::fmt::Debug;
 use core::mem::MaybeUninit;
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::cpu::IrqGuard;
-use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
-use crate::cpu::shadow_stack::determine_cet_support_from_cpuid;
 use crate::cpu::tlb::{TlbFlushScope, flush_tlb};
 use crate::error::SvsmError;
 use crate::hyperv;
@@ -150,11 +149,6 @@ pub trait SvsmPlatform: Sync {
     /// Determines the paging encryption masks for the current architecture.
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks;
 
-    /// Determine whether shadow stacks are supported.
-    fn determine_cet_support(&self) -> bool {
-        determine_cet_support_from_cpuid()
-    }
-
     /// Get the features and the capabilities of the platform.
     fn capabilities(&self) -> Caps;
 
@@ -175,7 +169,13 @@ pub trait SvsmPlatform: Sync {
     ) -> hyperv::HvHypercallOutput;
 
     /// Obtain CPUID using platform-specific tables.
-    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult>;
+    fn cpuid(eax: u32, ecx: u32) -> Option<CpuidResult>
+    where
+        Self: Sized,
+    {
+        // SAFETY: CPUID is always safe
+        unsafe { Some(__cpuid_count(eax, ecx)) }
+    }
 
     /// Write a host-owned MSR.
     /// # Safety
@@ -391,22 +391,29 @@ pub fn init_capabilities() {
     CAPS.init(caps).unwrap();
 }
 
+macro_rules! platform_method {
+    ($fn:ident $(, $arg:expr )*) => {
+        match *SVSM_PLATFORM_TYPE {
+            SvsmPlatformType::Native => NativePlatform::$fn($($arg),*),
+            SvsmPlatformType::Snp => SnpPlatform::$fn($($arg),*),
+            SvsmPlatformType::Tdp => TdpPlatform::$fn($($arg),*),
+        }
+    };
+}
+
+#[inline]
+pub fn cpuid(leaf: u32, subleaf: u32) -> Option<CpuidResult> {
+    platform_method!(cpuid, leaf, subleaf)
+}
+
 pub fn halt() {
     // Use a platform-specific halt.  However, the SVSM_PLATFORM global may not
     // yet be initialized, so go choose the halt implementation based on the
     // platform-specific halt instead.
-    match *SVSM_PLATFORM_TYPE {
-        SvsmPlatformType::Native => NativePlatform::halt(),
-        SvsmPlatformType::Snp => SnpPlatform::halt(),
-        SvsmPlatformType::Tdp => TdpPlatform::halt(),
-    }
+    platform_method!(halt)
 }
 
 /// Terminates the guest with a platform-specific mechanism
 pub fn terminate() -> ! {
-    match *SVSM_PLATFORM_TYPE {
-        SvsmPlatformType::Native => NativePlatform::terminate(),
-        SvsmPlatformType::Snp => SnpPlatform::terminate(),
-        SvsmPlatformType::Tdp => TdpPlatform::terminate(),
-    }
+    platform_method!(terminate)
 }

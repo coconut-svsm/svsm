@@ -5,47 +5,25 @@
 // Author: Vasant Karasulli <vkarasulli@suse.de>
 
 use crate::cpu::control_regs::{cr0_sse_enable, cr4_osfxsr_enable, cr4_xsave_enable};
-use crate::cpu::cpuid::CpuidResult;
 use core::arch::asm;
 use core::arch::x86_64::{_xgetbv, _xsetbv};
 use core::sync::atomic::{AtomicU64, Ordering};
 
-const CPUID_EDX_SSE1: u32 = 25;
-const CPUID_ECX_XSAVE: u32 = 26;
-const CPUID_EAX_XSAVEOPT: u32 = 0;
+use super::features::{Feature, cpu_has_feat};
+
 const XCR0_X87_ENABLE: u64 = 0x1;
 const XCR0_SSE_ENABLE: u64 = 0x2;
 const XCR0_YMM_ENABLE: u64 = 0x4;
 
 static SVSM_XCR0: AtomicU64 = AtomicU64::new(XCR0_X87_ENABLE | XCR0_SSE_ENABLE);
 
-fn legacy_sse_supported() -> bool {
-    let res = CpuidResult::get(1, 0);
-    (res.edx & (1 << CPUID_EDX_SSE1)) != 0
-}
-
 fn legacy_sse_enable() {
-    if legacy_sse_supported() {
+    if cpu_has_feat(Feature::Sse1) {
         cr4_osfxsr_enable();
         cr0_sse_enable();
     } else {
         panic!("Legacy SSE unsupported");
     }
-}
-
-fn extended_sse_supported() -> bool {
-    let res = CpuidResult::get(0xD, 0);
-    (res.eax & 0x7) == 0x7
-}
-
-fn xsave_supported() -> bool {
-    let res = CpuidResult::get(1, 0);
-    (res.ecx & (1 << CPUID_ECX_XSAVE)) != 0
-}
-
-fn xsaveopt_supported() -> bool {
-    let res = CpuidResult::get(0xD, 1);
-    (res.eax & (1 << CPUID_EAX_XSAVEOPT)) != 0
 }
 
 fn xcr0_set() {
@@ -57,14 +35,12 @@ fn xcr0_set() {
     }
 }
 
-pub fn get_xsave_area_size() -> u32 {
-    let res = CpuidResult::get(0xD, 0);
-    res.ecx
-}
-
 fn xsave_enable() {
-    if xsave_supported() && xsaveopt_supported() {
-        if extended_sse_supported() {
+    if cpu_has_feat(Feature::Xsave) && cpu_has_feat(Feature::XsaveOpt) {
+        if cpu_has_feat(Feature::Xcr0X87)
+            && cpu_has_feat(Feature::Xcr0Sse)
+            && cpu_has_feat(Feature::Xcr0Avx)
+        {
             SVSM_XCR0.fetch_or(XCR0_YMM_ENABLE, Ordering::Relaxed);
         }
         cr4_xsave_enable();

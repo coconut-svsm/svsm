@@ -15,11 +15,12 @@ use core::num::NonZeroUsize;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::address::{Address, VirtAddr};
+use crate::cpu::features::{Feature, cpu_get_feat, cpu_has_feat};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::percpu::{PerCpu, current_task};
-use crate::cpu::shadow_stack::{init_shadow_stack, is_cet_ss_supported};
-use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
+use crate::cpu::shadow_stack::init_shadow_stack;
+use crate::cpu::sse::sse_restore_context;
 use crate::cpu::{ShadowStackInit, X86ExceptionContext, X86GeneralRegs, irqs_enable};
 use crate::error::SvsmError;
 use crate::fs::{Directory, FileHandle, opendir, stdout_open};
@@ -319,7 +320,7 @@ impl Task {
 
         let mut shadow_stack_offset = VirtAddr::null();
         let mut shadow_stack_base = VirtAddr::null();
-        let shadow_stack_mapping = if is_cet_ss_supported() {
+        let shadow_stack_mapping = if cpu_has_feat(Feature::CetSS) {
             // Allocate shadow stack and safe top_of_stack offset
             let shadow_stack = VMKernelStack::new_shadow()?;
             let offset = shadow_stack.top_of_stack();
@@ -692,7 +693,7 @@ impl Task {
     }
 
     fn allocate_xsave_area() -> PageBox<[u8]> {
-        let len = get_xsave_area_size() as usize;
+        let len = cpu_get_feat(Feature::XsaveSize) as usize;
         let xsa = PageBox::<[u8]>::try_new_slice(0u8, NonZeroUsize::new(len).unwrap());
         if xsa.is_err() {
             panic!("Error while allocating xsave area");

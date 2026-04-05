@@ -17,8 +17,8 @@ use super::snp_fw::{
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::console::init_svsm_console;
-use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::cpuid::cpuid_table;
+use crate::cpu::cpuid::cpuid_table_raw;
 use crate::cpu::cpuid::init_cpuid_table;
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::{PerCpu, current_ghcb, this_cpu};
@@ -54,6 +54,7 @@ use syscall::GlobalFeatureFlags;
 use bootdefs::kernel_launch::Stage2LaunchInfo;
 #[cfg(test)]
 use bootdefs::platform::SvsmPlatformType;
+use core::arch::x86_64::CpuidResult;
 use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -265,17 +266,6 @@ impl SvsmPlatform for SnpPlatform {
         }
     }
 
-    fn determine_cet_support(&self) -> bool {
-        // Examine CPUID information to see whether CET is supported by the
-        // hypervisor.  If no CPUID information is present, then assume that
-        // CET is supported.
-        if let Some(cpuid) = cpuid_table(7, 0) {
-            (cpuid.ecx & 0x80) != 0
-        } else {
-            todo!()
-        }
-    }
-
     fn capabilities(&self) -> Caps {
         // VMPL0 is SVSM. VMPL1 to VMPL3 are guest.
         let vm_bitmap: u64 = 0xE;
@@ -299,14 +289,22 @@ impl SvsmPlatform for SnpPlatform {
         })
     }
 
-    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult> {
+    fn cpuid(eax: u32, ecx: u32) -> Option<CpuidResult>
+    where
+        Self: Sized,
+    {
         // If this is an architectural CPUID leaf, then extract the result
         // from the CPUID table.  Otherwise, request the value from the
         // hypervisor.
         if (eax >> 28) == 4 {
             current_ghcb().cpuid(eax, ecx).ok()
         } else {
-            cpuid_table(eax, ecx)
+            let xcr0 = if eax == 0xd && (ecx == 1 || ecx == 0) {
+                1
+            } else {
+                0
+            };
+            cpuid_table_raw(eax, ecx, xcr0, 0)
         }
     }
 
