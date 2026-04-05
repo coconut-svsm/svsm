@@ -9,6 +9,9 @@ use crate::mm::pagetable::PTEntryFlags;
 
 use super::{Mapping, VirtualMapping};
 
+extern crate alloc;
+use alloc::sync::Arc;
+
 /// Map physically contiguous memory
 #[derive(Default, Debug, Clone, Copy)]
 pub struct VMPhysMem {
@@ -52,7 +55,7 @@ impl VMPhysMem {
     ///
     /// New [`Mapping`] containing [`VMPhysMem`]
     pub fn new_mapping(base: PhysAddr, size: usize, writable: bool) -> Mapping {
-        Mapping::new(Self::new(base, size, writable))
+        Arc::new(Self::new(base, size, writable))
     }
 }
 

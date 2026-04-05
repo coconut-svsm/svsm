@@ -235,10 +235,14 @@ pub const SVSM_PERCPU_TEMP_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVE
 /// Start and End for PAGE_SIZEed temporary mappings
 pub const SVSM_PERCPU_TEMP_BASE_4K: VirtAddr = SVSM_PERCPU_TEMP_BASE;
 pub const SVSM_PERCPU_TEMP_END_4K: VirtAddr = SVSM_PERCPU_TEMP_BASE_4K.const_add(SIZE_LEVEL1);
+pub const SVSM_PERCPU_TEMP_SIZE_4K: usize = SIZE_LEVEL1;
 
 /// Start and End for PAGE_SIZEed temporary mappings
 pub const SVSM_PERCPU_TEMP_BASE_2M: VirtAddr = SVSM_PERCPU_TEMP_BASE.const_add(SIZE_LEVEL1);
 pub const SVSM_PERCPU_TEMP_END_2M: VirtAddr = SVSM_PERCPU_TEMP_BASE.const_add(SIZE_LEVEL2);
+pub const SVSM_PERCPU_TEMP_SIZE_2M: usize = SVSM_PERCPU_TEMP_END_2M
+    .const_sub(SVSM_PERCPU_TEMP_BASE_2M.as_usize())
+    .as_usize();
 
 /// Task mappings level 3 index
 pub const PGTABLE_LVL3_IDX_PERTASK: usize = 508;

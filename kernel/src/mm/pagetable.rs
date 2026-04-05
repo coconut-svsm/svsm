@@ -1241,18 +1241,23 @@ impl PageTable {
         }
     }
 
-    /// Populates this paghe table with the contents of the given subtree
+    /// Populates this page table with the contents of the given subtree
     /// in `part`.
-    pub fn populate_pgtbl_part(&mut self, part: &PageTablePart) {
-        if let Some(paddr) = part.address() {
-            let idx = part.index();
-            let flags = PTEntryFlags::PRESENT
-                | PTEntryFlags::WRITABLE
-                | PTEntryFlags::USER
-                | PTEntryFlags::ACCESSED;
-            let entry = &mut self.root[idx];
-            entry.set(make_private_address(paddr), flags);
-        }
+    ///
+    /// Returns `true` if the PTE contents were updated.
+    pub fn populate_pgtbl_part(&mut self, part: &PageTablePart) -> bool {
+        let Some(paddr) = part.address() else {
+            return false;
+        };
+        let idx = part.index();
+        let flags = PTEntryFlags::PRESENT
+            | PTEntryFlags::WRITABLE
+            | PTEntryFlags::USER
+            | PTEntryFlags::ACCESSED;
+        let entry = &mut self.root[idx];
+        let prev = entry.raw();
+        entry.set(make_private_address(paddr), flags);
+        prev != entry.raw()
     }
 
     /// Makes the memory region pages read-only.
