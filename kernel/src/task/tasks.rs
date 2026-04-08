@@ -12,7 +12,10 @@ use alloc::sync::Arc;
 use core::fmt;
 use core::mem::size_of;
 use core::num::NonZeroUsize;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicU32;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
@@ -117,11 +120,28 @@ enum ThreadStartInfo {
 }
 
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
+#[repr(u32)]
 pub enum TaskState {
     RUNNING,
     BLOCKED,
     #[default]
     TERMINATED,
+}
+
+impl From<u32> for TaskState {
+    fn from(v: u32) -> Self {
+        match v {
+            x if x == Self::RUNNING as u32 => Self::RUNNING,
+            x if x == Self::BLOCKED as u32 => Self::BLOCKED,
+            _ => Self::TERMINATED,
+        }
+    }
+}
+
+impl From<TaskState> for u32 {
+    fn from(s: TaskState) -> u32 {
+        s as u32
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -176,21 +196,41 @@ pub struct TaskContext {
 #[repr(C)]
 struct TaskSchedState {
     /// Whether this is an idle task
-    idle_task: bool,
+    idle_task: AtomicBool,
 
     /// Current state of the task
-    state: TaskState,
+    state: AtomicU32,
 
     /// CPU this task is currently assigned to
-    cpu_index: usize,
+    cpu_index: AtomicUsize,
 }
 
 impl TaskSchedState {
-    pub fn panic_on_idle(&mut self, msg: &str) -> &mut Self {
-        if self.idle_task {
+    fn new(cpu_index: usize) -> Self {
+        Self {
+            idle_task: AtomicBool::new(false),
+            state: AtomicU32::new(TaskState::RUNNING.into()),
+            cpu_index: AtomicUsize::new(cpu_index),
+        }
+    }
+
+    fn panic_on_idle(&self, msg: &str) -> &Self {
+        if self.idle_task.load(Ordering::Relaxed) {
             panic!("{}", msg);
         }
         self
+    }
+
+    fn update_cpu(&self, new_cpu_index: usize) -> usize {
+        self.cpu_index.swap(new_cpu_index, Ordering::Relaxed)
+    }
+
+    fn set_state(&self, state: TaskState) {
+        self.state.store(state.into(), Ordering::Release);
+    }
+
+    fn get_state(&self) -> TaskState {
+        self.state.load(Ordering::Acquire).into()
     }
 }
 
@@ -219,7 +259,7 @@ pub struct Task {
     mm: Arc<TaskMM>,
 
     /// State relevant for scheduler
-    sched_state: RWLock<TaskSchedState>,
+    sched_state: TaskSchedState,
 
     /// User-visible name of task
     name: String,
@@ -264,7 +304,7 @@ impl fmt::Debug for Task {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Task")
             .field("rsp", &self.rsp)
-            .field("state", &self.sched_state.lock_read().state)
+            .field("state", &self.sched_state.get_state())
             .field("id", &self.id)
             .finish()
     }
@@ -386,11 +426,7 @@ impl Task {
             _kernel_stack: kernel_stack_mapping,
             _shadow_stack: shadow_stack_mapping,
             mm: task_mm,
-            sched_state: RWLock::new(TaskSchedState {
-                idle_task: false,
-                state: TaskState::RUNNING,
-                cpu_index: cpu.get_cpu_index(),
-            }),
+            sched_state: TaskSchedState::new(cpu.get_cpu_index()),
             name: args.name,
             id: TASK_ID_ALLOCATOR.next_id(),
             rootdir: args.rootdir,
@@ -484,44 +520,39 @@ impl Task {
     }
 
     pub fn set_task_running(&self) {
-        self.sched_state.lock_write().state = TaskState::RUNNING;
+        self.sched_state.set_state(TaskState::RUNNING);
     }
 
     pub fn set_task_terminated(&self) {
         self.sched_state
-            .lock_write()
             .panic_on_idle("Trying to terminate idle task")
-            .state = TaskState::TERMINATED;
+            .set_state(TaskState::TERMINATED);
     }
 
     pub fn set_task_blocked(&self) {
         self.sched_state
-            .lock_write()
             .panic_on_idle("Trying to block idle task")
-            .state = TaskState::BLOCKED;
+            .set_state(TaskState::BLOCKED);
     }
 
     pub fn is_running(&self) -> bool {
-        self.sched_state.lock_read().state == TaskState::RUNNING
+        self.sched_state.get_state() == TaskState::RUNNING
     }
 
     pub fn is_terminated(&self) -> bool {
-        self.sched_state.lock_read().state == TaskState::TERMINATED
+        self.sched_state.get_state() == TaskState::TERMINATED
     }
 
     pub fn set_idle_task(&self) {
-        self.sched_state.lock_write().idle_task = true;
+        self.sched_state.idle_task.store(true, Ordering::Relaxed);
     }
 
     pub fn is_idle_task(&self) -> bool {
-        self.sched_state.lock_read().idle_task
+        self.sched_state.idle_task.load(Ordering::Relaxed)
     }
 
     pub fn update_cpu(&self, new_cpu_index: usize) -> usize {
-        let mut state = self.sched_state.lock_write();
-        let old_cpu_index = state.cpu_index;
-        state.cpu_index = new_cpu_index;
-        old_cpu_index
+        self.sched_state.update_cpu(new_cpu_index)
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
