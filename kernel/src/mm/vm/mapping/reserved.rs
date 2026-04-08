@@ -9,6 +9,9 @@ use crate::mm::pagetable::PTEntryFlags;
 
 use super::{Mapping, VirtualMapping};
 
+extern crate alloc;
+use alloc::sync::Arc;
+
 /// Reserve a region of address space so that no other mapping will be
 /// established there. The map function for this type will always return
 /// `None`.
@@ -42,7 +45,7 @@ impl VMReserved {
     ///
     /// New Mapping of VMReserved
     pub fn new_mapping(size: usize) -> Mapping {
-        Mapping::new(Self::new(size))
+        Arc::new(Self::new(size))
     }
 }
 
