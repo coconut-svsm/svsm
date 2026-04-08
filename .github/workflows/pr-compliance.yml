@@ -1,0 +1,43 @@
+name: PR Compliance Checks
+
+on: [pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check Signed-off-by and SPDX
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        run: |
+          git fetch
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+
+      - name: Check Signed-off-by
+        run: |
+          ${GITHUB_WORKSPACE}/scripts/check-signed-off.sh \
+            ${{ github.event.pull_request.base.sha }} \
+            ${{ github.event.pull_request.head.sha }}
+
+      - name: Check SPDX Headers
+        # This step will always run unless it is cancelled.
+        # This is necessary in case of a `signed-off`
+        # error, as we also want to check this step.
+        if: ${{ !cancelled() }}
+        run: |
+          ${GITHUB_WORKSPACE}/scripts/check-spdx.sh \
+            ${{ github.event.pull_request.base.sha }} \
+            ${{ github.event.pull_request.head.sha }}
