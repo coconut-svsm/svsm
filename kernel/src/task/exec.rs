@@ -52,7 +52,7 @@ fn task_name(binary: &str) -> String {
 ///
 /// # Returns
 ///
-/// [`Ok(tid)`] on success, [`Err(SvsmError)`] on failure.
+/// [`Ok(TaskPointer)`] on success, [`Err(SvsmError)`] on failure.
 pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<TaskPointer, SvsmError> {
     let fh = open_read(binary)?;
     let file_size = fh.size();
