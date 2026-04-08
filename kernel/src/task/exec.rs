@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use super::TaskPointer;
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::fs::{Directory, open_read};
@@ -52,7 +53,7 @@ fn task_name(binary: &str) -> String {
 /// # Returns
 ///
 /// [`Ok(tid)`] on success, [`Err(SvsmError)`] on failure.
-pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<u32, SvsmError> {
+pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<TaskPointer, SvsmError> {
     let fh = open_read(binary)?;
     let file_size = fh.size();
 
@@ -117,5 +118,5 @@ pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<u32, SvsmErro
     finish_user_task(new_task.clone());
     schedule();
 
-    Ok(new_task.get_task_id())
+    Ok(new_task)
 }

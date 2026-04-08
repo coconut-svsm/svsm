@@ -31,7 +31,7 @@ pub fn sys_exec(file: usize, root: usize, _flags: usize) -> Result<u64, SysCallE
     let real_root = find_dir(current_task().rootdir(), &root_str)?;
     let tid = exec_user(&file_str, real_root)?;
 
-    Ok(tid.into())
+    Ok(tid.get_task_id().into())
 }
 
 pub fn sys_close(obj_id: u32) -> Result<u64, SysCallError> {
