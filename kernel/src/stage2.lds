@@ -31,7 +31,8 @@ SECTIONS
 		exception_table_end = .;
 	}
 	. = ALIGN(16);
-	.data : { *(.data) }
+	.data : { *(.data) *(.data.*) }
+	.got : { *(.got) *(.got.*) }
 	edata = .;
 	. = ALIGN(16);
 	.bss : {
@@ -45,7 +46,7 @@ SECTIONS
 	 * builder does not have to parse the ELF file to know how much space
 	 * to reserve for BSS. */
 	. = ALIGN(16);
-	.rodata : { *(.rodata) }
+	.rodata : { *(.rodata) *(.rodata.*) }
 }
 
 ENTRY(startup_32)
