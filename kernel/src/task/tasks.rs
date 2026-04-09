@@ -10,6 +10,7 @@ use alloc::collections::btree_map::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::fmt;
+use core::mem::offset_of;
 use core::mem::size_of;
 use core::num::NonZeroUsize;
 use core::sync::atomic::AtomicBool;
@@ -198,6 +199,9 @@ struct TaskSchedState {
     /// Whether this is an idle task
     idle_task: AtomicBool,
 
+    /// Whether this task is currently active on any CPU
+    active: AtomicBool,
+
     /// Current state of the task
     state: AtomicU32,
 
@@ -209,6 +213,7 @@ impl TaskSchedState {
     fn new(cpu_index: usize) -> Self {
         Self {
             idle_task: AtomicBool::new(false),
+            active: AtomicBool::new(false),
             state: AtomicU32::new(TaskState::RUNNING.into()),
             cpu_index: AtomicUsize::new(cpu_index),
         }
@@ -219,6 +224,12 @@ impl TaskSchedState {
             panic!("{}", msg);
         }
         self
+    }
+
+    fn set_active(&self) {
+        if self.active.swap(true, Ordering::Release) {
+            panic!("attempted switch to an active task");
+        }
     }
 
     fn update_cpu(&self, new_cpu_index: usize) -> usize {
@@ -280,6 +291,9 @@ pub struct Task {
     objs: Arc<RWLock<BTreeMap<ObjHandle, Arc<dyn Obj>>>>,
 }
 
+pub const TASK_ACTIVE_OFFSET: usize =
+    offset_of!(Task, sched_state) + offset_of!(TaskSchedState, active);
+
 // SAFETY: Send + Sync is required for Arc<Task> to implement Send. All members
 // of  `Task` are Send + Sync except for the intrusive_collection links, which
 // are only Send. The only access to these is via the intrusive_adapter!
@@ -307,6 +321,14 @@ impl fmt::Debug for Task {
             .field("state", &self.sched_state.get_state())
             .field("id", &self.id)
             .finish()
+    }
+}
+
+impl Drop for Task {
+    fn drop(&mut self) {
+        // A task must be inactive to be terminated.  Otherwise, its stack
+        // might be freed while it is actively executing.
+        assert!(!self.sched_state.active.load(Ordering::Relaxed));
     }
 }
 
@@ -517,6 +539,10 @@ impl Task {
 
     pub fn rootdir(&self) -> Arc<dyn Directory> {
         self.rootdir.clone()
+    }
+
+    pub fn set_task_active(&self) {
+        self.sched_state.set_active();
     }
 
     pub fn set_task_running(&self) {

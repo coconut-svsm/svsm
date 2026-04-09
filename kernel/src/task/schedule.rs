@@ -30,6 +30,7 @@
 
 extern crate alloc;
 
+use super::tasks::TASK_ACTIVE_OFFSET;
 use super::{
     INITIAL_TASK_ID, KernelThreadStartInfo, Task, TaskListAdapter, TaskPointer, TaskRunListAdapter,
 };
@@ -609,6 +610,12 @@ global_asm!(
         .section .text
 
     switch_context:
+        // Arguments:
+        // R12: previous task pointer
+        // R13: new task pointer
+        // R14: per-CPU global-scope stack pointer
+        // R15: paging root of the new task
+        //
         // Save the current context. The layout must match the TaskContext structure.
         pushfq
         pushq   %rax
@@ -640,7 +647,7 @@ global_asm!(
         mov     %r14, %rsp
 
         cmpb    $0, {IS_CET_ENABLED}(%rip)
-        je      1f
+        je      4f
         // Save the current shadow stack pointer
         rdssp   %rax
         sub     $8, %rax
@@ -651,11 +658,28 @@ global_asm!(
         rstorssp (%rax)
         saveprevssp
 
+    4:
+        // Mark the previous task as inactive.  This must be done after
+        // switching off of its stack because as soon as it is marked as
+        // inactive, another processor is free to immediately switch to that
+        // thread's stack.
+        andb    $0, {TASK_STATE_ACTIVE}(%r12)
+
     1:
         // Switch to the new task state
 
         // Switch to the new task page tables
         mov     %r15, %cr3
+
+        // Wait until the new task is inactive.  It may still be running
+        // on another processor so its stack cannot be consumed until its
+        // stack is no longer active on any processor.
+    3:
+        pause
+        movb    $1, %al
+        lock xchgb {TASK_STATE_ACTIVE}(%r13), %al
+        testb   %al, %al
+        jnz     3b
 
         cmpb    $0, {IS_CET_ENABLED}(%rip)
         je      2f
@@ -694,6 +718,7 @@ global_asm!(
     "#,
     TASK_RSP_OFFSET = const offset_of!(Task, rsp),
     TASK_SSP_OFFSET = const offset_of!(Task, ssp),
+    TASK_STATE_ACTIVE = const TASK_ACTIVE_OFFSET,
     IS_CET_ENABLED = sym IS_CET_ENABLED,
     CONTEXT_SWITCH_RESTORE_TOKEN = const CONTEXT_SWITCH_RESTORE_TOKEN.as_usize(),
     options(att_syntax)
