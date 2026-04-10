@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["TLB_FLUSH_ALL_THRESHOLD"],"enum":["TlbFlushRange"],"fn":["flush_address_percpu","flush_tlb","flush_tlb_global_percpu","flush_tlb_global_sync","flush_tlb_global_sync_page","flush_tlb_global_sync_range","flush_tlb_percpu","set_tlb_flush_smp"],"static":["FLUSH_SMP"],"struct":["TlbFlushScope"]};
