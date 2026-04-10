@@ -23,13 +23,13 @@ use svsm::boot_params::BootParams;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::dump_cpuid_table;
+use svsm::cpu::features::{Feature, cpu_has_feat};
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::idt::{EARLY_IDT_ENTRIES, IDT, IdtEntry};
 use svsm::cpu::percpu::{PERCPU_AREAS, PerCpu, cpu_idle_loop, this_cpu, try_this_cpu};
 use svsm::cpu::shadow_stack::{
-    MODE_64BIT, S_CET, SCetFlags, determine_cet_support, is_cet_ss_supported, set_cet_ss_enabled,
-    shadow_stack_info,
+    MODE_64BIT, S_CET, SCetFlags, set_cet_ss_enabled, shadow_stack_info,
 };
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::cpu::sse::sse_init;
@@ -323,8 +323,7 @@ unsafe fn svsm_start(
     }
 
     cr0_init();
-    determine_cet_support(platform);
-    cr4_init(platform);
+    cr4_init();
 
     install_console_logger("SVSM").expect("Console logger already initialized");
     platform
@@ -428,7 +427,7 @@ unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo, platform_type: SvsmPl
 
     // Shadow stacks must be enabled once no further function returns are
     // possible.
-    if is_cet_ss_supported() {
+    if cpu_has_feat(Feature::CetSS) {
         set_cet_ss_enabled();
         let ssp_token_addr = ssp_token.unwrap();
         enable_shadow_stacks!(ssp_token_addr);

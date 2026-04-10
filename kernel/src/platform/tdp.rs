@@ -8,14 +8,14 @@ use super::capabilities::Caps;
 use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, Stage2Platform, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
-use crate::cpu::cpuid::CpuidResult;
+use crate::cpu::features::{Feature, cpu_get_feat, cpu_has_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::{apic_in_service, apic_initialize, apic_sw_enable};
 use crate::error::SvsmError;
 use crate::hyperv;
-use crate::hyperv::{IS_HYPERV, hyperv_start_cpu};
+use crate::hyperv::hyperv_start_cpu;
 use crate::io::IOPort;
 use crate::mm::{PerCPUMapping, TransitionPageTable};
 use crate::platform::IrqGuard;
@@ -95,13 +95,13 @@ impl SvsmPlatform for TdpPlatform {
 
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
         // Find physical address size.
-        let res = CpuidResult::get(0x80000008, 0);
+        let phys_addr_sizes = cpu_get_feat(Feature::PhysAddrSizes);
         let vtom = *VTOM;
         PageEncryptionMasks {
             private_pte_mask: 0,
             shared_pte_mask: vtom,
             addr_mask_width: vtom.trailing_zeros(),
-            phys_addr_sizes: res.eax,
+            phys_addr_sizes,
         }
     }
 
@@ -125,10 +125,6 @@ impl SvsmPlatform for TdpPlatform {
         hyperv::execute_host_hypercall(input_control, hypercall_pages, |registers| {
             tdvmcall_hyperv_hypercall(registers);
         })
-    }
-
-    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult> {
-        Some(CpuidResult::get(eax, ecx))
     }
 
     unsafe fn write_host_msr(&self, msr: u32, value: u64) {
@@ -299,7 +295,7 @@ impl SvsmPlatform for TdpPlatform {
 
         // When running under Hyper-V, the target vCPU does not begin running
         // until a start hypercall is issued, so make that hypercall now.
-        if *IS_HYPERV {
+        if cpu_has_feat(Feature::HyperV) {
             // Do not expose the actual CPU context via the hypercall since it
             // is not needed.  Use a default context instead.
             let ctx = hyperv::HvInitialVpContext::default();
