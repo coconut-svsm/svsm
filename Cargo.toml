@@ -12,6 +12,7 @@ members = [
     # binary targets
     "stage1",
     "kernel",
+    "boot/bldr",
     # fuzzing
     "fuzz",
     # ELF loader
@@ -50,6 +51,7 @@ edition = "2024"
 
 [workspace.dependencies]
 # internal library crates
+bldr = { path = "boot/bldr" }
 bootdefs = { path = "boot/defs" }
 bootimg = { path = "boot/bootimg" }
 cpuarch = { path = "cpuarch" }

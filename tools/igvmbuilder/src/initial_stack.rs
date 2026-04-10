@@ -6,8 +6,8 @@
 
 use std::mem::size_of;
 
+use bootdefs::kernel_launch::BldrLaunchInfo;
 use bootdefs::kernel_launch::Stage2LaunchInfo;
-use bootdefs::platform::SvsmPlatformType;
 use bootimg::BootImageInfo;
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
@@ -44,26 +44,70 @@ impl Stage2Stack {
         Self { stage2_stack }
     }
 
-    pub fn add_directive(
+    pub fn stack_data(&mut self) -> &mut Stage2LaunchInfo {
+        &mut self.stage2_stack
+    }
+}
+
+pub struct BootLoaderStack {
+    bldr_stack: BldrLaunchInfo,
+}
+
+const _: () = assert!((size_of::<BootLoaderStack>() as u64) <= PAGE_SIZE_4K);
+
+impl BootLoaderStack {
+    pub fn new(gpa_map: &GpaMap, boot_image_info: &BootImageInfo) -> Self {
+        let bldr_stack = BldrLaunchInfo {
+            kernel_entry: boot_image_info.context.entry_point,
+            kernel_stack: boot_image_info.context.initial_stack,
+            kernel_launch_info: boot_image_info.kernel_launch_info,
+            kernel_pt_vaddr: boot_image_info.kernel_page_tables_virt_base,
+            kernel_pt_count: boot_image_info.total_pt_pages,
+            kernel_pdpt_paddr: boot_image_info.kernel_pdpt_paddr,
+            kernel_pml4e_index: boot_image_info.kernel_pml4e_index,
+            page_table_start: gpa_map.init_page_tables.get_start() as u32,
+            page_table_end: gpa_map.init_page_tables.get_end() as u32,
+            page_table_root: gpa_map.init_page_tables.get_start() as u32,
+            cpuid_addr: gpa_map.cpuid_page.get_start() as u32,
+            c_bit_position: 0,
+            platform_type: 0,
+            _reserved: Default::default(),
+        };
+        Self { bldr_stack }
+    }
+}
+
+pub trait InitialStack {
+    fn data_bytes(&self) -> &[u8];
+
+    fn add_directive(
         &self,
         gpa: u64,
-        platform: SvsmPlatformType,
         compatibility_mask: u32,
         directives: &mut Vec<IgvmDirectiveHeader>,
     ) {
-        let mut stage2_stack = self.stage2_stack;
-        stage2_stack.platform_type = u32::from(platform);
-
-        let stage2_stack_data = stage2_stack.as_bytes();
-        let mut stage2_stack_page = vec![0u8; PAGE_SIZE_4K as usize - stage2_stack_data.len()];
-        stage2_stack_page.extend_from_slice(stage2_stack_data);
+        let stack_data = self.data_bytes();
+        let mut stack_page = vec![0u8; PAGE_SIZE_4K as usize - stack_data.len()];
+        stack_page.extend_from_slice(stack_data);
 
         directives.push(IgvmDirectiveHeader::PageData {
             gpa,
             compatibility_mask,
             flags: IgvmPageDataFlags::new(),
             data_type: IgvmPageDataType::NORMAL,
-            data: stage2_stack_page,
+            data: stack_page,
         });
+    }
+}
+
+impl InitialStack for Stage2Stack {
+    fn data_bytes(&self) -> &[u8] {
+        self.stage2_stack.as_bytes()
+    }
+}
+
+impl InitialStack for BootLoaderStack {
+    fn data_bytes(&self) -> &[u8] {
+        self.bldr_stack.as_bytes()
     }
 }

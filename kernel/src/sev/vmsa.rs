@@ -9,11 +9,11 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::{PageBox, virt_to_phys};
 use crate::platform::guest_cpu::GuestCpuState;
-use crate::sev::status::SEVStatusFlags;
 use crate::types::{PAGE_SIZE_2M, PageSize};
 use core::mem::{ManuallyDrop, size_of};
 use core::ops::{Deref, DerefMut};
 use core::ptr;
+use cpuarch::sev_status::SEVStatusFlags;
 
 use cpuarch::vmsa::{VMSA, VmsaEventInject, VmsaEventType};
 

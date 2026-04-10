@@ -49,6 +49,8 @@ use crate::sev::{
 };
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
+use bootdefs::kernel_launch::LOWMEM_PT_COUNT;
+use bootdefs::kernel_launch::LOWMEM_PT_START;
 use syscall::GlobalFeatureFlags;
 
 use bootdefs::kernel_launch::Stage2LaunchInfo;
@@ -333,6 +335,15 @@ impl SvsmPlatform for SnpPlatform {
 
     fn get_io_port(&self) -> &'static dyn IOPort {
         &GHCB_IO_DRIVER
+    }
+
+    fn invalidate_lowmem_page_tables(&self) -> Result<(), SvsmError> {
+        let region = MemoryRegion::new(
+            PhysAddr::from(LOWMEM_PT_START as usize),
+            LOWMEM_PT_COUNT * PAGE_SIZE,
+        );
+        // SAFETY: invalidation is always safe.
+        unsafe { self.validate_physical_page_range(region, PageValidateOp::Invalidate) }
     }
 
     /// The caller is required to ensure that it is safe to validate low
