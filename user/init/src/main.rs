@@ -7,8 +7,16 @@ use userlib::*;
 
 declare_main!(main);
 
+#[cfg(not(test))]
 fn main() -> u32 {
     println!("COCONUT-SVSM init process starting");
+
+    0
+}
+
+#[cfg(test)]
+fn main() -> u32 {
+    crate::userspace_test_main();
 
     0
 }
