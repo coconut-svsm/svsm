@@ -159,6 +159,11 @@ bin/test-kernel.elf: bin
 		--target=x86_64-unknown-none \
 		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../$@"]'
 
+bin/test-userinit.elf: bin
+	LINK_TEST=1 cargo +nightly test --package userinit ${CARGO_ARGS} \
+		--target=x86_64-unknown-none \
+		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../../$@"]'
+
 ${FS_BIN}: bin
 ifneq ($(FS_FILE), none)
 	cp -f $(FS_FILE) ${FS_BIN}
@@ -189,4 +194,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test miri clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
+.PHONY: test miri clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf bin/test-userinit.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
