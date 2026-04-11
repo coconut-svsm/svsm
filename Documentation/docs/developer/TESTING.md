@@ -67,6 +67,45 @@ QEMU=/path/to/qemu make test-in-svsm TEST_ARGS='--nocc -- --no-netdev'
 A list of parameters for `launch_guest.sh` is listed in the
 [INSTALL.md](../installation/INSTALL.md) document.
 
+## Attestation tests
+
+Attestation can be tested in the same infrastructure by running the
+attest-enabled test image together with `kbs-test` and `aproxy`.
+
+### Requirements
+
+In addition to the requirements for in-SVSM tests, attestation tests require:
+
+- The `kbs-test` server from [coconut-svsm/kbs-test](https://github.com/coconut-svsm/kbs-test)
+- The `aproxy` binary (built automatically as part of the SVSM build)
+
+### Running
+
+Clone and build `kbs-test`:
+
+```shell
+git clone https://github.com/coconut-svsm/kbs-test.git ../kbs-test
+```
+
+Run attestation tests:
+
+```shell
+KBS_TEST_DIR=../kbs-test QEMU=/path/to/qemu \
+make FEATURES_TEST=vtpm,virtio-drivers,block,attest \
+     TEST_IN_SVSM_SCRIPT=./scripts/test-in-svsm-attest.sh \
+     TEST_IN_SVSM_DEPS=aproxy \
+     test-in-svsm
+```
+
+You can replace `KBS_TEST_DIR` with `KBS_TEST_BIN=/path/to/kbs-test` if you
+already have a `kbs-test` binary built.
+
+The test will:
+1. Start a local `kbs-test` server
+2. Start an `aproxy` instance
+3. Run the SVSM tests with attestation enabled
+4. Verify "attestation successful" appears in the output
+
 ## Miri
 
 Miri is an Undefined Behavior detection tool for Rust. It can run binaries and
