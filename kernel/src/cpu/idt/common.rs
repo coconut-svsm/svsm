@@ -47,6 +47,7 @@ pub const HV_VECTOR: usize = 28;
 pub const VC_VECTOR: usize = 29;
 pub const SX_VECTOR: usize = 30;
 
+pub const SCHEDULE_VECTOR: usize = 0x20;
 pub const INT_INJ_VECTOR: usize = 0x50;
 pub const IPI_VECTOR: usize = 0xE0;
 
