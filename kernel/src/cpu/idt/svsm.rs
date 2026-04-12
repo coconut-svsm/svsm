@@ -14,8 +14,8 @@ use super::super::x86::apic_eoi;
 use super::common::{
     AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR, DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR,
     HV_VECTOR, IDT, INT_INJ_VECTOR, IPI_VECTOR, IdtEntry, IdtEventType, MCE_VECTOR, MF_VECTOR,
-    NMI_VECTOR, OF_VECTOR, PF_VECTOR, PageFaultError, SS_VECTOR, UD_VECTOR, VC_VECTOR, VE_VECTOR,
-    XF_VECTOR, user_mode,
+    NMI_VECTOR, OF_VECTOR, PF_VECTOR, PageFaultError, SCHEDULE_VECTOR, SS_VECTOR, UD_VECTOR,
+    VC_VECTOR, VE_VECTOR, XF_VECTOR, user_mode,
 };
 use crate::address::VirtAddr;
 use crate::cpu::X86ExceptionContext;
@@ -76,6 +76,7 @@ unsafe extern "C" {
     fn asm_entry_int80();
     fn asm_entry_irq_int_inj();
     fn asm_entry_irq_ipi();
+    fn asm_entry_irq_schedule();
 
     pub static mut HV_DOORBELL_ADDR: usize;
 }
@@ -150,6 +151,7 @@ pub unsafe fn idt_init(idt_vaddr: VirtAddr, platform: &dyn SvsmPlatform) -> Resu
     idt.set_entry(INT_INJ_VECTOR, IdtEntry::entry(asm_entry_irq_int_inj));
     idt.set_entry(0x80, IdtEntry::user_entry(asm_entry_int80));
     idt.set_entry(IPI_VECTOR, IdtEntry::entry(asm_entry_irq_ipi));
+    idt.set_entry(SCHEDULE_VECTOR, IdtEntry::entry(asm_entry_irq_schedule));
 
     // Set IST vectors
     init_ist_vectors(&mut idt);
@@ -497,7 +499,10 @@ pub fn common_isr_handler(vector: usize) {
         IPI_VECTOR => handle_ipi_interrupt(),
         _ => {
             // Ignore all unrecognized interrupt vectors and treat them as
-            // spurious interrupts.
+            // spurious interrupts.  The scheduler interrupt is included here
+            // because although it is a known and expected interrupt, it has
+            // no handler; it exists simply to provide a mechanism to work from
+            // idle for scheduling purposes.
         }
     }
 
