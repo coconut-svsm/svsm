@@ -5,7 +5,6 @@ Installation of the COCONUT-SVSM requires some components that are not
 upstream in their respective repositories yet:
 
 * Linux host kernel with SVSM support
-* Linux guest kernel with SVSM support
 * EDK2 with SVSM support
 * A modified QEMU which supports launching guests configured using IGVM
 * The SVSM source-code repository
@@ -185,25 +184,16 @@ Preparing the guest image
 
 The guest image for the SEV-SNP SVSM guest needs to have a kernel
 installed that supports the SVSM request protocol and running in a
-lower-privileged VMPL than VMPL0. If you already experimented with the
-linux-svsm you can re-use the guest image.
+lower-privileged VMPL than VMPL0.
 
-Otherwise you need to build a new guest kernel. From within the guest
-image, do:
+Starting from Linux v6.16, the upstream kernel contains all the
+necessary support for running as an SVSM guest, including the vTPM
+driver.
 
-```shell
-git clone https://github.com/coconut-svsm/linux
-cd linux
-git checkout svsm
-```
-
-Build a kernel from that branch and install it in the guest image. For
-the guest kernel configuration you can follow the same steps as for the
-host kernel. Best results are achieved by re-using the kernel
-configuration from the distribution like for the host kernel.
-
-The `CONFIG_TCG_PLATFORM` is required in the guest kernel if you want to
-use the SVSM vTPM.
+If you want to use the SVSM vTPM, make sure `CONFIG_TCG_SVSM` is
+enabled in the guest kernel. Most distributions already have it enabled
+by default. Note that earlier upstream submissions or downstream branches
+may use the old `CONFIG_TCG_PLATFORM` instead.
 
 Building the COCONUT-SVSM
 -------------------------
