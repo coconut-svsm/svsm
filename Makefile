@@ -163,6 +163,19 @@ bin/test-kernel.elf: bin
 		--target=x86_64-unknown-none \
 		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../$@"]'
 
+TEST_IN_SVSM_MODULES =
+TEST_IN_SVSM_TARGETS = $(TEST_IN_SVSM_MODULES:%=bin/test-%.elf)
+# Root of SVSM
+MAKEFILE_DIR = $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+
+$(TEST_IN_SVSM_TARGETS): bin/test-%.elf: bin
+# RUSTDOC=true removes doctests, which is necessary as they do not work with
+# custom test runners. See https://github.com/coconut-svsm/svsm/issues/705.
+	RUSTDOC=true LINK_TEST=1 cargo +nightly test --package $* \
+		$(CARGO_ARGS) ${MODULE_ARGS_TEST} \
+		--target=x86_64-unknown-none \
+		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 $(MAKEFILE_DIR)/$@"]'
+
 ${FS_BIN}: bin
 ifneq ($(FS_FILE), none)
 	cp -f $(FS_FILE) ${FS_BIN}
@@ -193,4 +206,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test miri clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
+.PHONY: test miri clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES) $(TEST_IN_SVSM_TARGETS)
