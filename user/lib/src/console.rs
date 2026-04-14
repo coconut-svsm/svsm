@@ -32,14 +32,3 @@ pub fn console_print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
     CONSOLE_WRITER.lock().write_fmt(args).unwrap()
 }
-
-#[macro_export]
-macro_rules! print {
-        ($($arg:tt)*) => (console_print(format_args!($($arg)*)))
-}
-
-#[macro_export]
-macro_rules! println {
-    () => (print!("\n"));
-    ($($arg:tt)*) => (print!("{}\n", format_args!($($arg)*)));
-}

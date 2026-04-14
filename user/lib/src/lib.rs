@@ -8,9 +8,11 @@
 
 pub mod console;
 pub mod locking;
+pub mod log_buffer;
 
 pub use console::*;
 pub use locking::*;
+pub use log_buffer::*;
 pub use syscall::*;
 
 #[macro_export]
