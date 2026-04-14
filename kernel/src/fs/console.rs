@@ -126,9 +126,12 @@ impl File for ConsoleFile {
     }
 }
 
-pub fn stdout_open() -> Arc<dyn Obj> {
+pub fn stdout_open(_name: String) -> (Arc<dyn Obj>, Arc<dyn Obj>) {
     let console_file: Arc<dyn File> = Arc::new(ConsoleFile::new());
 
     // Stdout is write-only.
-    Arc::new(FsObj::new_file(FileHandle::new(&console_file, false, true)))
+    (
+        Arc::new(FsObj::new_file(FileHandle::new(&console_file, false, true))),
+        Arc::new(FsObj::new_file(FileHandle::new(&console_file, false, true))),
+    )
 }

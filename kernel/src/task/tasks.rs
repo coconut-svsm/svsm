@@ -21,7 +21,7 @@ use core::sync::atomic::Ordering;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
-use crate::cpu::percpu::{PerCpu, current_task};
+use crate::cpu::percpu::PerCpu;
 use crate::cpu::shadow_stack::{init_shadow_stack, is_cet_ss_supported};
 use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
 use crate::cpu::{ShadowStackInit, X86ExceptionContext, X86GeneralRegs, irqs_enable};
@@ -357,7 +357,7 @@ impl Task {
         cpu.populate_page_table(&mut pgtable);
 
         let (task_mm, objtree) = {
-            if let Some(parent_thread) = args.thread_of {
+            if let Some(ref parent_thread) = args.thread_of {
                 (parent_thread.mm.clone(), parent_thread.objs.clone())
             } else {
                 (
@@ -433,7 +433,7 @@ impl Task {
         // Stack frames should be 16b-aligned
         debug_assert!(bounds.end().is_aligned(16));
 
-        Ok(Arc::new(Task {
+        let task = Arc::new(Task {
             rsp: bounds
                 .end()
                 .checked_sub(rsp_offset)
@@ -454,7 +454,12 @@ impl Task {
             list_link: LinkedListAtomicLink::default(),
             runlist_link: LinkedListAtomicLink::default(),
             objs: objtree,
-        }))
+        });
+
+        if args.thread_of.is_none() {
+            task.attach_stdout();
+        }
+        Ok(task)
     }
 
     pub fn create(
@@ -925,19 +930,29 @@ impl Task {
             .cloned()
             .ok_or(ObjError::NotFound.into())
     }
+
+    fn attach_stdout(&self) {
+        let name = if self.name == "idle" {
+            String::from("SVSM")
+        } else {
+            self.name.clone()
+        };
+
+        let (fh_console, fh_log) = stdout_open(name);
+
+        let oh_console = ObjHandle::new(0);
+        self.add_obj_at(fh_console, oh_console)
+            .expect("Failed to attach console");
+
+        let oh_log = ObjHandle::new(1);
+        self.add_obj_at(fh_log, oh_log)
+            .expect("Failed to attach log");
+    }
 }
 
 pub fn is_task_fault(vaddr: VirtAddr) -> bool {
     (vaddr >= USER_MEM_START && vaddr < USER_MEM_END)
         || (vaddr >= SVSM_PERTASK_BASE && vaddr < SVSM_PERTASK_END)
-}
-
-fn task_attach_console() {
-    let file_handle = stdout_open();
-    let obj_handle = ObjHandle::new(0);
-    current_task()
-        .add_obj_at(file_handle, obj_handle)
-        .expect("Failed to attach console");
 }
 
 /// Runs the first time a new task is scheduled, in the context of the new
@@ -953,7 +968,6 @@ unsafe fn setup_user_task(xsa_addr: u64) {
         // Needs to be the first function called here.
         setup_new_task_common(xsa_addr);
     }
-    task_attach_console();
 }
 
 unsafe fn setup_new_task_common(xsa_addr: u64) {

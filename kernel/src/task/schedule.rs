@@ -198,7 +198,9 @@ impl RunQueue {
     ///
     /// Panics if there is no current task.
     pub fn current_task(&self) -> TaskPointer {
-        self.current_task.as_ref().unwrap().clone()
+        self.current_task
+            .as_ref()
+            .map_or(self.idle_task.as_ref().unwrap().clone(), |t| t.clone())
     }
 
     /// Wakes a task from idle if required.
