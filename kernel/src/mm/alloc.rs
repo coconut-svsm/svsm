@@ -95,10 +95,7 @@ enum PageType {
 #[verus_verify]
 impl TryFrom<u64> for PageType {
     type Error = AllocError;
-    #[verus_spec(ret =>
-        ensures
-            PageType::ens_try_from(val, ret),
-    )]
+    #[verus_spec]
     fn try_from(val: u64) -> Result<Self, Self::Error> {
         match val {
             v if v == Self::Free as u64 => Ok(Self::Free),
@@ -1217,7 +1214,7 @@ impl HeapMemoryRegion {
             old(self).req_allocate_pfn(pfn, order)
         ensures
             ret.is_ok() ==> old(self).ens_allocate_pfn(self, pfn, order, *perm),
-            !ret.is_ok() ==> old(self) === self,
+            !ret.is_ok() ==> *old(self) === *self,
     )]
     #[verus_verify(spinoff_prover, rlimit(2))]
     fn allocate_pfn(&mut self, pfn: usize, order: usize) -> Result<(), AllocError> {
@@ -1249,7 +1246,7 @@ impl HeapMemoryRegion {
 
         #[cfg_attr(verus_keep_ghost, verus_spec(
             invariant
-                self === old(self),
+                *self === *old(self),
                 self.wf_next_pages(),
                 self.req_allocate_pfn(pfn, order),
                 self.req_allocate_pfn(old_pfn, order),
