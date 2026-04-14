@@ -11,8 +11,10 @@ use alloc::vec::Vec;
 
 use core::fmt::Debug;
 
+use crate::console::console_write;
 use crate::error::SvsmError;
 use crate::fs::Buffer;
+use crate::fs::log_buffer::log_write;
 use crate::mm::PageRef;
 use packit::PackItError;
 
@@ -300,5 +302,91 @@ impl DirectoryEntry {
     /// A new [`DirectoryEntry`] instance.
     pub fn new(name: FileName, entry: DirEntry) -> Self {
         DirectoryEntry { name, entry }
+    }
+}
+
+// With the value of 224 the Buffer struct will be exactly 256 bytes
+// large, avoiding memory waste due to internal fragmentation.
+const LINE_BUFFER_SIZE: usize = 224;
+
+#[derive(Debug)]
+pub struct StdoutBuffer {
+    prefix: String,
+    buffer: [u8; LINE_BUFFER_SIZE],
+    fill: usize,
+}
+
+impl StdoutBuffer {
+    pub fn new(component: String) -> Self {
+        let mut prefix = String::from("[");
+        prefix.push_str(component.as_str());
+        prefix.push_str("] ");
+        Self {
+            prefix,
+            buffer: [0u8; LINE_BUFFER_SIZE],
+            fill: 0,
+        }
+    }
+
+    fn push(&mut self, b: u8, is_log: bool) -> Result<usize, SvsmError> {
+        let newline: u8 = '\n'.try_into().unwrap();
+
+        if self.fill + 1 == LINE_BUFFER_SIZE {
+            self.buffer[self.fill] = newline;
+            self.fill += 1;
+            self.flush(is_log)?;
+        }
+
+        let index = self.fill;
+        self.buffer[index] = b;
+        self.fill += 1;
+        if b == newline {
+            self.flush(is_log)?;
+        }
+
+        Ok(0)
+    }
+
+    pub fn stdout_write(&mut self, buf: &[u8], is_log: bool) -> Result<usize, SvsmError> {
+        for c in buf.iter() {
+            self.push(*c, is_log)?;
+        }
+
+        Ok(0)
+    }
+
+    pub fn stdout_write_buffer(
+        &mut self,
+        buffer: &dyn Buffer,
+        is_log: bool,
+    ) -> Result<usize, SvsmError> {
+        let len = buffer.size();
+        let mut offset: usize = 0;
+
+        while offset < len {
+            let mut kernel_buffer: [u8; 16] = [0u8; 16];
+            let read = buffer
+                .read_buffer(&mut kernel_buffer, offset)
+                .map_err(|_| SvsmError::LogError)?;
+            self.stdout_write(&kernel_buffer[0..read], is_log)?;
+            offset += read;
+        }
+
+        Ok(offset)
+    }
+
+    fn flush(&mut self, is_log: bool) -> Result<usize, SvsmError> {
+        if is_log {
+            let _ = log_write(self.prefix.as_bytes())?;
+            let _ = log_write(&self.buffer[..self.fill])?;
+
+            console_write(self.prefix.as_bytes());
+            console_write(&self.buffer[..self.fill]);
+        } else {
+            console_write(self.prefix.as_bytes());
+            console_write(&self.buffer[..self.fill]);
+        }
+        self.fill = 0;
+        Ok(0)
     }
 }

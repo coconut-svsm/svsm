@@ -9,12 +9,14 @@ mod buffer;
 mod console;
 mod filesystem;
 mod init;
+mod log_buffer;
 mod obj;
 mod ramfs;
 
 pub use api::*;
 pub use buffer::*;
-pub use console::{ConsoleFile, stdout_open};
+pub use console::ConsoleFile;
 pub use filesystem::*;
 pub use init::populate_ram_fs;
+pub use log_buffer::{initialize_log_buffer, log_read, stdout_open};
 pub use obj::FsObj;
