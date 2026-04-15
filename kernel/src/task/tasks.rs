@@ -328,8 +328,7 @@ impl Task {
             let base_token_addr;
 
             // Map shadow stack into virtual address range
-            let mapping =
-                TaskKernelMapping::new(task_mm.clone(), Arc::new(Mapping::new(shadow_stack)))?;
+            let mapping = TaskKernelMapping::new(task_mm.clone(), Arc::new(shadow_stack))?;
             let stack_base = mapping.virt_addr();
 
             // Initialize shadow stack
@@ -421,7 +420,7 @@ impl Task {
         root: Arc<dyn Directory>,
         name: String,
     ) -> Result<TaskPointer, SvsmError> {
-        let vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER);
+        let vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER)?;
         // SAFETY: the user address range is fully aligned to top-level paging
         // boundaries.
         unsafe {
@@ -524,27 +523,22 @@ impl Task {
         old_cpu_index
     }
 
-    pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        self.mm.kernel_range().handle_page_fault(vaddr, write)
-    }
-
     pub fn fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        if vaddr >= USER_MEM_START && vaddr < USER_MEM_END && self.mm.has_user() {
-            let vmr = self.mm.user_range().unwrap();
-            let mut pgtbl = self.page_table.lock();
-            vmr.populate_addr(&mut pgtbl, vaddr);
-            vmr.handle_page_fault(vaddr, write)?;
-            Ok(())
-        } else {
-            Err(SvsmError::Mem)
-        }
+        let vmr = self
+            .mm
+            .user_range()
+            .filter(|vmr| vmr.virt_range().contains(vaddr))
+            .ok_or(SvsmError::Mem)?;
+        let mut pgtbl = self.page_table.lock();
+        vmr.handle_page_fault(&mut pgtbl, vaddr, write)?;
+        Ok(())
     }
 
-    fn allocate_stack_common() -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>), SvsmError> {
+    fn allocate_stack_common() -> Result<(Mapping, MemoryRegion<VirtAddr>), SvsmError> {
         let stack = VMKernelStack::new()?;
         let bounds = stack.bounds(VirtAddr::from(0u64));
 
-        let mapping = Arc::new(Mapping::new(stack));
+        let mapping = Arc::new(stack);
 
         Ok((mapping, bounds))
     }
@@ -555,7 +549,7 @@ impl Task {
         start_routine: usize,
         xsa_addr: usize,
         start_parameter: usize,
-    ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
+    ) -> Result<(Mapping, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;
 
         let percpu_mapping = cpu.new_mapping(mapping.clone())?;
@@ -618,7 +612,7 @@ impl Task {
         cpu: &PerCpu,
         user_entry: usize,
         xsa_addr: usize,
-    ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
+    ) -> Result<(Mapping, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;
         // Do not run user-mode with IRQs enabled on platforms which are not
         // ready for it.

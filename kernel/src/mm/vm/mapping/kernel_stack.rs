@@ -16,6 +16,9 @@ use crate::utils::{MemoryRegion, page_align_up};
 use super::Mapping;
 use super::rawalloc::RawAllocMapping;
 
+extern crate alloc;
+use alloc::sync::Arc;
+
 /// Mapping to be used as a kernel stack. This maps a stack including guard
 /// pages at the top and bottom.
 #[derive(Default, Debug)]
@@ -134,7 +137,7 @@ impl VMKernelStack {
     ///
     /// Initialized Mapping to stack on success, Err(SvsmError::Mem) on error
     pub fn new_mapping() -> Result<Mapping, SvsmError> {
-        Ok(Mapping::new(Self::new()?))
+        Ok(Arc::new(Self::new()?))
     }
 
     fn alloc_pages(&mut self) -> Result<(), SvsmError> {
