@@ -31,7 +31,8 @@ IGVM_OBJ=""
 SNAPSHOT="on"
 
 STATE_DEVICE=""
-STATE_ENABLE=""
+VSOCK_DEVICE=""
+VIRTIO=0
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -51,8 +52,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --state)
-      STATE_ENABLE="x-svsm-virtio-mmio=on"
-      STATE_DEVICE+="-global virtio-mmio.force-legacy=false "
+      VIRTIO=1
       STATE_DEVICE+="-drive file=$2,format=raw,if=none,id=svsm_storage,cache=none "
       STATE_DEVICE+="-device virtio-blk-device,drive=svsm_storage "
       shift
@@ -87,6 +87,12 @@ while [[ $# -gt 0 ]]; do
       shift
       shift
       ;;
+    --vsock)
+      VIRTIO=1
+      VSOCK_DEVICE="-device vhost-vsock-device,guest-cid=$2 "
+      shift
+      shift
+      ;;
     --)
       shift
       break
@@ -101,6 +107,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+VIRTIO_ENABLE=""
+VIRTIO_CONFIG=""
+if [ "$VIRTIO" -eq 1 ]; then
+  VIRTIO_ENABLE="x-svsm-virtio-mmio=on"
+  VIRTIO_CONFIG="-global virtio-mmio.force-legacy=false "
+fi
 
 # Split the QEMU version number so we can specify the correct parameters
 QEMU_VERSION=$($QEMU --version | grep -Po '(?<=version )[^ ]+')
@@ -170,7 +183,7 @@ fi
 $SUDO_CMD \
   "$QEMU" \
     -cpu $CPU \
-    -machine $MACHINE,$STATE_ENABLE \
+    -machine $MACHINE,$VIRTIO_ENABLE \
     -object $MEMORY \
     $IGVM_OBJ \
     $SNP_GUEST \
@@ -187,5 +200,7 @@ $SUDO_CMD \
     $COM4_SERIAL \
     $QEMU_EXIT_DEVICE \
     $QEMU_TEST_IO_DEVICE \
+    $VIRTIO_CONFIG \
     $STATE_DEVICE \
+    $VSOCK_DEVICE \
     "$@"

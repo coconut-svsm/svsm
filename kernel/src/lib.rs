@@ -49,6 +49,8 @@ pub mod utils;
 #[cfg(feature = "virtio-drivers")]
 pub mod virtio;
 pub mod vmm;
+#[cfg(feature = "vsock")]
+pub mod vsock;
 #[cfg(all(feature = "vtpm", not(test)))]
 pub mod vtpm;
 

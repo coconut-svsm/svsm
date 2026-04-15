@@ -17,10 +17,12 @@ categories = ["hardware-support", "no-std"]
 log = { workspace = true }
 bitflags = { workspace = true }
 zerocopy = { workspace = true, features = ["derive"] }
+embedded-io = { workspace = true, optional = true }
 
 [features]
-default = ["alloc"]
+default = ["alloc", "embedded-io"]
 alloc = ["zerocopy/alloc"]
+embedded-io = ["dep:embedded-io"]
 
 [lints]
 workspace = true
