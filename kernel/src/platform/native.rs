@@ -12,7 +12,7 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::IrqGuard;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
-use crate::cpu::cpuid::CpuidResult;
+use crate::cpu::features::{Feature, cpu_get_feat, cpu_has_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
@@ -22,7 +22,6 @@ use crate::cpu::x86::{
 };
 use crate::error::SvsmError;
 use crate::hyperv;
-use crate::hyperv::IS_HYPERV;
 use crate::hyperv::hyperv_start_cpu;
 use crate::io::{DEFAULT_IO_DRIVER, IOPort};
 use crate::mm::PerCPUMapping;
@@ -51,8 +50,7 @@ pub struct NativePlatform {}
 impl NativePlatform {
     pub fn new(_suppress_svsm_interrupts: bool) -> Self {
         // Execution is not possible unless X2APIC is supported.
-        let features = CpuidResult::get(1, 0);
-        if (features.ecx & 0x200000) == 0 {
+        if !cpu_has_feat(Feature::X2Apic) {
             panic!("X2APIC is not supported");
         }
         Self {}
@@ -99,12 +97,12 @@ impl SvsmPlatform for NativePlatform {
 
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
         // Find physical address size.
-        let res = CpuidResult::get(0x80000008, 0);
+        let phys_addr_sizes = cpu_get_feat(Feature::PhysAddrSizes);
         PageEncryptionMasks {
             private_pte_mask: 0,
             shared_pte_mask: 0,
             addr_mask_width: 64,
-            phys_addr_sizes: res.eax,
+            phys_addr_sizes,
         }
     }
 
@@ -129,10 +127,6 @@ impl SvsmPlatform for NativePlatform {
         // SAFETY: the caller guarantees the safety of the hypercall
         // parameters.
         unsafe { hyperv::execute_hypercall(input_control, hypercall_pages) }
-    }
-
-    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult> {
-        Some(CpuidResult::get(eax, ecx))
     }
 
     unsafe fn write_host_msr(&self, msr: u32, value: u64) {
@@ -220,7 +214,7 @@ impl SvsmPlatform for NativePlatform {
         transition_page_table: &TransitionPageTable,
     ) -> Result<(), SvsmError> {
         let context = cpu.get_initial_context(start_rip);
-        if *IS_HYPERV {
+        if cpu_has_feat(Feature::HyperV) {
             return hyperv_start_cpu(cpu, &context);
         }
 

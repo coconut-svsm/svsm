@@ -6,11 +6,12 @@
 
 extern crate alloc;
 
+use super::features::{Feature, cpu_has_feat};
 use super::gdt::GDT;
 use super::ipi::IpiState;
 use super::isst::Isst;
 use super::msr::write_msr;
-use super::shadow_stack::{ISST_ADDR, init_shadow_stack, is_cet_ss_enabled, is_cet_ss_supported};
+use super::shadow_stack::{ISST_ADDR, init_shadow_stack, is_cet_ss_enabled};
 use super::tss::{IST_DF, X86Tss};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::control_regs::{read_cr0, read_cr4};
@@ -22,8 +23,8 @@ use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, s
 use crate::cpu::x86::{ApicAccess, X86Apic};
 use crate::cpu::{IrqGuard, IrqState, LocalApic, ShadowStackInit};
 use crate::error::{ApicError, SvsmError};
+use crate::hyperv::HypercallPagesGuard;
 use crate::hyperv::{self, HypercallPage};
-use crate::hyperv::{HypercallPagesGuard, IS_HYPERV};
 use crate::locking::{
     LockGuard, RWLock, RWLockIrqSafe, ReadLockGuard, ReadLockGuardIrqSafe, SpinLock,
     WriteLockGuard, WriteLockGuardIrqSafe,
@@ -802,14 +803,14 @@ impl PerCpu {
         // Reserve ranges and initialize allocator for temporary mappings
         self.initialize_vm_ranges()?;
 
-        if is_cet_ss_supported() {
+        if cpu_has_feat(Feature::CetSS) {
             self.allocate_init_shadow_stack()?;
         }
 
         // Allocate per-cpu context switch stack
         self.allocate_context_switch_stack()?;
 
-        if is_cet_ss_supported() {
+        if cpu_has_feat(Feature::CetSS) {
             self.allocate_context_switch_shadow_stack()?;
         }
 
@@ -819,7 +820,7 @@ impl PerCpu {
         // Setup TSS
         self.setup_tss();
 
-        if is_cet_ss_supported() {
+        if cpu_has_feat(Feature::CetSS) {
             // Allocate ISST shadow stacks
             self.allocate_isst_shadow_stacks()?;
 
@@ -834,7 +835,7 @@ impl PerCpu {
 
         // Allocate hypercall pages if running on Hyper-V, unless this is the
         // BSP (where they will be allocated later).
-        if self.shared.cpu_index() != 0 && *IS_HYPERV {
+        if self.shared.cpu_index() != 0 && cpu_has_feat(Feature::HyperV) {
             self.allocate_hypercall_pages()?;
         }
 
