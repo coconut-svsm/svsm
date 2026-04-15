@@ -5,14 +5,14 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, VirtAddr};
-use crate::cpu::control_regs::{CR4Flags, read_cr3, read_cr4, write_cr3, write_cr4};
+use crate::cpu::control_regs::{read_cr3, read_cr4, write_cr3, write_cr4};
 use crate::cpu::ipi::{IpiMessage, IpiTarget, send_multicast_ipi};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
-
 use core::arch::asm;
 use core::sync::atomic::{AtomicBool, Ordering};
+use cpuarch::x86::CR4Flags;
 
 static FLUSH_SMP: AtomicBool = AtomicBool::new(false);
 

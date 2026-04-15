@@ -42,11 +42,12 @@
 use super::insn::{DecodedInsn, Immediate, MAX_INSN_SIZE, Operand};
 use super::opcode::{OpCodeClass, OpCodeDesc, OpCodeFlags};
 use super::{InsnError, Register, SegRegister};
-use crate::cpu::control_regs::{CR0Flags, CR4Flags};
-use crate::cpu::efer::EFERFlags;
 use crate::cpu::registers::{RFlags, SegDescAttrFlags};
 use crate::types::Bytes;
 use bitflags::bitflags;
+use cpuarch::x86::CR0Flags;
+use cpuarch::x86::CR4Flags;
+use cpuarch::x86::EFERFlags;
 use zerocopy::{FromBytes, IntoBytes};
 
 /// Represents the raw bytes of an instruction and

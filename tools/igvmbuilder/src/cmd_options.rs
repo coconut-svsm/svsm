@@ -16,6 +16,10 @@ pub struct CmdOptions {
     #[arg(short, long)]
     pub stage2: Option<String>,
 
+    /// Boot loader binary file
+    #[arg(short, long)]
+    pub bldr: Option<String>,
+
     /// Kernel elf file
     #[arg(short, long)]
     pub kernel: String,

@@ -6,8 +6,7 @@
 
 use crate::BIT_MASK;
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::control_regs::{CR0Flags, CR4Flags, write_cr3};
-use crate::cpu::efer::EFERFlags;
+use crate::cpu::control_regs::write_cr3;
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::idt::common::PageFaultError;
 use crate::cpu::registers::RFlags;
@@ -24,6 +23,9 @@ use bitflags::bitflags;
 use core::cmp;
 use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
+use cpuarch::x86::CR0Flags;
+use cpuarch::x86::CR4Flags;
+use cpuarch::x86::EFERFlags;
 use zerocopy::FromBytes;
 use zerocopy::FromZeros;
 

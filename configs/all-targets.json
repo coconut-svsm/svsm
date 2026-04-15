@@ -38,8 +38,8 @@
             "features": "vtpm,enable-gdb",
             "binary": false
         },
-        "stage2": {
-            "manifest": "kernel/Cargo.toml",
+        "bldr": {
+            "manifest": "boot/bldr/Cargo.toml",
             "binary": true,
             "objcopy": "binary"
         },
