@@ -355,3 +355,110 @@ fn hash(
 
     try_to_vec(&sha.finalize()).or(Err(AttestationError::VecAlloc))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+    use cocoon_tpm_tpm2_interface::{Tpm2bEccParameter, TpmBuffer};
+
+    fn make_ecc_point(x: &[u8], y: &[u8]) -> TpmsEccPoint<'static> {
+        TpmsEccPoint {
+            x: Tpm2bEccParameter {
+                buffer: TpmBuffer::Owned(x.to_vec()),
+            },
+            y: Tpm2bEccParameter {
+                buffer: TpmBuffer::Owned(y.to_vec()),
+            },
+        }
+    }
+
+    mod negotiation_hash {
+        use super::*;
+
+        /// hash() feeds NegotiationParams into SHA-512 in the order they
+        /// appear in `response.params`. The ordering matters because
+        /// the server dictates which fields contribute to the attestation
+        /// hash and in what order. These two tests verify that
+        /// [Challenge, EcPublicKeyBytes] and [EcPublicKeyBytes, Challenge]
+        /// produce different digests, therefore confirming the function
+        /// respects the param ordering from the negotiation response.
+        #[test]
+        fn challenge_then_ec_key() {
+            let challenge = vec![0xdd; 48];
+            let x = vec![0x10; 66];
+            let y = vec![0x20; 66];
+            let response = NegotiationResponse {
+                challenge: challenge.clone(),
+                params: vec![
+                    NegotiationParam::Challenge,
+                    NegotiationParam::EcPublicKeyBytes,
+                ],
+            };
+            let pub_key = make_ecc_point(&x, &y);
+
+            let result = hash(&response, &pub_key).unwrap();
+
+            let mut sha = Sha512::new();
+            sha.update(&challenge);
+            sha.update(&x);
+            sha.update(&y);
+            let expected = sha.finalize();
+            assert_eq!(result, expected.as_slice());
+        }
+
+        #[test]
+        fn ec_key_then_challenge() {
+            let challenge = vec![0xee; 24];
+            let x = vec![0x30; 10];
+            let y = vec![0x40; 10];
+            let response = NegotiationResponse {
+                challenge: challenge.clone(),
+                params: vec![
+                    NegotiationParam::EcPublicKeyBytes,
+                    NegotiationParam::Challenge,
+                ],
+            };
+            let pub_key = make_ecc_point(&x, &y);
+
+            let result = hash(&response, &pub_key).unwrap();
+
+            let mut sha = Sha512::new();
+            sha.update(&x);
+            sha.update(&y);
+            sha.update(&challenge);
+            let expected = sha.finalize();
+            assert_eq!(result, expected.as_slice());
+        }
+
+        /// Changing the param order must change the hash. This is a
+        /// security property: if the server negotiates a different param
+        /// list, the resulting attestation evidence must differ.
+        #[test]
+        fn different_order_produces_different_hash() {
+            let challenge = vec![0x42; 32];
+            let x = vec![0x01; 10];
+            let y = vec![0x02; 10];
+            let pub_key = make_ecc_point(&x, &y);
+
+            let response_chal_first = NegotiationResponse {
+                challenge: challenge.clone(),
+                params: vec![
+                    NegotiationParam::Challenge,
+                    NegotiationParam::EcPublicKeyBytes,
+                ],
+            };
+            let response_key_first = NegotiationResponse {
+                challenge: challenge.clone(),
+                params: vec![
+                    NegotiationParam::EcPublicKeyBytes,
+                    NegotiationParam::Challenge,
+                ],
+            };
+
+            let hash1 = hash(&response_chal_first, &pub_key).unwrap();
+            let hash2 = hash(&response_key_first, &pub_key).unwrap();
+            assert_ne!(hash1, hash2);
+        }
+    }
+}
