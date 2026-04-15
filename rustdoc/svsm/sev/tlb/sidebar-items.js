@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["__invlpgb_max_count","do_invlpgb","do_tlbsync","flush_address","flush_address_sync","flush_tlb","flush_tlb_scope","flush_tlb_sync","flush_tlb_sync_range","invlpgb_max_count"],"struct":["InvlpgbEcx","InvlpgbRax"]};
