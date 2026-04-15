@@ -131,24 +131,17 @@ impl CpuidResult {
 }
 
 pub fn cpuid_table_raw(eax: u32, ecx: u32, xcr0: u64, xss: u64) -> Option<CpuidResult> {
-    let count: usize = CPUID_PAGE.count as usize;
-
-    for i in 0..count {
-        if eax == CPUID_PAGE.func[i].eax_in
-            && ecx == CPUID_PAGE.func[i].ecx_in
-            && xcr0 == CPUID_PAGE.func[i].xcr0_in
-            && xss == CPUID_PAGE.func[i].xss_in
-        {
-            return Some(CpuidResult {
-                eax: CPUID_PAGE.func[i].eax_out,
-                ebx: CPUID_PAGE.func[i].ebx_out,
-                ecx: CPUID_PAGE.func[i].ecx_out,
-                edx: CPUID_PAGE.func[i].edx_out,
-            });
-        }
-    }
-
-    None
+    CPUID_PAGE
+        .func
+        .iter()
+        .take(CPUID_PAGE.count as usize)
+        .find(|f| eax == f.eax_in && ecx == f.ecx_in && xcr0 == f.xcr0_in && xss == f.xss_in)
+        .map(|f| CpuidResult {
+            eax: f.eax_out,
+            ebx: f.ebx_out,
+            ecx: f.ecx_out,
+            edx: f.edx_out,
+        })
 }
 
 pub fn cpuid_table(eax: u32, ecx: u32) -> Option<CpuidResult> {
@@ -161,15 +154,15 @@ pub fn dump_cpuid_table() {
 
         log::trace!("CPUID Table entry count: {count}");
 
-        for i in 0..count {
-            let eax_in = table.func[i].eax_in;
-            let ecx_in = table.func[i].ecx_in;
-            let xcr0_in = table.func[i].xcr0_in;
-            let xss_in = table.func[i].xss_in;
-            let eax_out = table.func[i].eax_out;
-            let ebx_out = table.func[i].ebx_out;
-            let ecx_out = table.func[i].ecx_out;
-            let edx_out = table.func[i].edx_out;
+        for func in table.func.iter().take(count) {
+            let eax_in = func.eax_in;
+            let ecx_in = func.ecx_in;
+            let xcr0_in = func.xcr0_in;
+            let xss_in = func.xss_in;
+            let eax_out = func.eax_out;
+            let ebx_out = func.ebx_out;
+            let ecx_out = func.ecx_out;
+            let edx_out = func.edx_out;
             log::trace!(
                 "EAX_IN: {eax_in:#010x} ECX_IN: {ecx_in:#010x} XCR0_IN: {xcr0_in:#010x} XSS_IN: {xss_in:#010x} EAX_OUT: {eax_out:#010x} EBX_OUT: {ebx_out:#010x} ECX_OUT: {ecx_out:#010x} EDX_OUT: {edx_out:#010x}"
             );
