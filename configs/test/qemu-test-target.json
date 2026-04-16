@@ -13,7 +13,7 @@
     "kernel": {
         "svsm": {
             "type": "make",
-            "output_file": "bin/test-kernel.elf"
+            "output_file": "bin/test-svsm.elf"
         },
         "stage2": {
             "manifest": "kernel/Cargo.toml",
@@ -28,6 +28,12 @@
     },
     "firmware": {},
     "fs": {
-        "modules": {}
+        "modules": {
+            "userinit": {
+                "path": "/init",
+                "type": "make",
+                "output_file": "bin/test-userinit.elf"
+            }
+        }
     }
 }

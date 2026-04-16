@@ -6,9 +6,13 @@ endif
 
 FEATURES_TEST ?= vtpm,virtio-drivers,block
 SVSM_ARGS_TEST += --no-default-features
+MODULE_ARGS_TEST += --no-default-features
 ifneq ($(FEATURES_TEST),)
 SVSM_ARGS_TEST += --features ${FEATURES_TEST}
 XBUILD_ARGS_TEST += --feature ${FEATURES_TEST}
+	ifneq ($(origin FEATURES_TEST),file)
+		MODULE_ARGS_TEST += --features ${FEATURES_TEST}
+	endif
 endif
 
 TEST_ARGS ?=
@@ -152,12 +156,18 @@ bin/svsm-kernel.elf: bin
 	cargo build --package svsm --bin svsm ${CARGO_ARGS} ${SVSM_ARGS} --target=x86_64-unknown-none
 	objcopy -O elf64-x86-64 ${OBJCOPY_ELF_ARGS} ${SVSM_KERNEL_ELF} $@
 
-bin/test-kernel.elf: bin
+TEST_IN_SVSM_MODULES = svsm userinit
+TEST_IN_SVSM_TARGETS = $(TEST_IN_SVSM_MODULES:%=bin/test-%.elf)
+# Root of SVSM
+MAKEFILE_DIR = $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+
+$(TEST_IN_SVSM_TARGETS): bin/test-%.elf: bin
 # RUSTDOC=true removes doctests, which is necessary as they do not work with
 # custom test runners. See https://github.com/coconut-svsm/svsm/issues/705.
-	RUSTDOC=true LINK_TEST=1 cargo +nightly test --package svsm ${CARGO_ARGS} ${SVSM_ARGS_TEST} \
+	RUSTDOC=true LINK_TEST=1 cargo +nightly test --package $* \
+		$(CARGO_ARGS) ${MODULE_ARGS_TEST} \
 		--target=x86_64-unknown-none \
-		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../$@"]'
+		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 $(MAKEFILE_DIR)/$@"]'
 
 ${FS_BIN}: bin
 ifneq ($(FS_FILE), none)
@@ -189,4 +199,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test miri clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
+.PHONY: test miri clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES) $(TEST_IN_SVSM_TARGETS)
