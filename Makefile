@@ -6,9 +6,13 @@ endif
 
 FEATURES_TEST ?= vtpm,virtio-drivers,block
 SVSM_ARGS_TEST += --no-default-features
+MODULE_ARGS_TEST += --no-default-features
 ifneq ($(FEATURES_TEST),)
 SVSM_ARGS_TEST += --features ${FEATURES_TEST}
 XBUILD_ARGS_TEST += --feature ${FEATURES_TEST}
+	ifneq ($(origin FEATURES_TEST),file)
+		MODULE_ARGS_TEST += --features ${FEATURES_TEST}
+	endif
 endif
 
 TEST_ARGS ?=
