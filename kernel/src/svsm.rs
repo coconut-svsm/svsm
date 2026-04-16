@@ -20,7 +20,6 @@ use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::attest::AttestationDriver;
 use svsm::boot_params::BootParamBox;
 use svsm::boot_params::BootParams;
-use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::dump_cpuid_table;
 use svsm::cpu::gdt::GLOBAL_GDT;
@@ -39,10 +38,11 @@ use svsm::debug::symbols::init_symbols;
 use svsm::enable_shadow_stacks;
 #[cfg(feature = "virtio-drivers")]
 use svsm::error::SvsmError;
-use svsm::fs::{initialize_fs, populate_ram_fs};
+use svsm::fs::{initialize_fs, initialize_log_buffer, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
 use svsm::kernel_region::expand_kernel_heap;
 use svsm::kernel_region::new_kernel_region;
+use svsm::log_buffer::install_buffer_logger;
 use svsm::mm::FixedAddressMappingRange;
 use svsm::mm::PageBox;
 use svsm::mm::TransitionPageTable;
@@ -326,7 +326,6 @@ unsafe fn svsm_start(
     determine_cet_support(platform);
     cr4_init(platform);
 
-    install_console_logger("SVSM").expect("Console logger already initialized");
     platform
         .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
         .expect("Early environment setup failed");
@@ -386,6 +385,9 @@ unsafe fn svsm_start(
 
     initialize_fs();
 
+    // Creates /Log/log_file to store log messages
+    let _ = initialize_log_buffer();
+
     // Idle task must be allocated after PerCPU data is mapped
     // SAFETY: the pointer to the launch information is the correct start
     // parameter for the startup routine.
@@ -398,6 +400,10 @@ unsafe fn svsm_start(
         .env_setup_late(debug_serial_port)
         .expect("Late environment setup failed");
 
+    // it's important to make sure that idle task
+    // has been already created and console is
+    // initialized in env_setup_late() before this
+    install_buffer_logger();
     dump_cpuid_table();
 
     let mem_info = memory_info();

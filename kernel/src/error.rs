@@ -143,6 +143,8 @@ pub enum SvsmError {
     TeeAttestation(AttestationError),
     /// Errors related to ImmutAfterInitCell
     ImmutAfterInit(ImmutAfterInitError),
+    /// Errors related to LogBuffer
+    LogError,
 }
 
 impl From<ElfError> for SvsmError {

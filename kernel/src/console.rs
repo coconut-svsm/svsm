@@ -10,7 +10,6 @@ use crate::locking::SpinLock;
 use crate::serial::SerialPort;
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use core::fmt;
-use release::COCONUT_VERSION;
 
 /// A console device to output data
 #[derive(Clone, Copy, Debug)]
@@ -45,7 +44,6 @@ pub fn init_svsm_console(writer: &'static dyn IOPort, port: u16) -> Result<(), S
 
     let console = SpinLock::new(Console::Serial(serial));
     WRITER.init(console).map_err(|_| SvsmError::Console)?;
-    log::info!("COCONUT Secure Virtual Machine Service Module Version {COCONUT_VERSION}");
     Ok(())
 }
 

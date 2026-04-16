@@ -11,6 +11,7 @@ mod class1;
 mod class3;
 mod console;
 mod def;
+mod log_buffer;
 mod obj;
 
 pub use call::SysCallError;
@@ -19,4 +20,5 @@ pub use class1::*;
 pub use class3::*;
 pub use console::*;
 pub use def::*;
+pub use log_buffer::*;
 pub use obj::*;

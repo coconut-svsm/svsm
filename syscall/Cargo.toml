@@ -11,3 +11,6 @@ zerocopy = { workspace = true, features = ["derive"] }
 
 [lints]
 workspace = true
+
+[features]
+enable-console-log = []
