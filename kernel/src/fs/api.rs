@@ -380,8 +380,11 @@ impl StdoutBuffer {
             let _ = log_write(self.prefix.as_bytes())?;
             let _ = log_write(&self.buffer[..self.fill])?;
 
-            console_write(self.prefix.as_bytes());
-            console_write(&self.buffer[..self.fill]);
+            #[cfg(feature = "enable-console-log")]
+            {
+                console_write(self.prefix.as_bytes());
+                console_write(&self.buffer[..self.fill]);
+            }
         } else {
             console_write(self.prefix.as_bytes());
             console_write(&self.buffer[..self.fill]);
