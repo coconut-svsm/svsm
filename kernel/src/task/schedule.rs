@@ -114,11 +114,11 @@ impl RunQueue {
     /// state will be put at the end of the run_list. Terminated tasks will be
     /// stored in the terminated_task field of the RunQueue and be destroyed
     /// after the task-switch.
-    fn handle_task(&mut self, task: TaskPointer) {
-        if task.is_running() && !task.is_idle_task() {
+    fn enqueue_task(&mut self, task: TaskPointer) {
+        // Task termination should not follow this path.
+        debug_assert!(!task.is_terminated());
+        if !task.is_idle_task() {
             self.run_list.push_back(task);
-        } else if task.is_terminated() {
-            self.terminated_task = Some(task);
         }
     }
 
@@ -140,6 +140,12 @@ impl RunQueue {
     /// also call `handle_task()` on the current task in case a task-switch
     /// is requested.
     ///
+    /// # Parameters
+    ///
+    /// - `reschedule`: Indicates whether the current task being rescheduled.
+    ///   If so, it will be reinserted on the run list of the current
+    ///   processor.
+    ///
     /// # Returns
     ///
     /// `None` when no task-switch is needed.
@@ -148,12 +154,18 @@ impl RunQueue {
     /// # Panics
     ///
     /// Panics if there is no current task.
-    pub fn schedule_prepare(&mut self) -> Option<(TaskPointer, TaskPointer)> {
-        // Remove current and put it back into the RunQueue in case it is still
-        // runnable. This is important to make sure the last runnable task
-        // keeps running, even if it calls schedule()
-        let current = self.current_task.take().unwrap();
-        self.handle_task(current.clone());
+    pub fn schedule_prepare(&mut self, reschedule: bool) -> Option<(TaskPointer, TaskPointer)> {
+        let current = if reschedule {
+            // Remove current and put it back into the RunQueue.  This is
+            // important to make sure the last runnable task keeps running,
+            // even if it calls schedule()
+            let current = self.current_task.take().unwrap();
+            debug_assert!(current.is_running());
+            self.enqueue_task(current.clone());
+            current
+        } else {
+            self.current_task.as_ref().unwrap().clone()
+        };
 
         // Get next task and update current_task state
         let next = self.get_next_task();
@@ -163,6 +175,9 @@ impl RunQueue {
         if current != next {
             Some((current, next))
         } else {
+            // A task switch is expected unless the current task is being
+            // rescheduled.
+            debug_assert!(reschedule);
             None
         }
     }
@@ -277,7 +292,7 @@ pub fn start_kernel_task(
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue_mut().handle_task(task.clone());
+    cpu.runqueue_mut().enqueue_task(task.clone());
 
     schedule();
 
@@ -308,7 +323,7 @@ pub fn start_kernel_thread(start_info: KernelThreadStartInfo) -> Result<TaskPoin
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue_mut().handle_task(task.clone());
+    cpu.runqueue_mut().enqueue_task(task.clone());
 
     schedule();
 
@@ -345,7 +360,7 @@ pub fn finish_user_task(task: TaskPointer) {
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    this_cpu().runqueue_mut().handle_task(task);
+    this_cpu().runqueue_mut().enqueue_task(task);
 }
 
 pub fn current_task() -> TaskPointer {
@@ -415,7 +430,7 @@ pub fn set_affinity(cpu_index: usize) {
 
         // Find another task to run.  The scheduler will complete the affinity
         // change once a new task has been selected on this processor.
-        schedule();
+        select_new_task(false, None);
     }
 }
 
@@ -507,9 +522,18 @@ pub fn schedule() {
     // check if preemption is safe
     preemption_checks();
 
-    let guard = IrqGuard::new();
+    select_new_task(true, None);
+}
 
-    let work = this_cpu().schedule_prepare();
+/// Select another task to run.  If rescheduling is requested, the current
+/// task will be placed back on the current processor's run queue so it can
+/// be eligible to run again.
+fn select_new_task(reschedule: bool, irq_guard: Option<IrqGuard>) {
+    // If the caller has not already disabled interrupts, then disable them
+    // now.
+    let guard = irq_guard.unwrap_or_default();
+
+    let work = this_cpu().schedule_prepare(reschedule);
 
     // !!! Runqueue lock must be release here !!!
     if let Some((current, next)) = work {
@@ -597,7 +621,7 @@ pub fn after_task_switch() {
 
 fn enqueue_task(task: TaskPointer) {
     task.set_task_running();
-    this_cpu().runqueue_mut().handle_task(task);
+    this_cpu().runqueue_mut().enqueue_task(task);
 }
 
 pub fn schedule_task(task: TaskPointer) {
