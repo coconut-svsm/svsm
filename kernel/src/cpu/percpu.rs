@@ -268,6 +268,11 @@ pub struct PerCpuShared {
     nmi_pending: AtomicBool,
 
     ipi_state: IpiState,
+
+    /// Task list that has been assigned for scheduling on this CPU.  This is
+    /// visible across CPUs so that tasks can be queued to remote CPUs for
+    /// execution.
+    runqueue: RWLockIrqSafe<RunQueue>,
 }
 
 impl PerCpuShared {
@@ -281,6 +286,7 @@ impl PerCpuShared {
             ipi_pending: AtomicBool::new(false),
             nmi_pending: AtomicBool::new(false),
             ipi_state: Default::default(),
+            runqueue: RWLockIrqSafe::new(RunQueue::new()),
         }
     }
 
@@ -359,6 +365,14 @@ impl PerCpuShared {
     pub unsafe fn ipi_state(&self) -> &IpiState {
         &self.ipi_state
     }
+
+    pub fn runqueue(&self) -> ReadLockGuardIrqSafe<'_, RunQueue> {
+        self.runqueue.lock_read()
+    }
+
+    pub fn runqueue_mut(&self) -> WriteLockGuardIrqSafe<'_, RunQueue> {
+        self.runqueue.lock_write()
+    }
 }
 
 // Expose the offsets of critical per-CPU fields to assembly.
@@ -410,8 +424,6 @@ where
     vrange_4k: RWLock<VirtualRange>,
     /// Address allocator for per-cpu 2m temporary mappings
     vrange_2m: RWLock<VirtualRange>,
-    /// Task list that has been assigned for scheduling on this CPU
-    runqueue: RWLockIrqSafe<RunQueue>,
     /// Local APIC state for APIC emulation if enabled
     guest_apic: RWLock<Option<LocalApic>>,
 
@@ -452,7 +464,6 @@ impl PerCpu {
 
             vrange_4k: RWLock::new(VirtualRange::new()),
             vrange_2m: RWLock::new(VirtualRange::new()),
-            runqueue: RWLockIrqSafe::new(RunQueue::new()),
             guest_apic: RWLock::new(None),
 
             shared,
@@ -1203,11 +1214,11 @@ impl PerCpu {
     }
 
     pub fn runqueue(&self) -> ReadLockGuardIrqSafe<'_, RunQueue> {
-        self.runqueue.lock_read()
+        self.shared.runqueue()
     }
 
     pub fn runqueue_mut(&self) -> WriteLockGuardIrqSafe<'_, RunQueue> {
-        self.runqueue.lock_write()
+        self.shared.runqueue_mut()
     }
 
     pub fn current_task(&self) -> TaskPointer {
