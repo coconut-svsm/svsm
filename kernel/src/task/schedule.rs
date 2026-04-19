@@ -430,7 +430,7 @@ pub fn set_affinity(cpu_index: usize) {
 
         // Find another task to run.  The scheduler will complete the affinity
         // change once a new task has been selected on this processor.
-        select_new_task(false);
+        select_new_task(false, None);
     }
 }
 
@@ -522,14 +522,16 @@ pub fn schedule() {
     // check if preemption is safe
     preemption_checks();
 
-    select_new_task(true);
+    select_new_task(true, None);
 }
 
 /// Select another task to run.  If rescheduling is requested, the current
 /// task will be placed back on the current processor's run queue so it can
 /// be eligible to run again.
-fn select_new_task(reschedule: bool) {
-    let guard = IrqGuard::new();
+fn select_new_task(reschedule: bool, irq_guard: Option<IrqGuard>) {
+    // If the caller has not already disabled interrupts, then disable them
+    // now.
+    let guard = irq_guard.unwrap_or_default();
 
     let work = this_cpu().schedule_prepare(reschedule);
 
