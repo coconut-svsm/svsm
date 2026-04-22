@@ -19,13 +19,15 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 
 use crate::address::{Address, VirtAddr};
+use crate::cpu::ShadowStackInit;
+use crate::cpu::X86ExceptionContext;
 use crate::cpu::features::{Feature, cpu_get_feat, cpu_has_feat};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
+use crate::cpu::irqs_enable;
 use crate::cpu::percpu::{PerCpu, current_task};
 use crate::cpu::shadow_stack::init_shadow_stack;
 use crate::cpu::sse::sse_restore_context;
-use crate::cpu::{ShadowStackInit, X86ExceptionContext, X86GeneralRegs, irqs_enable};
 use crate::error::SvsmError;
 use crate::fs::{Directory, FileHandle, opendir, stdout_open};
 use crate::locking::{RWLock, SpinLock};
@@ -187,12 +189,27 @@ impl TaskIDAllocator {
 
 static TASK_ID_ALLOCATOR: TaskIDAllocator = TaskIDAllocator::new();
 
-#[repr(C, packed)]
+#[repr(C)]
+#[derive(Default, Debug, Clone, Copy)]
+pub struct X86TaskSwitchRegs {
+    // The context switch structure only needs to allocate enough space for
+    // callee-save registers and any registers that are used as argument
+    // registers for task start routines (such as for run_kernel_task).
+    //
+    // Argument registers come first.
+    pub rdi: usize,
+    pub rsi: usize,
+    pub rdx: usize,
+
+    // Callee-save registers come next.
+    pub rbx: usize,
+    pub rbp: usize,
+}
+
+#[repr(C)]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct TaskContext {
-    pub rsp: u64,
-    pub regs: X86GeneralRegs,
-    pub flags: u64,
+    pub regs: X86TaskSwitchRegs,
     pub ret_addr: u64,
 }
 
@@ -648,11 +665,6 @@ impl Task {
             let task_context = stack_ptr
                 .sub(size_of::<TaskContext>())
                 .cast::<TaskContext>();
-            // The processor flags must always be in a default state, unrelated
-            // to the flags of the caller.  In particular, interrupts must be
-            // disabled because the task switch code expects to execute a new
-            // task with interrupts disabled.
-            (*task_context).flags = 2;
             // ret_addr
             (*task_context).regs.rdi = entry;
             // xsave area addr
@@ -724,7 +736,7 @@ impl Task {
             *stack_iret_frame = iret_frame;
 
             let task_context = TaskContext {
-                regs: X86GeneralRegs {
+                regs: X86TaskSwitchRegs {
                     rdi: xsa_addr, // XSAVE area addr
                     ..Default::default()
                 },
@@ -732,7 +744,6 @@ impl Task {
                     .bits()
                     .try_into()
                     .unwrap(),
-                ..Default::default()
             };
 
             let stack_task_context = stack_ptr

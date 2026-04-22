@@ -663,24 +663,13 @@ global_asm!(
         // rdx: per-CPU global-scope stack pointer
         // rcx: paging root of the new task
         //
-        // Save the current context. The layout must match the TaskContext structure.
-        pushfq
-        pushq   %rax
-        pushq   %rbx
-        pushq   %rcx
-        pushq   %rdx
-        pushq   %rsi
-        pushq   %rdi
+        // Save the current context. The layout must match the TaskContext
+        // structure.  Only callee-save registers need to be pushed here; the
+        // remainder of the TaskContext frame can simply be allocated on the
+        // stack.
         pushq   %rbp
-        pushq   %r8
-        pushq   %r9
-        pushq   %r10
-        pushq   %r11
-        pushq   %r12
-        pushq   %r13
-        pushq   %r14
-        pushq   %r15
-        pushq   %rsp
+        pushq   %rbx
+        subq    $24, %rsp
 
         // If `prev` is not null...
         testq   %rdi, %rdi
@@ -740,26 +729,12 @@ global_asm!(
         // Switch to the new task stack
         movq    {TASK_RSP_OFFSET}(%rsi), %rsp
 
-        // We've already restored rsp
-        addq    $8, %rsp
-
-        // Restore the task context
-        popq    %r15
-        popq    %r14
-        popq    %r13
-        popq    %r12
-        popq    %r11
-        popq    %r10
-        popq    %r9
-        popq    %r8
-        popq    %rbp
+        // Restore the task state, following the layout of TaskContext.
         popq    %rdi
         popq    %rsi
         popq    %rdx
-        popq    %rcx
         popq    %rbx
-        popq    %rax
-        popfq
+        popq    %rbp
 
         ret
     "#,

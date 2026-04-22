@@ -462,27 +462,29 @@ pub mod svsm_gdbstub {
 
     impl From<&TaskContext> for X86_64CoreRegs {
         fn from(value: &TaskContext) -> Self {
+            // Construct registers based on the entry to the context switch
+            // function.
+            let rsp = core::ptr::from_ref(value) as usize + size_of::<TaskContext>();
             let mut regs = X86_64CoreRegs::default();
             regs.rip = value.ret_addr;
             regs.regs = [
-                value.regs.rax as u64,
+                0, // rax
                 value.regs.rbx as u64,
-                value.regs.rcx as u64,
-                value.regs.rdx as u64,
-                value.regs.rsi as u64,
-                value.regs.rdi as u64,
+                0, // rcx
+                0, // rdx
+                0, // rsi
+                0, // rdi
                 value.regs.rbp as u64,
-                value.rsp,
-                value.regs.r8 as u64,
-                value.regs.r9 as u64,
-                value.regs.r10 as u64,
-                value.regs.r11 as u64,
-                value.regs.r12 as u64,
-                value.regs.r13 as u64,
-                value.regs.r14 as u64,
-                value.regs.r15 as u64,
+                rsp as u64,
+                0, // r8
+                0, // r9
+                0, // r10
+                0, // r11
+                0, // r12
+                0, // r13
+                0, // r14
+                0, // r15
             ];
-            regs.eflags = value.flags as u32;
             regs
         }
     }
