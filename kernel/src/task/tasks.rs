@@ -26,6 +26,7 @@ use crate::cpu::features::{Feature, cpu_has_feat};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::irqs_enable;
+use crate::cpu::irqs_enabled;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::percpu::current_task;
 use crate::cpu::percpu::this_cpu;
@@ -50,6 +51,7 @@ use crate::utils::{MemoryRegion, is_aligned};
 use intrusive_collections::{LinkedListAtomicLink, intrusive_adapter};
 
 use super::WaitQueue;
+use super::schedule::complete_task_switch;
 use super::schedule::terminate;
 use super::task_mm::{TaskKernelMapping, TaskMM};
 
@@ -203,9 +205,9 @@ pub struct X86TaskSwitchRegs {
     // registers for task start routines (such as for run_kernel_task).
     //
     // Argument registers come first.
-    pub rdi: usize,
     pub rsi: usize,
     pub rdx: usize,
+    pub rcx: usize,
 
     // Callee-save registers come next.
     pub rbx: usize,
@@ -356,6 +358,11 @@ impl Drop for Task {
         // A task must be inactive to be terminated.  Otherwise, its stack
         // might be freed while it is actively executing.
         assert!(!self.sched_state.active.load(Ordering::Relaxed));
+        // Check that the task state is correct and that interrupts are
+        // enabled.  These don't affect memory safety so they are debug-only,
+        // but they are good sanity checks on the scheduler.
+        debug_assert!(self.is_terminated());
+        debug_assert!(irqs_enabled());
     }
 }
 
@@ -672,11 +679,11 @@ impl Task {
                 .sub(size_of::<TaskContext>())
                 .cast::<TaskContext>();
             // ret_addr
-            (*task_context).regs.rdi = entry;
+            (*task_context).regs.rsi = entry;
             // xsave area addr
-            (*task_context).regs.rsi = xsa_addr;
+            (*task_context).regs.rdx = xsa_addr;
             // start argument parameter.
-            (*task_context).regs.rdx = start_parameter;
+            (*task_context).regs.rcx = start_parameter;
             (*task_context).ret_addr = start_routine as u64;
             // Task termination handler for when entry point returns
             stack_ptr.cast::<u64>().write(task_exit as *const () as u64);
@@ -743,7 +750,7 @@ impl Task {
 
             let task_context = TaskContext {
                 regs: X86TaskSwitchRegs {
-                    rdi: xsa_addr, // XSAVE area addr
+                    rsi: xsa_addr, // XSAVE area addr
                     ..Default::default()
                 },
                 ret_addr: VirtAddr::from(return_new_task as *const ())
@@ -994,17 +1001,17 @@ fn task_attach_console() {
 /// # Safety
 /// The caller is required to verify the correctness of the save area address.
 #[unsafe(no_mangle)]
-unsafe fn setup_user_task(xsa_addr: u64) {
-    // SAFETY: caller needs to make sure xsa_addr is valid and points to a
-    // memory region of sufficient size.
+unsafe fn setup_user_task(prev: usize, xsa_addr: u64) {
+    // SAFETY: caller needs to make sure that the previous task pointer and
+    // xsa_addr are valid.
     unsafe {
         // Needs to be the first function called here.
-        setup_new_task_common(xsa_addr);
+        setup_new_task_common(xsa_addr, complete_task_switch(prev));
     }
     task_attach_console();
 }
 
-unsafe fn setup_new_task_common(xsa_addr: u64) {
+unsafe fn setup_new_task_common(xsa_addr: u64, prev_task: Option<TaskPointer>) {
     // Re-enable IRQs here, as they are still disabled from the
     // schedule()/sched_init() functions. After the context switch the IrqGuard
     // from the previous task is not dropped, which causes IRQs to stay
@@ -1012,8 +1019,11 @@ unsafe fn setup_new_task_common(xsa_addr: u64) {
     // This only needs to be done for the first time a task runs. Any
     // subsequent task switches will go through schedule() and there the guard
     // is dropped, re-enabling IRQs.
-
     irqs_enable();
+
+    // Drop the previous task reference now that interrupts are reenabled.
+    // This ensures that the task destructor will run with interrupts enabled.
+    drop(prev_task);
 
     // SAFETY: The caller takes responsibility for the correctness of the save
     // area address.
@@ -1027,14 +1037,18 @@ unsafe fn setup_new_task_common(xsa_addr: u64) {
 /// be invoked according to the start parameter data type expected by the entry
 /// point.
 unsafe fn run_kernel_task<T: KernelThreadStartParameter>(
+    prev: usize,
     entry: fn(T),
     xsa_addr: u64,
     start_parameter: usize,
 ) {
+    // SAFETY: the scheduler passes the correct pointer to the previous task.
+    let prev_task = unsafe { complete_task_switch(prev) };
+
     // SAFETY: the save area address is provided by the context switch assembly
     // code.
     unsafe {
-        setup_new_task_common(xsa_addr);
+        setup_new_task_common(xsa_addr, prev_task);
     }
 
     // SAFETY: the `usize` start parameter was generated from an earlier call
