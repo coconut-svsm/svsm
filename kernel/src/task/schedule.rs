@@ -49,7 +49,7 @@ use crate::mm::SVSM_CONTEXT_SWITCH_SHADOW_STACK;
 use crate::platform::SVSM_PLATFORM;
 use alloc::string::String;
 use alloc::sync::Arc;
-use core::arch::{asm, global_asm};
+use core::arch::global_asm;
 use core::mem::offset_of;
 use core::ptr::null_mut;
 use intrusive_collections::LinkedList;
@@ -478,7 +478,7 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
     // the page table and stack information in those tasks are correct and
     // can be used to switch to the correct page table and execution stack.
     unsafe {
-        let cr3 = (*next).page_table.lock().cr3_value().bits() as u64;
+        let cr3 = (*next).page_table.lock().cr3_value().bits();
 
         // The location of a cpu-local stack that's mapped into every set of
         // page tables for use during context switches.
@@ -488,18 +488,10 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
         // in the new page tables. To protect against this, we switch to another
         // stack that's mapped into both the old and the new set of page tables.
         // That way we always have a valid stack to handle exceptions on.
-        let tos_cs: u64 = this_cpu().get_top_of_context_switch_stack().unwrap().into();
+        let tos_cs = this_cpu().get_top_of_context_switch_stack().unwrap();
 
         // Switch to new task
-        asm!(
-            r#"
-            call switch_context
-            "#,
-            in("r12") prev as u64,
-            in("r13") next as u64,
-            in("r14") tos_cs,
-            in("r15") cr3,
-            options(att_syntax));
+        switch_context(prev as usize, next as usize, tos_cs.into(), cr3);
     }
 }
 
@@ -656,16 +648,20 @@ pub fn schedule_task(task: TaskPointer) {
     schedule();
 }
 
+unsafe extern "C" {
+    fn switch_context(prev: usize, next: usize, tos_cs: usize, cr3: usize);
+}
+
 global_asm!(
     r#"
         .section .text
 
     switch_context:
         // Arguments:
-        // R12: previous task pointer
-        // R13: new task pointer
-        // R14: per-CPU global-scope stack pointer
-        // R15: paging root of the new task
+        // rdi: previous task pointer
+        // rsi: new task pointer
+        // rdx: per-CPU global-scope stack pointer
+        // rcx: paging root of the new task
         //
         // Save the current context. The layout must match the TaskContext structure.
         pushfq
@@ -687,22 +683,22 @@ global_asm!(
         pushq   %rsp
 
         // If `prev` is not null...
-        testq   %r12, %r12
+        testq   %rdi, %rdi
         // The initial stack is always mapped in the new page table.
         jz      1f
 
         // Save the current stack pointer
-        movq    %rsp, {TASK_RSP_OFFSET}(%r12)
+        movq    %rsp, {TASK_RSP_OFFSET}(%rdi)
 
         // Switch to a stack pointer that's valid in both the old and new page tables.
-        mov     %r14, %rsp
+        mov     %rdx, %rsp
 
         cmpb    $0, {IS_CET_ENABLED}(%rip)
         je      4f
         // Save the current shadow stack pointer
         rdssp   %rax
         sub     $8, %rax
-        movq    %rax, {TASK_SSP_OFFSET}(%r12)
+        movq    %rax, {TASK_SSP_OFFSET}(%rdi)
         // Switch to a shadow stack that's valid in both page tables and move
         // the "shadow stack restore token" to the old shadow stack.
         mov     ${CONTEXT_SWITCH_RESTORE_TOKEN}, %rax
@@ -714,13 +710,13 @@ global_asm!(
         // switching off of its stack because as soon as it is marked as
         // inactive, another processor is free to immediately switch to that
         // thread's stack.
-        andb    $0, {TASK_STATE_ACTIVE}(%r12)
+        andb    $0, {TASK_STATE_ACTIVE}(%rdi)
 
     1:
         // Switch to the new task state
 
         // Switch to the new task page tables
-        mov     %r15, %cr3
+        mov     %rcx, %cr3
 
         // Wait until the new task is inactive.  It may still be running
         // on another processor so its stack cannot be consumed until its
@@ -728,7 +724,7 @@ global_asm!(
     3:
         pause
         movb    $1, %al
-        lock xchgb {TASK_STATE_ACTIVE}(%r13), %al
+        lock xchgb {TASK_STATE_ACTIVE}(%rsi), %al
         testb   %al, %al
         jnz     3b
 
@@ -736,13 +732,13 @@ global_asm!(
         je      2f
         // Switch to the new task shadow stack and move the "shadow stack
         // restore token" back.
-        mov     {TASK_SSP_OFFSET}(%r13), %rdx
+        mov     {TASK_SSP_OFFSET}(%rsi), %rdx
         rstorssp (%rdx)
         saveprevssp
     2:
 
         // Switch to the new task stack
-        movq    {TASK_RSP_OFFSET}(%r13), %rsp
+        movq    {TASK_RSP_OFFSET}(%rsi), %rsp
 
         // We've already restored rsp
         addq    $8, %rsp
