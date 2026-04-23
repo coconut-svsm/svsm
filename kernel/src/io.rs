@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::error::SvsmError;
+use crate::error::{IoError, SvsmError};
 use core::arch::asm;
 use core::fmt::Debug;
 
@@ -67,14 +67,38 @@ pub static DEFAULT_IO_DRIVER: DefaultIOPort = DefaultIOPort {};
 
 /// Generic Read trait to be implemented over any transport channel when reading multiple bytes.
 pub trait Read {
-    type Err: Into<SvsmError>;
+    type Err: Into<SvsmError> + From<SvsmError>;
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Err>;
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), Self::Err> {
+        let mut total = 0;
+        while total < buf.len() {
+            let n = self.read(&mut buf[total..])?;
+            if n == 0 {
+                return Err(SvsmError::Io(IoError::UnexpectedEof).into());
+            }
+            total += n;
+        }
+        Ok(())
+    }
 }
 
 /// Generic Write trait to be implemented over any transport channel when writing multiple bytes.
 pub trait Write {
-    type Err: Into<SvsmError>;
+    type Err: Into<SvsmError> + From<SvsmError>;
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err>;
+
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Err> {
+        let mut total = 0;
+        while total < buf.len() {
+            let n = self.write(&buf[total..])?;
+            if n == 0 {
+                return Err(SvsmError::Io(IoError::UnexpectedEof).into());
+            }
+            total += n;
+        }
+        Ok(())
+    }
 }
