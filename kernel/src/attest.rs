@@ -214,7 +214,7 @@ impl AttestationDriver<'_> {
         let len = {
             let mut bytes = [0u8; 8];
             self.transport
-                .read(&mut bytes)
+                .read_exact(&mut bytes)
                 .or(Err(AttestationError::ProxyRead))?;
 
             usize::from_ne_bytes(bytes)
@@ -223,7 +223,7 @@ impl AttestationDriver<'_> {
         let mut buf: Vec<u8> = vec_sized(len).or(Err(AttestationError::VecAlloc))?;
 
         self.transport
-            .read(&mut buf)
+            .read_exact(&mut buf)
             .or(Err(AttestationError::ProxyRead))?;
 
         Ok(buf)
@@ -236,10 +236,10 @@ impl AttestationDriver<'_> {
         // The receiving party is unaware of how many bytes to read from the port. Write an 8-byte
         // header indicating the length of the buffer before writing the buffer itself.
         self.transport
-            .write(&bytes.len().to_ne_bytes())
+            .write_all(&bytes.len().to_ne_bytes())
             .or(Err(AttestationError::ProxyWrite))?;
         self.transport
-            .write(&bytes)
+            .write_all(&bytes)
             .or(Err(AttestationError::ProxyWrite))?;
 
         Ok(())
