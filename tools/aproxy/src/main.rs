@@ -10,7 +10,11 @@ mod backend;
 
 use anyhow::Context;
 use clap::{Parser, ValueEnum};
-use std::{fs, os::unix::net::UnixListener};
+use std::{
+    fs,
+    io::{Read, Write},
+    os::unix::net::UnixListener,
+};
 
 #[derive(Parser, Debug)]
 #[clap(version, about, long_about = None)]
@@ -40,6 +44,19 @@ enum ArgsBackend {
     Kbs,
 }
 
+fn accept_loop<S: Read + Write>(
+    incoming: impl Iterator<Item = std::io::Result<S>>,
+    url: &str,
+    backend: ArgsBackend,
+) -> anyhow::Result<()> {
+    for stream in incoming {
+        let mut stream = stream.context("Failed to accept connection")?;
+        let mut http_client = backend::HttpClient::new(url.to_string(), backend.into())?;
+        attest::attest(&mut stream, &mut http_client)?;
+    }
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
@@ -48,19 +65,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     let listener = UnixListener::bind(args.unix).context("unable to bind to UNIX socket")?;
-
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                let mut http_client =
-                    backend::HttpClient::new(args.url.clone(), args.backend.into())?;
-                attest::attest(&mut stream, &mut http_client)?;
-            }
-            Err(_) => {
-                panic!("error");
-            }
-        }
-    }
+    accept_loop(listener.incoming(), &args.url, args.backend)?;
 
     Ok(())
 }
