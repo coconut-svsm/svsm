@@ -12,7 +12,6 @@
 #[cfg(feature = "enable-gdb")]
 pub mod svsm_gdbstub {
     use crate::address::{Address, VirtAddr};
-    use crate::cpu::X86GeneralRegs;
     use crate::cpu::control_regs::read_cr3;
     use crate::cpu::idt::common::{BP_VECTOR, DB_VECTOR, VC_VECTOR, X86ExceptionContext};
     use crate::cpu::percpu::this_cpu;
@@ -99,28 +98,6 @@ pub mod svsm_gdbstub {
     pub fn handle_debug_exception(ctx: &mut X86ExceptionContext, exception: usize) {
         let exception_type = ExceptionType::from(exception);
         let id = this_cpu().runqueue().current_task_id();
-        let mut task_ctx = TaskContext {
-            regs: X86GeneralRegs {
-                r15: ctx.regs.r15,
-                r14: ctx.regs.r14,
-                r13: ctx.regs.r13,
-                r12: ctx.regs.r12,
-                r11: ctx.regs.r11,
-                r10: ctx.regs.r10,
-                r9: ctx.regs.r9,
-                r8: ctx.regs.r8,
-                rbp: ctx.regs.rbp,
-                rdi: ctx.regs.rdi,
-                rsi: ctx.regs.rsi,
-                rdx: ctx.regs.rdx,
-                rcx: ctx.regs.rcx,
-                rbx: ctx.regs.rbx,
-                rax: ctx.regs.rax,
-            },
-            rsp: ctx.frame.rsp as u64,
-            flags: ctx.frame.flags as u64,
-            ret_addr: ctx.frame.rip as u64,
-        };
 
         // Locking the GDB state for the duration of the stop will cause any other
         // APs that hit a breakpoint to busy-wait until the current CPU releases
@@ -150,30 +127,11 @@ pub mod svsm_gdbstub {
                         movq    %rax, %rsp
                     "#,
                     in("rsi") exception_type as u64,
-                    in("rdi") &raw mut task_ctx,
+                    in("rdi") ctx,
                     in("rdx") &raw mut gdb_state,
                     in("rax") GDB_STACK_TOP.expose_provenance(),
                     options(att_syntax));
             }
-
-            ctx.frame.rip = task_ctx.ret_addr as usize;
-            ctx.frame.flags = task_ctx.flags as usize;
-            ctx.frame.rsp = task_ctx.rsp as usize;
-            ctx.regs.rax = task_ctx.regs.rax;
-            ctx.regs.rbx = task_ctx.regs.rbx;
-            ctx.regs.rcx = task_ctx.regs.rcx;
-            ctx.regs.rdx = task_ctx.regs.rdx;
-            ctx.regs.rsi = task_ctx.regs.rsi;
-            ctx.regs.rdi = task_ctx.regs.rdi;
-            ctx.regs.rbp = task_ctx.regs.rbp;
-            ctx.regs.r8 = task_ctx.regs.r8;
-            ctx.regs.r9 = task_ctx.regs.r9;
-            ctx.regs.r10 = task_ctx.regs.r10;
-            ctx.regs.r11 = task_ctx.regs.r11;
-            ctx.regs.r12 = task_ctx.regs.r12;
-            ctx.regs.r13 = task_ctx.regs.r13;
-            ctx.regs.r14 = task_ctx.regs.r14;
-            ctx.regs.r15 = task_ctx.regs.r15;
 
             break;
         }
@@ -272,7 +230,7 @@ pub mod svsm_gdbstub {
 
     #[unsafe(no_mangle)]
     fn handle_stop(
-        ctx: &mut TaskContext,
+        ctx: &mut X86ExceptionContext,
         exception_type: ExceptionType,
         gdb_state: &mut LockGuard<'_, Option<SvsmGdbStub<'_>>>,
     ) {
@@ -281,14 +239,14 @@ pub mod svsm_gdbstub {
         target.set_regs(ctx);
 
         let hardcoded_bp = (exception_type == ExceptionType::SwBreakpoint)
-            && !target.is_breakpoint(ctx.ret_addr as usize - 1);
+            && !target.is_breakpoint(ctx.frame.rip - 1);
 
         // If the current address is on a breakpoint then we need to
         // move the IP back by one byte
         if (exception_type == ExceptionType::SwBreakpoint)
-            && target.is_breakpoint(ctx.ret_addr as usize - 1)
+            && target.is_breakpoint(ctx.frame.rip - 1)
         {
-            ctx.ret_addr -= 1;
+            ctx.frame.rip -= 1;
         }
 
         let tid = Tid::new(this_cpu().runqueue().current_task_id() as usize)
@@ -339,9 +297,9 @@ pub mod svsm_gdbstub {
             };
         }
         if target.is_single_step == tid.get() as u32 {
-            ctx.flags |= 0x100;
+            ctx.frame.flags |= 0x100;
         } else {
-            ctx.flags &= !0x100;
+            ctx.frame.flags &= !0x100;
         }
         **gdb_state = Some(SvsmGdbStub {
             gdb: new_gdb,
@@ -385,7 +343,7 @@ pub mod svsm_gdbstub {
     }
 
     struct GdbStubTarget {
-        ctx: *mut TaskContext,
+        ctx: *mut X86ExceptionContext,
         breakpoints: [GdbStubBreakpoint; MAX_BREAKPOINTS],
         is_single_step: u32,
     }
@@ -409,7 +367,7 @@ pub mod svsm_gdbstub {
             }
         }
 
-        fn ctx(&self) -> Option<&TaskContext> {
+        fn ctx(&self) -> Option<&X86ExceptionContext> {
             // SAFETY: this is a pointer to the exception context on the
             // stack, so it is not aliased from a different task. We trust
             // the debug exception handler to pass a well-aligned pointer
@@ -417,7 +375,7 @@ pub mod svsm_gdbstub {
             unsafe { self.ctx.as_ref() }
         }
 
-        fn ctx_mut(&mut self) -> Option<&mut TaskContext> {
+        fn ctx_mut(&mut self) -> Option<&mut X86ExceptionContext> {
             // SAFETY: this is a pointer to the exception context on the
             // stack, so it is not aliased from a different task. We trust
             // the debug exception handler to pass a well-aligned pointer
@@ -425,7 +383,7 @@ pub mod svsm_gdbstub {
             unsafe { self.ctx.as_mut() }
         }
 
-        fn set_regs(&mut self, ctx: &mut TaskContext) {
+        fn set_regs(&mut self, ctx: &mut X86ExceptionContext) {
             self.ctx = core::ptr::from_mut(ctx)
         }
 
@@ -472,6 +430,33 @@ pub mod svsm_gdbstub {
             &mut self,
         ) -> Option<gdbstub::target::ext::breakpoints::BreakpointsOps<'_, Self>> {
             Some(self)
+        }
+    }
+
+    impl From<&X86ExceptionContext> for X86_64CoreRegs {
+        fn from(value: &X86ExceptionContext) -> Self {
+            let mut regs = X86_64CoreRegs::default();
+            regs.rip = value.frame.rip as u64;
+            regs.regs = [
+                value.regs.rax as u64,
+                value.regs.rbx as u64,
+                value.regs.rcx as u64,
+                value.regs.rdx as u64,
+                value.regs.rsi as u64,
+                value.regs.rdi as u64,
+                value.regs.rbp as u64,
+                value.frame.rsp as u64,
+                value.regs.r8 as u64,
+                value.regs.r9 as u64,
+                value.regs.r10 as u64,
+                value.regs.r11 as u64,
+                value.regs.r12 as u64,
+                value.regs.r13 as u64,
+                value.regs.r14 as u64,
+                value.regs.r15 as u64,
+            ];
+            regs.eflags = value.frame.flags as u32;
+            regs
         }
     }
 
@@ -544,7 +529,7 @@ pub mod svsm_gdbstub {
 
             let context = self.ctx_mut().unwrap();
 
-            context.ret_addr = regs.rip;
+            context.frame.rip = regs.rip as usize;
             context.regs.rax = regs.regs[0] as usize;
             context.regs.rbx = regs.regs[1] as usize;
             context.regs.rcx = regs.regs[2] as usize;
@@ -552,7 +537,7 @@ pub mod svsm_gdbstub {
             context.regs.rsi = regs.regs[4] as usize;
             context.regs.rdi = regs.regs[5] as usize;
             context.regs.rbp = regs.regs[6] as usize;
-            context.rsp = regs.regs[7];
+            context.frame.rsp = regs.regs[7] as usize;
             context.regs.r8 = regs.regs[8] as usize;
             context.regs.r9 = regs.regs[9] as usize;
             context.regs.r10 = regs.regs[10] as usize;
@@ -561,7 +546,7 @@ pub mod svsm_gdbstub {
             context.regs.r13 = regs.regs[13] as usize;
             context.regs.r14 = regs.regs[14] as usize;
             context.regs.r15 = regs.regs[15] as usize;
-            context.flags = regs.eflags as u64;
+            context.frame.flags = regs.eflags as usize;
             Ok(())
         }
 
