@@ -119,15 +119,17 @@ impl RunQueue {
         }
     }
 
-    /// Initialized the scheduler for this (RunQueue)[RunQueue]. This method is
+    /// Initializes the scheduler for this (RunQueue)[RunQueue]. This method is
     /// called on the very first scheduling event when there is no current task
-    /// yet.
+    /// yet.  For consistency, it will always invoke the idle task using an
+    /// abbreviated task switch flow, and if there is another task that can
+    /// run, a full task switch will then occur.
     ///
     /// # Returns
     ///
     /// [TaskPointer] to the first task to run
     pub fn schedule_init(&mut self) -> TaskPointer {
-        let task = self.get_next_task();
+        let task = self.idle_task.as_ref().unwrap().clone();
         self.current_task = Some(task.clone());
         task
     }
@@ -202,6 +204,15 @@ impl RunQueue {
         TASKLIST.lock().list().push_front(task.clone());
 
         self.idle_task.replace(task);
+    }
+
+    /// Gets a pointer to the idle task
+    ///
+    /// # Panics
+    ///
+    /// Panics if the idle task has not yet been set.
+    pub fn get_idle_task(&self) -> TaskPointer {
+        self.idle_task.as_ref().unwrap().clone()
     }
 
     /// Gets a pointer to the current task
