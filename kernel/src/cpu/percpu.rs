@@ -1179,11 +1179,7 @@ impl PerCpu {
     }
 
     pub fn schedule_prepare(&self, reschedule: bool) -> Option<(TaskPointer, TaskPointer)> {
-        let ret = self.runqueue_mut().schedule_prepare(reschedule);
-        if let Some((_, ref next)) = ret {
-            self.set_current_stack(next.stack_bounds());
-        };
-        ret
+        self.runqueue_mut().schedule_prepare(reschedule)
     }
 
     pub fn runqueue(&self) -> ReadLockGuardIrqSafe<'_, RunQueue> {

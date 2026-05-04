@@ -21,7 +21,9 @@ use core::sync::atomic::Ordering;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
-use crate::cpu::percpu::{PerCpu, current_task};
+use crate::cpu::percpu::PerCpu;
+use crate::cpu::percpu::current_task;
+use crate::cpu::percpu::this_cpu;
 use crate::cpu::shadow_stack::{init_shadow_stack, is_cet_ss_supported};
 use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
 use crate::cpu::{ShadowStackInit, X86ExceptionContext, X86GeneralRegs, irqs_enable};
@@ -227,9 +229,9 @@ impl TaskSchedState {
         self
     }
 
-    fn set_active(&self) {
-        if self.active.swap(true, Ordering::Release) {
-            panic!("attempted switch to an active task");
+    fn make_active(&self) {
+        while self.active.swap(true, Ordering::AcqRel) {
+            core::hint::spin_loop();
         }
     }
 
@@ -541,8 +543,8 @@ impl Task {
         self.rootdir.clone()
     }
 
-    pub fn set_task_active(&self) {
-        self.sched_state.set_active();
+    pub fn make_active(&self) {
+        self.sched_state.make_active();
     }
 
     pub fn set_task_running(&self) {
@@ -577,8 +579,14 @@ impl Task {
         self.sched_state.idle_task.load(Ordering::Relaxed)
     }
 
-    pub fn update_cpu(&self, new_cpu_index: usize) -> usize {
-        self.sched_state.update_cpu(new_cpu_index)
+    pub fn update_cpu(&self) {
+        // Check to see whether this task has moved across CPUs.
+        let new_cpu_index = this_cpu().get_cpu_index();
+        if self.sched_state.update_cpu(new_cpu_index) != new_cpu_index {
+            // Task has changed CPU, update per-cpu mappings.
+            let mut pt = self.page_table.lock();
+            this_cpu().populate_page_table(&mut pt);
+        }
     }
 
     pub fn fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {

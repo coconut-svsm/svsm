@@ -478,6 +478,13 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
     // the page table and stack information in those tasks are correct and
     // can be used to switch to the correct page table and execution stack.
     unsafe {
+        // Before manipulating the new task, wait until it has stopped running,
+        // and mark it as active again.  It is not safe to change per-CPU
+        // mappings or stack pointers until the task is exclusively claimed
+        // by the current CPU.
+        (*next).make_active();
+        (*next).update_cpu();
+
         let cr3 = (*next).page_table.lock().cr3_value().bits() as u64;
 
         // The location of a cpu-local stack that's mapped into every set of
@@ -564,14 +571,9 @@ fn select_new_task(reschedule: bool, irq_guard: Option<IrqGuard>) {
 
     // !!! Runqueue lock must be release here !!!
     if let Some((current, next)) = work {
-        // Update per-cpu mappings if needed
-        let cpu_index = this_cpu().get_cpu_index();
-
-        if next.update_cpu(cpu_index) != cpu_index {
-            // Task has changed CPU, update per-cpu mappings
-            let mut pt = next.page_table.lock();
-            this_cpu().populate_page_table(&mut pt);
-        }
+        // Ensure that the current stack bounds of the current CPU are adjusted
+        // to reflect the task being scheduled.
+        this_cpu().set_current_stack(next.stack_bounds());
 
         // SAFETY: ths stack pointer is known to be correct.
         unsafe {
@@ -721,17 +723,6 @@ global_asm!(
 
         // Switch to the new task page tables
         mov     %r15, %cr3
-
-        // Wait until the new task is inactive.  It may still be running
-        // on another processor so its stack cannot be consumed until its
-        // stack is no longer active on any processor.
-    3:
-        pause
-        movb    $1, %al
-        lock xchgb {TASK_STATE_ACTIVE}(%r13), %al
-        testb   %al, %al
-        jnz     3b
-
         cmpb    $0, {IS_CET_ENABLED}(%rip)
         je      2f
         // Switch to the new task shadow stack and move the "shadow stack
