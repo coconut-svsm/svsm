@@ -127,6 +127,8 @@ done
 test_io $TEST_DIR/pipe.in $TEST_DIR/pipe.out $VSOCK_PORT &
 TEST_IO_PID=$!
 
+svsm_exit_code=0
+
 $SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
     --state "$TEST_DIR/svsm_state.raw" \
     --vsock "$VSOCK_CID" \
@@ -139,7 +141,7 @@ if [[ $svsm_exit_code -eq 0x21 ]]; then
     echo "All tests passed"
     exit_value=0
 else
-    echo "Test Failed"
+    echo "Test Failed with exit code: $svsm_exit_code"
     exit_value=1
 fi
 
