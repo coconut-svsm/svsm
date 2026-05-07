@@ -11,6 +11,27 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 VSOCK_PORT=12345
 VSOCK_CID=10
 
+# Verify the tools used by this script and its callees are available on the
+# host before launching the guest. Missing tools surface as opaque panics
+# from inside the SVSM (see issue #1042), so check up front.
+check_required_tools() {
+    local missing=()
+    for tool in "$@"; do
+        if ! command -v "$tool" > /dev/null 2>&1; then
+            missing+=("$tool")
+        fi
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        echo "ERROR: missing required tools: ${missing[*]}" >&2
+        echo "Install them on the host before running this script." >&2
+        exit 1
+    fi
+}
+
+# Only the non-coreutils binaries are listed here, since coreutils is assumed to
+# be installed. Add any future non-coreutils dependencies to this list.
+check_required_tools ncat xxd ss
+
 test_io(){
     PIPE_IN=$1
     PIPE_OUT=$2
