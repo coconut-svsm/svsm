@@ -40,6 +40,13 @@ use crate::vsock::VsockError;
 use elf::ElfError;
 use syscall::SysCallError;
 
+/// Errors related to I/O operations.
+#[derive(Clone, Copy, Debug)]
+pub enum IoError {
+    /// Unexpected end of file.
+    UnexpectedEof,
+}
+
 /// Errors related to APIC handling.  These may originate from multiple
 /// layers in the system.
 #[derive(Clone, Copy, Debug)]
@@ -148,6 +155,14 @@ pub enum SvsmError {
     /// Errors related to vsock.
     #[cfg(feature = "vsock")]
     Vsock(VsockError),
+    /// Errors related to I/O operations.
+    Io(IoError),
+}
+
+impl From<IoError> for SvsmError {
+    fn from(err: IoError) -> Self {
+        Self::Io(err)
+    }
 }
 
 impl From<ElfError> for SvsmError {
