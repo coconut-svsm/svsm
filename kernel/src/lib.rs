@@ -15,7 +15,7 @@
 #![cfg_attr(verus_keep_ghost, feature(proc_macro_hygiene))]
 
 pub mod acpi;
-pub mod address;
+pub use paging::address;
 #[cfg(feature = "attest")]
 pub mod attest;
 #[cfg(feature = "block")]

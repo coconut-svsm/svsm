@@ -4,7 +4,10 @@
 //
 // Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
 //
-// Proofs related to util.rs
+// Proofs related to alignment helpers.
+use super::*;
+use verus_stub::*;
+
 verus! {
 
 /// A meaningful align_down should be verified to equal to align_up_integer_ens
@@ -35,7 +38,7 @@ pub broadcast proof fn proof_align_up<T: IntegerAligned>(val: T, align: T, ret: 
     T::lemma_align_up(val, align, ret);
 }
 
-broadcast group group_align_proofs {
+pub broadcast group group_align_proofs {
     verify_proof::bits::lemma_bit_u64_not_is_sub,
     verify_proof::bits::lemma_bit_u64_shl_values,
     verify_proof::bits::lemma_bit_u64_and_mask,
