@@ -76,6 +76,7 @@ impl From<SvsmError> for SvsmReqError {
             // SEV-SNP errors obtained from PVALIDATE or RMPADJUST are returned
             // to the guest as protocol-specific errors.
             SvsmError::SevSnp(e) => Self::protocol(e.ret()),
+            SvsmError::Fault => Self::invalid_address(),
             SvsmError::InvalidAddress => Self::invalid_address(),
             SvsmError::Apic(e) => match e {
                 ApicError::Disabled => Self::unsupported_protocol(),
