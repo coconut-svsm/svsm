@@ -116,7 +116,9 @@ impl AttestServicesOp {
             return Err(SvsmReqError::invalid_parameter());
         }
 
-        Ok(MemoryRegion::new(gpa, size))
+        // Make sure the region is valid
+        let region = MemoryRegion::checked_new(gpa, size).ok_or(SvsmReqError::invalid_address())?;
+        Ok(region)
     }
 
     /// Returns the report buffer gpa and size
@@ -130,7 +132,9 @@ impl AttestServicesOp {
             return Err(SvsmReqError::invalid_parameter());
         }
 
-        Ok(MemoryRegion::new(gpa, size))
+        // Make sure the region is valid
+        let region = MemoryRegion::checked_new(gpa, size).ok_or(SvsmReqError::invalid_address())?;
+        Ok(region)
     }
 
     /// Returns an optional MemoryRegion describing the certificate buffer.
@@ -168,7 +172,10 @@ impl AttestServicesOp {
             return Err(SvsmReqError::invalid_parameter());
         }
 
-        Ok(Some(MemoryRegion::new(gpa, size)))
+        // Make sure the region is valid
+        let region = MemoryRegion::checked_new(gpa, size).ok_or(SvsmReqError::invalid_address())?;
+
+        Ok(Some(region))
     }
 
     /// Returns true if an extended report is requested
