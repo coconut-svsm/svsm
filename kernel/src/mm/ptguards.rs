@@ -104,7 +104,7 @@ impl PerCPUPageMappingGuard {
         let mapping = VRangeAlloc::new_4k(pages.len() * PAGE_SIZE, 0)?;
         let flags = PTEntryFlags::data();
 
-        let mut pgtable = this_cpu().get_pgtable();
+        let pgtable = this_cpu().get_pgtable();
         for (vaddr, (paddr, shared)) in mapping
             .region()
             .iter_pages(PageSize::Regular)
