@@ -5,7 +5,6 @@
 // Author: Thomas Leroy <tleroy@suse.de>
 
 pub mod common;
-pub mod stage2;
 pub mod svsm;
 
 pub use common::{EARLY_IDT_ENTRIES, IDT, IdtEntry};

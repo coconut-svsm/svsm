@@ -4,11 +4,6 @@ version = "0.1.0"
 edition.workspace = true
 
 [[bin]]
-name = "stage2"
-path = "src/stage2.rs"
-test = false
-
-[[bin]]
 name = "svsm"
 path = "src/svsm.rs"
 test = false

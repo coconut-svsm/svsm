@@ -128,9 +128,6 @@ impl IgvmTargetConfig {
         if let Some(s1) = parts.stage1.as_ref() {
             cmd.arg("--tdx-stage1").arg(s1);
         }
-        if let Some(s2) = parts.stage2.as_ref() {
-            cmd.arg("--stage2").arg(s2);
-        }
         if let Some(bldr) = parts.bldr.as_ref() {
             cmd.arg("--bldr").arg(bldr);
         }

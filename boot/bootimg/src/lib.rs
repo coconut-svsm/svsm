@@ -142,8 +142,7 @@ where
 
     // Now that all mapping is complete, add the page table contents into the
     // boot image.
-    let (paging_root, paging_root_virt, total_pt_pages) =
-        kernel_page_tables.add_to_image(add_page_data)?;
+    let (paging_root, total_pt_pages) = kernel_page_tables.add_to_image(add_page_data)?;
 
     // Allocate memory to hold the kernel launch info block.
     let (launch_info_paddr, launch_info_vaddr) =
@@ -163,7 +162,7 @@ where
         kernel_strtab_len: strtab.length,
         kernel_fs_start: boot_image_params.kernel_fs_start,
         kernel_fs_end: boot_image_params.kernel_fs_end,
-        stage2_start: boot_image_params.stage2_start,
+        bldr_start: boot_image_params.bldr_start,
         cpuid_page: cpuid_vaddr,
         secrets_page: secrets_vaddr,
         idt_vaddr,
@@ -207,7 +206,6 @@ where
         kernel_pml4e_index: kernel_page_tables.kernel_pml4e_index(),
         total_pt_pages,
         kernel_page_tables_base: paging_root,
-        kernel_page_tables_virt_base: paging_root_virt,
         context: BootImageContext {
             entry_point: kernel_entry,
             paging_root,

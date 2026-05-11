@@ -8,7 +8,6 @@ use super::PageEncryptionMasks;
 use super::PageStateChangeOp;
 use super::PageValidateOp;
 use super::PlatformPageType;
-use super::Stage2Platform;
 use super::SvsmPlatform;
 use super::capabilities::Caps;
 use super::snp_fw::{
@@ -51,7 +50,6 @@ use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use syscall::GlobalFeatureFlags;
 
-use bootdefs::kernel_launch::Stage2LaunchInfo;
 #[cfg(test)]
 use bootdefs::platform::SvsmPlatformType;
 use core::mem::MaybeUninit;
@@ -574,20 +572,5 @@ impl IOPort for GHCBIOPort {
             Ok(v) => (v & 0xffffffff) as u32,
             Err(_e) => request_termination_msr(),
         }
-    }
-}
-
-#[derive(Default, Debug)]
-pub struct SnpStage2Platform {}
-
-impl SnpStage2Platform {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl Stage2Platform for SnpStage2Platform {
-    fn get_cpuid_page(&self, launch_info: &Stage2LaunchInfo) -> Option<VirtAddr> {
-        Some(VirtAddr::from(launch_info.cpuid_page as usize))
     }
 }

@@ -13,9 +13,10 @@ use crate::cpu::percpu::current_ghcb;
 use crate::cpu::percpu::this_cpu;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
-use crate::insn_decode::{
-    DecodedInsn, DecodedInsnCtx, Immediate, Instruction, MAX_INSN_SIZE, Operand, Register,
-};
+use crate::insn_decode::DecodedInsn;
+use crate::insn_decode::DecodedInsnCtx;
+use crate::insn_decode::Instruction;
+use crate::insn_decode::MAX_INSN_SIZE;
 use crate::mm::GuestPtr;
 use crate::sev::ghcb::GHCB;
 use core::fmt;
@@ -86,67 +87,6 @@ impl fmt::Display for VcError {
             self.rip, self.code
         )
     }
-}
-
-/// Handles a #VC exception in stage 2 before the GHCB is set up.
-///
-/// # Parameters
-/// - registers state before the exception was raise through a [`X86ExceptionContext`].
-///
-/// # Returns
-/// - a `SvsmError` if the handling went wrong.
-pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
-    let err = ctx.error_code;
-    let insn_ctx = vc_decode_insn(ctx)?;
-
-    match err {
-        SVM_EXIT_CPUID => handle_cpuid(ctx),
-        _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
-    }?;
-
-    vc_finish_insn(ctx, &insn_ctx);
-    Ok(())
-}
-
-/// Handles a #VC exception in stage 2 using GHCB features, requiring the GHCB to
-/// be set up beforehand.
-///
-/// # Parameters
-/// - registers state before the exception was raise through a [`X86ExceptionContext`].
-///
-/// # Returns
-/// - a `SvsmError` if the handling went wrong.
-pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
-    let err = ctx.error_code;
-
-    // Panic if the #VC is due to an access to a non-validated page.  The SVSM
-    // kernel will always validate pages prior to any attempt to access
-    // them with C=1, so any such exception indicates either a security failure
-    // or a memory access bug, both of which are fatal.  If the validation
-    // behavior changes in the future, this exit code must be handled specially
-    // rather than attempting to interpret the instruction.
-    assert!(err != SVM_EXIT_PAGE_NOT_VALIDATED);
-
-    // To handle NAE events, we're supposed to reset the VALID_BITMAP field of
-    // the GHCB. This is currently only relevant for IOIO, RDTSC and RDTSCP
-    // handling. This field is currently reset in the relevant GHCB methods
-    // but it would be better to move the reset out of the different
-    // handlers.
-    let ghcb = current_ghcb();
-
-    let insn_ctx = vc_decode_insn(ctx)?;
-
-    match (err, insn_ctx.and_then(|d| d.insn())) {
-        (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
-        (SVM_EXIT_IOIO, Some(ins)) => early_handle_ioio(ctx, ghcb, ins),
-        (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
-        (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
-        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtscp)) => ghcb.rdtscp_regs(&mut ctx.regs),
-        _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
-    }?;
-
-    vc_finish_insn(ctx, &insn_ctx);
-    Ok(())
 }
 
 /// Handles a runtime #VC exception.
@@ -278,37 +218,6 @@ fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn_ctx: &Option<DecodedInsnCt
     // the exception plus the size of the decoded instruction.
     unsafe {
         ctx.set_rip(new_rip);
-    }
-}
-
-fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
-    match source {
-        Operand::Reg(Register::Rdx) => ctx.regs.rdx as u16,
-        Operand::Reg(..) => unreachable!("Port value is always in DX"),
-        Operand::Imm(imm) => match imm {
-            Immediate::U8(val) => val as u16,
-            _ => unreachable!("Port value in immediate is always 1 byte"),
-        },
-    }
-}
-
-fn early_handle_ioio(
-    ctx: &mut X86ExceptionContext,
-    ghcb: &GHCB,
-    insn: DecodedInsn,
-) -> Result<(), SvsmError> {
-    match insn {
-        DecodedInsn::In(source, in_len) => {
-            let port = ioio_get_port(source, ctx);
-            ctx.regs.rax = (ghcb.ioio_in(port, in_len.try_into()?)? & in_len.mask()) as usize;
-            Ok(())
-        }
-        DecodedInsn::Out(source, out_len) => {
-            let out_value = ctx.regs.rax as u64;
-            let port = ioio_get_port(source, ctx);
-            ghcb.ioio_out(port, out_len.try_into()?, out_value)
-        }
-        _ => Err(VcError::new(ctx, VcErrorType::DecodeFailed).into()),
     }
 }
 

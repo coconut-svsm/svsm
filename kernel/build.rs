@@ -12,12 +12,6 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(verus_keep_ghost_body)");
     println!("cargo::rustc-check-cfg=cfg(verus_verify_core)");
 
-    // Stage 2
-    println!("cargo:rustc-link-arg-bin=stage2=-nostdlib");
-    println!("cargo:rustc-link-arg-bin=stage2=--build-id=none");
-    println!("cargo:rustc-link-arg-bin=stage2=-Tkernel/src/stage2.lds");
-    println!("cargo:rustc-link-arg-bin=stage2=-no-pie");
-
     // SVSM 2
     println!("cargo:rustc-link-arg-bin=svsm=-nostdlib");
     println!("cargo:rustc-link-arg-bin=svsm=--build-id=none");
@@ -36,7 +30,6 @@ fn main() {
         println!("cargo:rustc-link-arg=-no-pie");
     }
 
-    println!("cargo:rerun-if-changed=kernel/src/stage2.lds");
     println!("cargo:rerun-if-changed=kernel/src/svsm.lds");
     println!("cargo:rerun-if-changed=build.rs");
     init_verify();

@@ -56,14 +56,11 @@ pub fn enumerate_early_boot_regions(
         ));
     }
 
-    // All stage2 memory is contiguous, and is bounded by the stage2 image
-    // at the base and the filesystem at the end.
-    let stage2_area_base = PhysAddr::from(launch_info.stage2_start);
-    let stage2_area_end = PhysAddr::new(launch_info.kernel_fs_end.try_into().unwrap());
-    regions.push(MemoryRegion::from_addresses(
-        stage2_area_base,
-        stage2_area_end,
-    ));
+    // All boot loader memory is contiguous, and is bounded by the boot loader
+    // image at the base and the filesystem at the end.
+    let bldr_area_base = PhysAddr::from(launch_info.bldr_start);
+    let bldr_area_end = PhysAddr::new(launch_info.kernel_fs_end.try_into().unwrap());
+    regions.push(MemoryRegion::from_addresses(bldr_area_base, bldr_area_end));
 
     regions
 }

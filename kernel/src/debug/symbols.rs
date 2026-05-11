@@ -89,7 +89,10 @@ impl SymResolver {
 static SYM_RESOLVER: ImmutAfterInitCell<SymResolver> = ImmutAfterInitCell::uninit();
 
 /// Initializes symbol data so that it can be used when [`resolve_symbol()`] is called.
-pub fn init_symbols(li: &KernelLaunchInfo) -> Result<(), SvsmError> {
+/// # Safety
+/// The caller is required to pass the correct kernel launch information as
+/// passed from the boot environment.
+pub unsafe fn init_symbols(li: &KernelLaunchInfo) -> Result<(), SvsmError> {
     let symtab_start = li.kernel_symtab_start as *const KSym;
     let strtab_start = li.kernel_strtab_start as *const u8;
 
@@ -104,7 +107,7 @@ pub fn init_symbols(li: &KernelLaunchInfo) -> Result<(), SvsmError> {
     // slice has `KSym` items, so check.
     assert!(symtab_start.is_aligned());
 
-    // SAFETY: we trust the `KernelLaunchInfo` passed by stage2 to contain valid addresses.
+    // SAFETY: we trust the `KernelLaunchInfo` to contain valid addresses.
     let (symtab, strtab) = unsafe {
         (
             slice::from_raw_parts(

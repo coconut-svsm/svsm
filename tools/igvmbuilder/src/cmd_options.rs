@@ -12,10 +12,6 @@ pub struct CmdOptions {
     #[arg(long)]
     pub tdx_stage1: Option<String>,
 
-    /// Stage 2 binary file
-    #[arg(short, long)]
-    pub stage2: Option<String>,
-
     /// Boot loader binary file
     #[arg(short, long)]
     pub bldr: Option<String>,
