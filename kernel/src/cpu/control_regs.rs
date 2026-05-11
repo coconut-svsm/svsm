@@ -4,11 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::features::cpu_has_pge;
 use crate::address::{Address, PhysAddr};
-use crate::cpu::features::{cpu_has_smap, cpu_has_smep, cpu_has_umip};
-use crate::cpu::shadow_stack::is_cet_ss_supported;
-use crate::platform::SvsmPlatform;
+use crate::cpu::features::{Feature, cpu_has_feat};
 use core::arch::asm;
 use cpuarch::x86::CR0Flags;
 use cpuarch::x86::CR4Flags;
@@ -28,7 +25,7 @@ pub fn cr0_init() {
 }
 
 #[inline]
-pub fn cr4_init(platform: &dyn SvsmPlatform) {
+pub fn cr4_init() {
     let mut cr4 = read_cr4();
 
     cr4.insert(CR4Flags::PSE); // Enable Page Size Extensions
@@ -36,25 +33,25 @@ pub fn cr4_init(platform: &dyn SvsmPlatform) {
     // All processors that are capable of virtualization will support global
     // page table entries, so there is no reason to support any processor that
     // does not enumerate PGE capability.
-    assert!(cpu_has_pge(platform), "CPU does not support PGE");
+    assert!(cpu_has_feat(Feature::Pge), "CPU does not support PGE");
 
     cr4.insert(CR4Flags::PGE); // Enable Global Pages
 
     if !cfg!(feature = "nosmep") {
-        assert!(cpu_has_smep(platform), "CPU does not support SMEP");
+        assert!(cpu_has_feat(Feature::Smep), "CPU does not support SMEP");
         cr4.insert(CR4Flags::SMEP);
     }
 
     if !cfg!(feature = "nosmap") {
-        assert!(cpu_has_smap(platform), "CPU does not support SMAP");
+        assert!(cpu_has_feat(Feature::Smap), "CPU does not support SMAP");
         cr4.insert(CR4Flags::SMAP);
     }
 
-    if cpu_has_umip(platform) {
+    if cpu_has_feat(Feature::Umip) {
         cr4.insert(CR4Flags::UMIP);
     }
 
-    if is_cet_ss_supported() {
+    if cpu_has_feat(Feature::CetSS) {
         cr4.insert(CR4Flags::CET);
     }
 

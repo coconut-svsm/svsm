@@ -5,7 +5,6 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::{SEV_GHCB, write_msr};
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::{IrqGuard, X86GeneralRegs, flush_tlb_global_sync_page};
@@ -22,6 +21,7 @@ use crate::utils::MemoryRegion;
 
 use crate::mm::PageBox;
 use core::arch::global_asm;
+use core::arch::x86_64::CpuidResult;
 use core::mem::{self, MaybeUninit, offset_of};
 use core::ops::Deref;
 use core::ptr;
