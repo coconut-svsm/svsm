@@ -60,6 +60,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use core::cell::UnsafeCell;
+use core::mem::offset_of;
 use core::mem::size_of;
 use core::ops::Deref;
 use core::ptr::{self, NonNull};
@@ -360,6 +361,12 @@ impl PerCpuShared {
     }
 }
 
+// Expose the offsets of critical per-CPU fields to assembly.
+pub const PERCPU_CTXT_SWITCH_STACK_OFFSET: usize = offset_of!(PerCpu, context_switch_stack);
+pub const PERCPU_PAGING_ROOT_OFFSET: usize = offset_of!(PerCpu, cr3);
+pub const PERCPU_SHARED_OFFSET: usize = offset_of!(PerCpu, shared);
+pub const PERCPU_SHARED_INDEX_OFFSET: usize = offset_of!(PerCpuShared, cpu_index);
+
 const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
 
 /// CPU-local data.
@@ -392,6 +399,7 @@ where
     irq_state: IrqState,
 
     pgtbl: AtomicUsize,
+    cr3: AtomicUsize,
     tss: X86Tss,
     isst: RWLock<Isst>,
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
@@ -429,6 +437,7 @@ impl PerCpu {
     fn new(shared: &'static PerCpuShared) -> Result<Self, SvsmError> {
         Ok(Self {
             pgtbl: AtomicUsize::new(0),
+            cr3: AtomicUsize::new(0),
             apic: X86Apic::default(),
             irq_state: IrqState::new(),
             tss: X86Tss::new(),
@@ -650,14 +659,13 @@ impl PerCpu {
     }
 
     pub fn set_pgtable(&self, pgtable: &'static mut PageTable) {
+        let vaddr = VirtAddr::from(ptr::from_ref(pgtable) as usize);
         self.pgtbl
-            .compare_exchange(
-                0,
-                ptr::from_ref(pgtable) as usize,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            )
+            .compare_exchange(0, vaddr.into(), Ordering::Relaxed, Ordering::Relaxed)
             .unwrap();
+        // Capture the physical address as well for use in task switch.
+        let paddr = virt_to_phys(vaddr);
+        self.cr3.store(paddr.into(), Ordering::Relaxed);
     }
 
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
@@ -1191,11 +1199,7 @@ impl PerCpu {
     }
 
     pub fn schedule_prepare(&self, reschedule: bool) -> Option<(TaskPointer, TaskPointer)> {
-        let ret = self.runqueue_mut().schedule_prepare(reschedule);
-        if let Some((_, ref next)) = ret {
-            self.set_current_stack(next.stack_bounds());
-        };
-        ret
+        self.runqueue_mut().schedule_prepare(reschedule)
     }
 
     pub fn runqueue(&self) -> ReadLockGuardIrqSafe<'_, RunQueue> {

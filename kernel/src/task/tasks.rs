@@ -251,10 +251,6 @@ impl TaskSchedState {
         }
     }
 
-    fn update_cpu(&self, new_cpu_index: usize) -> usize {
-        self.cpu_index.swap(new_cpu_index, Ordering::Relaxed)
-    }
-
     fn set_state(&self, state: TaskState) {
         self.state.store(state.into(), Ordering::Release);
     }
@@ -310,8 +306,11 @@ pub struct Task {
     objs: Arc<RWLock<BTreeMap<ObjHandle, Arc<dyn Obj>>>>,
 }
 
+// Expose the offsets of critical task fields to assembly.
 pub const TASK_ACTIVE_OFFSET: usize =
     offset_of!(Task, sched_state) + offset_of!(TaskSchedState, active);
+pub const TASK_CUR_CPU_OFFSET: usize =
+    offset_of!(Task, sched_state) + offset_of!(TaskSchedState, cpu_index);
 
 // SAFETY: Send + Sync is required for Arc<Task> to implement Send. All members
 // of  `Task` are Send + Sync except for the intrusive_collection links, which
@@ -593,10 +592,6 @@ impl Task {
 
     pub fn is_idle_task(&self) -> bool {
         self.sched_state.idle_task.load(Ordering::Relaxed)
-    }
-
-    pub fn update_cpu(&self, new_cpu_index: usize) -> usize {
-        self.sched_state.update_cpu(new_cpu_index)
     }
 
     pub fn fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
