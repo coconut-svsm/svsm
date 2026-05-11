@@ -274,6 +274,9 @@ impl SnpGuestRequestDriver {
                         return Err(e);
                     }
                 }
+            } else {
+                secrets_page_mut().unwrap().clear_vmpck(0);
+                return Err(e);
             }
         }
 
