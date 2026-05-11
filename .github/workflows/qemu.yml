@@ -146,5 +146,8 @@ jobs:
           PR_NUM=${{ github.event.pull_request.number }}
           VSOCK_PORT=$(( ${PR_NUM:-0} + 1024 ))
           VSOCK_CID=$(( ${PR_NUM:-0} + 10 ))
-          QEMU=./citests/qemu/bin/qemu-system-x86_64 scripts/test-qemu-nocc-svsm.sh --vsock-port $VSOCK_PORT --vsock-cid $VSOCK_CID
+          QEMU=./citests/qemu/bin/qemu-system-x86_64 scripts/test-in-svsm.sh \
+            --vsock-port $VSOCK_PORT --vsock-cid $VSOCK_CID \
+            --nocc --timeout 180 \
+            </dev/null 2>&1
 

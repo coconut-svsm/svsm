@@ -96,6 +96,7 @@ mkfifo $TEST_DIR/pipe.out
 dd if=/dev/urandom of="$TEST_DIR/svsm_state.raw" bs=512 count=1024
 
 LAUNCH_GUEST_ARGS=""
+TIMEOUT_CMD=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -113,6 +114,12 @@ while [[ $# -gt 0 ]]; do
       shift
       shift
       ;;
+    --timeout)
+      echo "Running tests with timeout: $2"
+      TIMEOUT_CMD="timeout --foreground $2"
+      shift
+      shift
+      ;;
     --)
       shift
       break
@@ -127,19 +134,26 @@ done
 test_io $TEST_DIR/pipe.in $TEST_DIR/pipe.out $VSOCK_PORT &
 TEST_IO_PID=$!
 
-$SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
-    --state "$TEST_DIR/svsm_state.raw" \
-    --vsock "$VSOCK_CID" \
-    --unit-tests $TEST_DIR/pipe \
-    $LAUNCH_GUEST_ARGS "$@" || svsm_exit_code=$?
+svsm_exit_code=0
+
+$TIMEOUT_CMD \
+    $SCRIPT_DIR/launch_guest.sh \
+        --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
+        --state "$TEST_DIR/svsm_state.raw" \
+        --vsock "$VSOCK_CID" \
+        --unit-tests $TEST_DIR/pipe \
+        $LAUNCH_GUEST_ARGS "$@" || svsm_exit_code=$?
 
 # SVSM writes 0x10 to the QEMU exit port when all tests passed.
 # This results in QEMU returning 0x21 ((0x10 << 1) | 1)
 if [[ $svsm_exit_code -eq 0x21 ]]; then
     echo "All tests passed"
     exit_value=0
+elif [[ $svsm_exit_code -eq 124 && -n "$TIMEOUT_CMD" ]]; then
+    echo "Test Failed: timeout"
+    exit_value=1
 else
-    echo "Test Failed"
+    echo "Test Failed with exit code: $svsm_exit_code"
     exit_value=1
 fi
 
