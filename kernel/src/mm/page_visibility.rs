@@ -250,7 +250,7 @@ unsafe impl<T> Sync for SharedBox<T> where T: Sync {}
 impl<T> Drop for SharedBox<T> {
     fn drop(&mut self) {
         // Re-encrypt the pages.
-        let res = (0..size_of::<Self>())
+        let res = (0..size_of::<T>())
             .step_by(PAGE_SIZE)
             // SAFETY: This makes the owned pages private again. Since this is
             // the drop() method, there are no users left.
