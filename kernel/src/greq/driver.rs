@@ -24,6 +24,7 @@ use crate::{
     locking::SpinLock,
     sev::{VMPCK_SIZE, ghcb::GhcbError, secrets_page, secrets_page_mut},
     types::PAGE_SHIFT,
+    utils::page_align_up,
 };
 
 /// Global `SNP_GUEST_REQUEST` driver instance
@@ -129,7 +130,7 @@ impl SnpGuestRequestDriver {
         let ghcb = current_ghcb();
 
         if req_class == SnpGuestRequestClass::Extended {
-            let num_user_pages = (self.user_extdata_size >> PAGE_SHIFT) as u64;
+            let num_user_pages = (page_align_up(self.user_extdata_size) >> PAGE_SHIFT) as u64;
             ghcb.guest_ext_request(req_page, resp_page, data_pages, num_user_pages)?;
         } else {
             ghcb.guest_request(req_page, resp_page)?;
