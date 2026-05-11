@@ -129,9 +129,12 @@ fi
 
 case "$CGS" in
   nocc)
-    SNP_GUEST="-object nocc,id=cgs0"
+    SNP_GUEST=""
     CPU=max,smep=on
-    ACCEL=tcg
+    if (( QEMU_MAJOR < 11 )); then
+      ACCEL=tcg
+      SNP_GUEST="-object nocc,id=cgs0"
+    fi
     ;;
   sev)
     SNP_GUEST="-object sev-snp-guest,id=cgs0,cbitpos=$C_BIT_POS,reduced-phys-bits=$REDUCED_PHYS_BITS"
@@ -140,7 +143,10 @@ case "$CGS" in
     echo "Error: Unexpected CGS value '$CGS'"
     exit 1
 esac
-MACHINE=q35,confidential-guest-support=cgs0,memory-backend=mem0,igvm-cfg=igvm0,accel=$ACCEL
+MACHINE=q35,memory-backend=mem0,igvm-cfg=igvm0,accel=$ACCEL
+[ -n "$SNP_GUEST" ] && MACHINE+=",confidential-guest-support=cgs0"
+[ -n "$VIRTIO_ENABLE" ] && MACHINE+=",${VIRTIO_ENABLE}"
+
 MEMORY=memory-backend-memfd,size=8G,id=mem0,share=true,prealloc=false,reserve=false
 IGVM_OBJ="-object igvm-cfg,id=igvm0,file=$IGVM"
 
@@ -183,7 +189,7 @@ fi
 $SUDO_CMD \
   "$QEMU" \
     -cpu $CPU \
-    -machine $MACHINE,$VIRTIO_ENABLE \
+    -machine $MACHINE \
     -object $MEMORY \
     $IGVM_OBJ \
     $SNP_GUEST \
