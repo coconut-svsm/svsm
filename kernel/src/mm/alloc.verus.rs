@@ -574,13 +574,7 @@ impl HeapMemoryRegion {
     }
 
     spec fn ens_phys_to_virt(&self, paddr: PhysAddr, ret: Option<VirtAddr>) -> bool {
-        let identity_map = self.map().is_identity_map();
-        let valid_identity_map = identity_map && (self.start_phys@ == self.start_virt.offset());
-        &&& !identity_map ==> (ret.is_some() == self.map().to_vaddr(paddr@ as int).is_some())
-        &&& (!identity_map && ret.is_some()) ==> (ret.unwrap() == self.map().to_vaddr(
-            paddr@ as int,
-        ).unwrap())
-        &&& valid_identity_map ==> (ret == Some(VirtAddr::from_spec(paddr@)))
+        self.map().to_vaddr(paddr@ as int) == ret
     }
 }
 

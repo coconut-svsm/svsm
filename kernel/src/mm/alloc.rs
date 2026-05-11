@@ -572,8 +572,6 @@ impl HeapMemoryRegion {
     fn phys_to_virt(&self, paddr: PhysAddr) -> Option<VirtAddr> {
         proof! {
             reveal(<LinearMap as SpecMemMapTr>::to_vaddr);
-            use_type_invariant(self.start_virt);
-            broadcast use group_addr_proofs;
         }
         if paddr < self.start_phys || (paddr - self.start_phys) >= (self.page_count * PAGE_SIZE) {
             return None;
