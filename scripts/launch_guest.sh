@@ -93,6 +93,10 @@ while [[ $# -gt 0 ]]; do
       shift
       shift
       ;;
+    --tcg)
+      ACCEL=tcg
+      shift
+      ;;
     --)
       shift
       break
