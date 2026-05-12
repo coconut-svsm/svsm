@@ -824,7 +824,7 @@ macro_rules! lemma_alloc_pages_info_post {
 
             // Return the memory permission with a readonly share of info.
             let tracked perm = PgUnitPerm {$mem, info, typ: arbitrary()};
-            *$ret_perm = Some(UnitDeallocPerm(perm));
+            *$ret_perm = Tracked(Some(UnitDeallocPerm(perm)));
 
             // Prove the relationship between vaddr and pfn.
             // assert(pfn == self.spec_get_pfn(vaddr).unwrap()) by {

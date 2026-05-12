@@ -5,9 +5,9 @@
 // Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
 //
 // Spec and proofs that does not need private types in alloc.rs
-use crate::mm::alloc::VirtAddr;
 use crate::mm::LinearMap;
-use crate::types::{lemma_page_size, PAGE_SIZE};
+use crate::mm::alloc::VirtAddr;
+use crate::types::{PAGE_SIZE, lemma_page_size};
 use crate::utils::util::spec_align_up;
 
 use crate::mm::alloc::MAX_ORDER;
@@ -353,7 +353,11 @@ impl MemRegionMapping {
             perm2.wf_pfn_order(*self, p2, order),
             old(perm1).wf_pfn_order(*self, p1, order),
         ensures
-            perm1.wf_pfn_order(*self, min(p1 as int, p2 as int) as usize, (order + 1) as usize),
+            final(perm1).wf_pfn_order(
+                *self,
+                min(p1 as int, p2 as int) as usize,
+                (order + 1) as usize,
+            ),
     {
         use_type_invariant(self);
         broadcast use lemma_bit_usize_shl_values;
@@ -431,7 +435,7 @@ impl MemRegionMapping {
             perm2.wf_pfn_order(*self, p2, o2),
         ensures
             order_disjoint(p1, o1, p2, o2),
-            *old(perm1) == *perm1,
+            *old(perm1) == *final(perm1),
     {
         broadcast use lemma_bit_usize_shl_values;
 

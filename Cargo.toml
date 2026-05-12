@@ -104,10 +104,10 @@ zerocopy = { version = "0.8.2", features = ["derive"] }
 zeroize = { version = "1.8.2", default-features = false }
 
 # Verus repos
-verus_builtin = { version = "=0.0.0-2026-04-12-0118", default-features = false }
-verus_builtin_macros = { version = "=0.0.0-2026-04-12-0118", features = ["vpanic"], default-features = false }
-verus_state_machines_macros = { version = "=0.0.0-2026-04-05-0114", default-features = false }
-vstd = { version = "=0.0.0-2026-04-12-0118", features = ["alloc", "allow_panic"], default-features = false }
+verus_builtin = { version = "=0.0.0-2026-05-17-0151", default-features = false }
+verus_builtin_macros = { version = "=0.0.0-2026-07-12-0122", features = ["vpanic"], default-features = false }
+verus_state_machines_macros = { version = "=0.0.0-2026-06-14-0213", default-features = false }
+vstd = { version = "=0.0.0-2026-07-12-0122", features = ["alloc", "allow_panic"], default-features = false }
 
 # Verification libs
 verify_proof = { path = "verification/verify_proof", default-features = false  }
