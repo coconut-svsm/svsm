@@ -1318,15 +1318,17 @@ pub fn current_ghcb() -> &'static GHCB {
 #[derive(Debug, Clone, Copy)]
 pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,
+    pub caa: PhysAddr,
     pub cpu_index: usize,
     pub guest_owned: bool,
     pub in_use: bool,
 }
 
 impl VmsaRegistryEntry {
-    pub const fn new(paddr: PhysAddr, cpu_index: usize, guest_owned: bool) -> Self {
+    pub const fn new(paddr: PhysAddr, caa: PhysAddr, cpu_index: usize, guest_owned: bool) -> Self {
         VmsaRegistryEntry {
             paddr,
+            caa,
             cpu_index,
             guest_owned,
             in_use: false,
@@ -1353,28 +1355,31 @@ impl PerCpuVmsas {
         self.vmsas
             .lock_read()
             .iter()
-            .any(|vmsa| vmsa.paddr == paddr)
+            .any(|vmsa| vmsa.paddr == paddr || vmsa.caa == paddr)
     }
 
     pub fn overlaps(&self, region: &MemoryRegion<PhysAddr>) -> bool {
-        self.vmsas
-            .lock_read()
-            .iter()
-            .any(|vmsa| region.overlap(&MemoryRegion::new(vmsa.paddr, PAGE_SIZE)))
+        self.vmsas.lock_read().iter().any(|vmsa| {
+            region.overlap(&MemoryRegion::new(vmsa.paddr, PAGE_SIZE))
+                || region.overlap(&MemoryRegion::new(vmsa.caa, 8))
+        })
     }
 
     pub fn register(
         &self,
         paddr: PhysAddr,
+        caa: PhysAddr,
         cpu_index: usize,
         guest_owned: bool,
     ) -> Result<(), SvsmError> {
         let mut guard = self.vmsas.lock_write();
-        if guard.iter().any(|vmsa| vmsa.paddr == paddr) {
+        if guard.iter().any(|vmsa| {
+            vmsa.paddr == paddr || vmsa.caa == paddr || vmsa.paddr == caa || vmsa.caa == caa
+        }) {
             return Err(SvsmError::InvalidAddress);
         }
 
-        guard.push(VmsaRegistryEntry::new(paddr, cpu_index, guest_owned));
+        guard.push(VmsaRegistryEntry::new(paddr, caa, cpu_index, guest_owned));
         Ok(())
     }
 
@@ -1387,6 +1392,24 @@ impl PerCpuVmsas {
                 vmsa.in_use = true;
                 vmsa.cpu_index
             })
+    }
+
+    pub fn remap_ca(&self, old_caa: PhysAddr, new_caa: PhysAddr) -> Result<(), SvsmError> {
+        let mut guard = self.vmsas.lock_write();
+        if guard.iter().any(|vmsa| {
+            let r1 = MemoryRegion::new(vmsa.paddr, PAGE_SIZE);
+            vmsa.caa == new_caa || r1.overlap(&MemoryRegion::new(new_caa, 8))
+        }) {
+            return Err(SvsmError::InvalidAddress);
+        }
+        guard
+            .iter_mut()
+            .find(|vmsa| vmsa.caa == old_caa)
+            .map(|vmsa| {
+                vmsa.caa = new_caa;
+                new_caa
+            });
+        Ok(())
     }
 
     pub fn unregister(&self, paddr: PhysAddr, in_use: bool) -> Result<VmsaRegistryEntry, u64> {

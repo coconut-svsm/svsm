@@ -117,7 +117,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         .ok_or_else(SvsmReqError::invalid_parameter)?;
 
     // Got valid gPAs and APIC ID, register VMSA immediately to avoid races
-    PERCPU_VMSAS.register(paddr, target_cpu.cpu_index(), true)?;
+    PERCPU_VMSAS.register(paddr, pcaa, target_cpu.cpu_index(), true)?;
 
     // Time to map the VMSA. No need to clean up the registered VMSA on the
     // error path since this is a fatal error anyway.
