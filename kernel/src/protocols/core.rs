@@ -10,7 +10,7 @@ use crate::cpu::{flush_tlb_global_sync, flush_tlb_global_sync_page};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
-use crate::mm::{GuestPtr, valid_phys_address, writable_phys_addr};
+use crate::mm::{GuestPtr, valid_phys_address, valid_phys_region, writable_phys_addr};
 use crate::mm::{PerCPUMapping, PerCPUPageMappingGuard};
 use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::attest::{ATTEST_PROTOCOL_VERSION_MAX, ATTEST_PROTOCOL_VERSION_MIN};
@@ -25,7 +25,7 @@ use crate::sev::utils::{
 };
 use crate::sev::vmsa::VMSAControl;
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
-use crate::utils::zero_mem_region;
+use crate::utils::{MemoryRegion, zero_mem_region};
 use cpuarch::vmsa::VMSA;
 use zerocopy::{FromBytes, IntoBytes};
 
@@ -369,7 +369,7 @@ fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
 fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
 
-    if !gpa.is_aligned(8) || !valid_phys_address(gpa) {
+    if !gpa.is_aligned(8) || !valid_phys_region(&MemoryRegion::new(gpa, 8)) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
@@ -393,6 +393,11 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     .unwrap();
 
     if entries == 0 || entries > max_entries || entries <= next {
+        return Err(SvsmReqError::invalid_parameter());
+    }
+
+    let entries_len = ((entries + 1) * 8) as usize;
+    if !valid_phys_region(&MemoryRegion::new(gpa, entries_len)) {
         return Err(SvsmReqError::invalid_parameter());
     }
 

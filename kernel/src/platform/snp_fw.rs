@@ -9,7 +9,7 @@ extern crate alloc;
 use crate::address::PhysAddr;
 use crate::boot_params::BootParams;
 use crate::cpu::cpuid::copy_cpuid_table_to;
-use crate::cpu::percpu::{current_ghcb, PERCPU_VMSAS, this_cpu, this_cpu_shared};
+use crate::cpu::percpu::{PERCPU_VMSAS, current_ghcb, this_cpu, this_cpu_shared};
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
