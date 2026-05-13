@@ -274,8 +274,16 @@ fn core_configure_vtom(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     }
 }
 
+/// Reserved bits per pvalidate-entry
+const PVALIDATE_RSVD_MASK: u64 = 0xff0u64;
+
 fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
     let mut flush = false;
+
+    // Reject entry when reserved bits are set
+    if (entry & PVALIDATE_RSVD_MASK) != 0 {
+        return Err(SvsmReqError::invalid_parameter());
+    }
 
     let (page_size_bytes, valign, huge) = match entry & 3 {
         0 => (PAGE_SIZE, VIRT_ALIGN_4K, PageSize::Regular),
