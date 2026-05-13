@@ -961,7 +961,7 @@ impl PerCpu {
         self.shared().guest_vmsa.lock()
     }
 
-    pub fn alloc_guest_vmsa(&self) -> Result<(), SvsmError> {
+    pub fn alloc_guest_vmsa(&self) -> Result<PhysAddr, SvsmError> {
         // Enable alternate injection if the hypervisor supports it.
         let use_alternate_injection = SVSM_PLATFORM.query_apic_registration_state();
         if use_alternate_injection {
@@ -984,7 +984,7 @@ impl PerCpu {
         self.shared().update_guest_vmsa(paddr);
         let _ = VmsaPage::leak(vmsa);
 
-        Ok(())
+        Ok(paddr)
     }
 
     /// Returns a shared reference to the local APIC, or `None` if APIC

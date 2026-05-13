@@ -9,7 +9,7 @@ extern crate alloc;
 use crate::address::PhysAddr;
 use crate::boot_params::BootParams;
 use crate::cpu::cpuid::copy_cpuid_table_to;
-use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared};
+use crate::cpu::percpu::{current_ghcb, PERCPU_VMSAS, this_cpu, this_cpu_shared};
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
@@ -298,12 +298,14 @@ pub unsafe fn validate_fw(boot_params: &BootParams<'_>) -> Result<(), SvsmError>
 }
 
 pub fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
-    if let Some(caa) = fw_meta.caa_page {
-        this_cpu_shared().update_guest_caa(caa);
-    }
+    assert!(fw_meta.caa_page.is_some());
 
-    this_cpu().alloc_guest_vmsa()?;
+    let caa = fw_meta.caa_page.unwrap();
+    let vmsa = this_cpu().alloc_guest_vmsa()?;
+    this_cpu_shared().update_guest_caa(caa);
     this_cpu().update_guest_mappings()?;
+
+    PERCPU_VMSAS.register(vmsa, caa, 0, false)?;
 
     Ok(())
 }
