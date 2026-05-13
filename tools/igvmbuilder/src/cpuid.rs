@@ -88,6 +88,8 @@ impl SnpCpuidPage {
         cpuid_page.add(SnpCpuidLeaf::new2(11, 1))?;
         cpuid_page.add(SnpCpuidLeaf::new3(13, 0, 1))?;
         cpuid_page.add(SnpCpuidLeaf::new3(13, 1, 1))?;
+        // XSAVE size for YMM registers
+        cpuid_page.add(SnpCpuidLeaf::new2(13, 2))?;
         cpuid_page.add(SnpCpuidLeaf::new1(0x80000000))?;
         cpuid_page.add(SnpCpuidLeaf::new1(0x80000001))?;
         cpuid_page.add(SnpCpuidLeaf::new1(0x80000002))?;
