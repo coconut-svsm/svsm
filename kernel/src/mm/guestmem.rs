@@ -730,7 +730,7 @@ pub fn read_bytes_from_guest(src: PhysAddr, size: usize) -> Result<Vec<u8>, Svsm
 /// If the physical address region cannot be read, it returns `Err(SvsmError::Fault)`.
 /// If the physical address region is not allocated to the guest, it returns
 ///   `Err(SvsmError::InvalidAddress)`.
-pub fn read_from_guest<T: KnownLayout + Sized>(src: PhysAddr) -> Result<T, SvsmError> {
+pub fn read_from_guest<T: KnownLayout + FromBytes + Sized>(src: PhysAddr) -> Result<T, SvsmError> {
     let mut t: MaybeUninit<T> = MaybeUninit::uninit();
     // SAFETY: copy_from_guest does not read `t`, so it's safe to take a mutable pointer.
     // The `t` layout is known, so populating through the casted *mut u8 is safe.
