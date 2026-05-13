@@ -172,7 +172,9 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     let paddr = PhysAddr::from(params.rcx);
 
-    PERCPU_VMSAS.unregister(paddr, true)?;
+    if !(paddr.is_page_aligned() && PERCPU_VMSAS.vmsa_exists(paddr)) {
+        return Err(SvsmReqError::invalid_parameter());
+    }
 
     // Map the VMSA
     // SAFETY: the physical address is known to point to a VMSA which is not
@@ -193,6 +195,11 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Tell everyone the news and flush temporary mapping
     flush_tlb_global_sync_page(vaddr, PageSize::Regular);
+
+    // All done, now de-register the VMSA
+    if res.is_ok() {
+        PERCPU_VMSAS.unregister(paddr, true)?;
+    }
 
     res
 }

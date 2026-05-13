@@ -1358,6 +1358,13 @@ impl PerCpuVmsas {
             .any(|vmsa| vmsa.paddr == paddr || vmsa.caa == paddr)
     }
 
+    pub fn vmsa_exists(&self, paddr: PhysAddr) -> bool {
+        self.vmsas
+            .lock_read()
+            .iter()
+            .any(|vmsa| vmsa.paddr == paddr && vmsa.in_use)
+    }
+
     pub fn overlaps(&self, region: &MemoryRegion<PhysAddr>) -> bool {
         self.vmsas.lock_read().iter().any(|vmsa| {
             region.overlap(&MemoryRegion::new(vmsa.paddr, PAGE_SIZE))
