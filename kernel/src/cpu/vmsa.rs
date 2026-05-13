@@ -8,7 +8,7 @@ use crate::hyperv;
 use crate::sev::status::sev_flags;
 use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_ATTRIBUTES, SVSM_DS, SVSM_DS_ATTRIBUTES};
 use cpuarch::sev_status::SEVStatusFlags;
-use cpuarch::vmsa::{VMSA, VMSASegment};
+use cpuarch::vmsa::{VIntrCtrl, VMSA, VMSASegment};
 
 use super::gdt::GLOBAL_GDT;
 use super::idt::GLOBAL_IDT;
@@ -170,6 +170,7 @@ pub fn init_guest_vmsa(v: &mut VMSA, rip: u64, alternate_injection: bool) {
     // Enable alternate injection if requested.
     if alternate_injection {
         sev_status.insert(SEVStatusFlags::ALT_INJ);
+        v.vintr_ctrl = VIntrCtrl::new().with_vgif(true);
     }
 
     v.sev_features = sev_status.as_sev_features();
