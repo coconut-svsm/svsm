@@ -5,7 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::percpu::{PERCPU_AREAS, PERCPU_VMSAS, this_cpu, this_cpu_shared};
+use crate::cpu::percpu::{PERCPU_AREAS, PERCPU_VMSAS, this_cpu};
 use crate::cpu::{flush_tlb_global_sync, flush_tlb_global_sync_page};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
@@ -458,7 +458,20 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     // ensure that any pending lazy EOI has been processed.
     this_cpu().clear_pending_interrupts();
 
-    this_cpu_shared().update_guest_caa(gpa);
+    let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+    let caa = vmsa_ref.caa_phys();
+
+    // Check if address is not used as VMSA or CAA already and update
+    // PERCPU_VMSAS.
+    if let Some(cur_caa) = caa {
+        if cur_caa == gpa {
+            // Remapping to current CAA is a no-op
+            return Ok(());
+        }
+        PERCPU_VMSAS.remap_ca(cur_caa, gpa)?;
+    }
+
+    vmsa_ref.update_caa(Some(gpa));
 
     Ok(())
 }
