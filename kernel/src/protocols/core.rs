@@ -303,7 +303,7 @@ fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
         return Err(SvsmReqError::invalid_parameter());
     }
 
-    if !valid_phys_address(paddr) {
+    if !valid_phys_region(&MemoryRegion::new(paddr, page_size_bytes)) {
         log::debug!("Invalid phys address: {paddr:#x}");
         return Err(SvsmReqError::invalid_address());
     }
