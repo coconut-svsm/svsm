@@ -19,6 +19,7 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::cpuid::cpuid_table_raw;
 use crate::cpu::cpuid::init_cpuid_table;
+use crate::cpu::features::{Feature, cpu_get_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::{PerCpu, current_ghcb, this_cpu};
 use crate::cpu::tlb::TlbFlushScope;
@@ -252,9 +253,10 @@ impl SvsmPlatform for SnpPlatform {
             }
         } else {
             // Find C-bit position.
-            let sev_capabilities =
-                cpuid_table(0x8000001f, 0).expect("Can not get C-Bit position from CPUID table");
-            let c_bit = sev_capabilities.ebx & 0x3f;
+            let c_bit = cpu_get_feat(Feature::Cbit);
+            if c_bit == 0 {
+                panic!("Cannot get C-Bit position from CPUID");
+            }
             PageEncryptionMasks {
                 private_pte_mask: 1 << c_bit,
                 shared_pte_mask: 0,
