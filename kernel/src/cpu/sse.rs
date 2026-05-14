@@ -15,6 +15,9 @@ const XCR0_X87_ENABLE: u64 = 0x1;
 const XCR0_SSE_ENABLE: u64 = 0x2;
 const XCR0_YMM_ENABLE: u64 = 0x4;
 
+// XSAVE size for x87 + SSE
+pub const XSAVE_LEGACY_SIZE: u32 = 0x240;
+
 static SVSM_XCR0: AtomicU64 = AtomicU64::new(XCR0_X87_ENABLE | XCR0_SSE_ENABLE);
 
 fn legacy_sse_enable() {
