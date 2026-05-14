@@ -161,12 +161,6 @@ if [ ! -z "$IMAGE" ]; then
     -device scsi-hd,drive=disk0"
 fi
 
-if [ "$EUID" -ne 0 ] && [ "$ACCEL" != "tcg" ]; then
-	SUDO_CMD="sudo"
-else
-	SUDO_CMD=""
-fi
-
 echo "============================="
 echo "Launching SVSM guest"
 echo "============================="
@@ -190,8 +184,7 @@ if [ -t 0 ]; then
 fi
 
 # Temporarily use -vga none to avoid IGVM VGA init failure in QEMU 10.1
-$SUDO_CMD \
-  "$QEMU" \
+$QEMU \
     -cpu $CPU \
     -machine $MACHINE \
     -object $MEMORY \
