@@ -38,9 +38,13 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 use bootdefs::platform::SvsmPlatformType;
 
+#[unsafe(link_section = crate::ro_after_init_section!())]
 static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
+#[unsafe(link_section = crate::ro_after_init_section!())]
 static SVSM_PLATFORM_CELL: ImmutAfterInitCell<SvsmPlatformCell> = ImmutAfterInitCell::uninit();
+#[unsafe(link_section = crate::ro_after_init_section!())]
 pub static SVSM_PLATFORM: ImmutAfterInitCell<&dyn SvsmPlatform> = ImmutAfterInitCell::uninit();
+#[unsafe(link_section = crate::ro_after_init_section!())]
 pub static CAPS: ImmutAfterInitCell<Caps> = ImmutAfterInitCell::uninit();
 
 #[derive(Clone, Copy, Debug)]
