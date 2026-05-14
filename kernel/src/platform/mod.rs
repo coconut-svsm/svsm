@@ -296,8 +296,7 @@ pub trait SvsmPlatform: Sync {
         Self: Sized;
 }
 
-//FIXME - remove Copy trait
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum SvsmPlatformCell {
     Snp(SnpPlatform),
     Tdp(TdpPlatform),
