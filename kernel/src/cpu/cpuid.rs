@@ -139,21 +139,17 @@ impl CpuidLeaf {
     }
 }
 
-pub fn cpuid_table_raw(eax: u32, ecx: u32, xcr0: u64, xss: u64) -> Option<CpuidResult> {
+pub fn cpuid_table(eax: u32, ecx: u32) -> Option<CpuidResult> {
     CPUID_PAGE
         .entries()
         .iter()
-        .find(|f| eax == f.eax_in && ecx == f.ecx_in && xcr0 == f.xcr0_in && xss == f.xss_in)
+        .find(|f| eax == f.eax_in && ecx == f.ecx_in)
         .map(|f| CpuidResult {
             eax: f.eax_out,
             ebx: f.ebx_out,
             ecx: f.ecx_out,
             edx: f.edx_out,
         })
-}
-
-pub fn cpuid_table(eax: u32, ecx: u32) -> Option<CpuidResult> {
-    cpuid_table_raw(eax, ecx, 0, 0)
 }
 
 pub fn dump_cpuid_table() {
