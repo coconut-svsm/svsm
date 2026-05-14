@@ -16,7 +16,6 @@ use super::snp_fw::{
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::console::init_svsm_console;
-use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::cpuid::cpuid_table_raw;
 use crate::cpu::cpuid::init_cpuid_table;
 use crate::cpu::features::{Feature, cpu_get_feat};
@@ -241,15 +240,14 @@ impl SvsmPlatform for SnpPlatform {
 
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
         // Find physical address size.
-        let processor_capacity =
-            cpuid_table(0x80000008, 0).expect("Can not get physical address size from CPUID table");
+        let phys_addr_sizes = cpu_get_feat(Feature::PhysAddrSizes);
         if vtom_enabled() {
             let vtom = *VTOM;
             PageEncryptionMasks {
                 private_pte_mask: 0,
                 shared_pte_mask: vtom,
                 addr_mask_width: vtom.leading_zeros(),
-                phys_addr_sizes: processor_capacity.eax,
+                phys_addr_sizes,
             }
         } else {
             // Find C-bit position.
@@ -261,7 +259,7 @@ impl SvsmPlatform for SnpPlatform {
                 private_pte_mask: 1 << c_bit,
                 shared_pte_mask: 0,
                 addr_mask_width: c_bit,
-                phys_addr_sizes: processor_capacity.eax,
+                phys_addr_sizes,
             }
         }
     }
