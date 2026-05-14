@@ -169,7 +169,7 @@ where
         boot_params_virt_addr: boot_params_vaddr,
         vtom: boot_image_params.vtom,
         debug_serial_port: boot_image_params.boot_params.debug_serial_port,
-        use_alternate_injection: false,
+        use_alternate_injection: boot_image_params.boot_params.use_alternate_injection != 0,
         kernel_page_table_vaddr: kernel_page_tables.root_vaddr(),
         suppress_svsm_interrupts: false,
         vmsa_in_kernel_heap,
