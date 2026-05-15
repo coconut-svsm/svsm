@@ -38,6 +38,32 @@ fn main() {
         .allowlist_function("_plat__NVEnable")
         .allowlist_function("TPM_Manufacture")
         .allowlist_function("TPM_TearDown")
+        .allowlist_function("get_ep_seed")
+        .allowlist_function("set_ep_seed")
+        .allowlist_function("get_sp_seed")
+        .allowlist_function("set_sp_seed")
+        .allowlist_function("get_pp_seed")
+        .allowlist_function("set_pp_seed")
+        .allowlist_function("get_owner_auth")
+        .allowlist_function("set_owner_auth")
+        .allowlist_function("get_endorsement_auth")
+        .allowlist_function("set_endorsement_auth")
+        .allowlist_function("get_lockout_auth")
+        .allowlist_function("set_lockout_auth")
+        .allowlist_function("get_platform_auth")
+        .allowlist_function("set_platform_auth")
+        .allowlist_function("get_total_reset_count")
+        .allowlist_function("set_total_reset_count")
+        .allowlist_function("get_reset_count")
+        .allowlist_function("set_reset_count")
+        .allowlist_function("get_pcr_save")
+        .allowlist_function("set_pcr_save")
+        .allowlist_function("get_clear_count")
+        .allowlist_function("set_clear_count")
+        .allowlist_function("get_object_context_id")
+        .allowlist_function("set_object_context_id")
+        .allowlist_function("serialize_vtpm_state")
+        .allowlist_function("deserialize_vtpm_state")
         .use_core()
         .clang_arg("-Wno-incompatible-library-redeclaration")
         .clang_arg("-nostdinc")
@@ -52,6 +78,10 @@ fn main() {
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .unwrap_or_else(|_| panic!("Unable to write bindings.rs"));
+
+    // State accessor library (direct TPM global state access)
+    println!("cargo:rustc-link-search={out_dir}");
+    println!("cargo:rustc-link-lib=static=StateAccessor");
 
     // 'static=...' is needed because core lib + platform lib have
     // circular dependencies.

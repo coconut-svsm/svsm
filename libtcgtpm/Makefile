@@ -72,7 +72,33 @@ endif
 # Parallel builds are still used inside the sub-targets (-j flag)
 .NOTPARALLEL:
 
-all: $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
+# State accessor: direct TPM global state access (gp, gc, gr)
+STATE_ACCESSOR_SRC = $(ROOT_DIR)/state_accessor.c
+STATE_ACCESSOR_OBJ = $(OUT_DIR)/state_accessor.o
+STATE_ACCESSOR_LIB = $(OUT_DIR)/libStateAccessor.a
+STATE_ACCESSOR_CFLAGS = $(TCGTPM_CFLAGS) \
+	-DSYM_LIB=Ossl \
+	-DHASH_LIB=Ossl \
+	-DMATH_LIB=TpmBigNum \
+	-DBN_MATH_LIB=Ossl \
+	-I$(TCGTPM_SRC_DIR)/tpm/include \
+	-I$(TCGTPM_SRC_DIR)/tpm/include/private \
+	-I$(TCGTPM_SRC_DIR)/tpm/include/private/prototypes \
+	-I$(TCGTPM_SRC_DIR)/tpm/include/platform_interface/Tpm_Platform_Interface \
+	-I$(TCGTPM_SRC_DIR)/tpm/include/platform_interface/Tpm_Platform_Interface/prototypes \
+	-I$(TCGTPM_SRC_DIR)/Platform/include \
+	-I$(TCGTPM_SRC_DIR)/tpm/cryptolibs/Ossl/include \
+	-I$(TCGTPM_SRC_DIR)/tpm/cryptolibs/TpmBigNum/include \
+	-I$(TCGTPM_SRC_DIR)/tpm/cryptolibs/common/include \
+	-I$(DEPS_DIR)/TpmConfiguration
+
+all: $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM) $(STATE_ACCESSOR_LIB)
+
+$(STATE_ACCESSOR_OBJ): $(STATE_ACCESSOR_SRC) $(LIBTPM) $(LIBPLATFORM)
+	$(CC) -c $(STATE_ACCESSOR_CFLAGS) -o $@ $<
+
+$(STATE_ACCESSOR_LIB): $(STATE_ACCESSOR_OBJ)
+	$(AR) rcs $@ $<
 
 .PHONY: $(LIBCRT)
 
