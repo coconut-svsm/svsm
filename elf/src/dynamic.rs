@@ -157,6 +157,13 @@ impl Elf64Dynamic {
             Self::DT_RELACOUNT,
         ];
         let mut null_seen = false;
+
+        // Code below assumes that buf.len is aligned to 16, otherwise it might
+        // panic.
+        if buf.len() % 16 != 0 {
+            return Err(ElfError::InvalidAddressAlignment);
+        }
+
         for entry_buf in buf.chunks(16) {
             let d_tag = Elf64Xword::from_le_bytes(entry_buf[0..8].try_into().unwrap());
 
