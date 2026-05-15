@@ -65,6 +65,7 @@ const TPMA_OBJECT_RESTRICTED: u32 = 0x00010000;
 /// Implementations must preserve TPM command/response message boundaries.
 ///
 /// Bundled implementations:
+/// - `VsockTransport`  — AF_VSOCK to the host (feature-gated `vsock`)
 /// - `MockTransport`   — records commands for unit testing
 pub trait TpmTransport {
     fn send_command(&self, command: &[u8]) -> Result<Vec<u8>, SvsmReqError>;
@@ -116,6 +117,119 @@ impl TpmTransport for MockTransport {
             .borrow_mut()
             .pop_front()
             .ok_or(SvsmReqError::invalid_request())
+    }
+}
+
+// ============================================================
+// VsockTransport — AF_VSOCK to a host-side TPM forwarder
+// ============================================================
+
+/// AF_VSOCK transport to a host-side TPM endpoint.
+///
+/// On each `send_command`:
+/// 1. Opens a VSOCK connection to host (CID=2) on the configured port
+/// 2. Sends the raw TPM command buffer
+/// 3. Reads the TPM response (header first to get total size, then body)
+/// 4. Closes the connection
+///
+/// This one-command-per-connection model avoids TPM session state issues.
+/// The host side needs a lightweight forwarder such as:
+///   `socat VSOCK-LISTEN:9999,fork OPEN:/dev/tpm0`
+#[cfg(feature = "vsock")]
+#[derive(Debug)]
+pub struct VsockTransport {
+    remote_cid: u32,
+    remote_port: u32,
+}
+
+#[cfg(feature = "vsock")]
+impl VsockTransport {
+    /// Default VSOCK port for TPM forwarding.
+    pub const DEFAULT_TPM_PORT: u32 = 9999;
+    /// Host CID (always 2 in VSOCK).
+    pub const HOST_CID: u32 = 2;
+
+    pub fn new(remote_cid: u32, remote_port: u32) -> Self {
+        Self {
+            remote_cid,
+            remote_port,
+        }
+    }
+}
+
+#[cfg(feature = "vsock")]
+impl TpmTransport for VsockTransport {
+    fn send_command(&self, command: &[u8]) -> Result<Vec<u8>, SvsmReqError> {
+        use crate::io::{Read, Write};
+        use crate::vsock::stream::VsockStream;
+
+        // Open fresh connection for each command
+        let mut stream = VsockStream::connect(self.remote_port, self.remote_cid).map_err(|_| {
+            log::error!(
+                "VsockTransport: failed to connect to {}:{}",
+                self.remote_cid,
+                self.remote_port
+            );
+            SvsmReqError::invalid_request()
+        })?;
+
+        // Send TPM command
+        let written = stream.write(command).map_err(|_| {
+            log::error!("VsockTransport: write failed");
+            SvsmReqError::invalid_request()
+        })?;
+        if written != command.len() {
+            log::error!("VsockTransport: short write {}/{}", written, command.len());
+            return Err(SvsmReqError::invalid_request());
+        }
+
+        // Read TPM response header: tag(2) + size(4) + rc(4) = 10 bytes minimum
+        let mut header = [0u8; 10];
+        let n = stream.read(&mut header).map_err(|_| {
+            log::error!("VsockTransport: header read failed");
+            SvsmReqError::invalid_request()
+        })?;
+        if n < 10 {
+            log::error!("VsockTransport: short header read {n}/10");
+            return Err(SvsmReqError::invalid_request());
+        }
+
+        // Parse total response size from bytes 2..6 (big-endian u32)
+        let resp_size = u32::from_be_bytes(header[2..6].try_into().unwrap()) as usize;
+
+        if !(10..=4096).contains(&resp_size) {
+            log::error!("VsockTransport: invalid response size {resp_size}");
+            return Err(SvsmReqError::invalid_request());
+        }
+
+        let mut response = Vec::with_capacity(resp_size);
+        response.extend_from_slice(&header);
+
+        // Read remaining response body
+        let remaining = resp_size - 10;
+        if remaining > 0 {
+            let mut buf = alloc::vec![0u8; remaining];
+            let mut total_read = 0usize;
+            while total_read < remaining {
+                let n = stream.read(&mut buf[total_read..]).map_err(|_| {
+                    log::error!("VsockTransport: body read failed at {total_read}/{remaining}");
+                    SvsmReqError::invalid_request()
+                })?;
+                if n == 0 {
+                    // Peer closed — partial read is an error if we expected more
+                    break;
+                }
+                total_read += n;
+            }
+            if total_read < remaining {
+                log::error!("VsockTransport: short body read {total_read}/{remaining}");
+                return Err(SvsmReqError::invalid_request());
+            }
+            response.extend_from_slice(&buf);
+        }
+
+        // stream dropped → connection shutdown
+        Ok(response)
     }
 }
 
