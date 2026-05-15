@@ -15,6 +15,8 @@ pub mod proxy;
 pub mod sealed;
 /// Pluggable storage backend for the sealed vTPM blob.
 pub mod sealed_store;
+/// TPM internal-state extraction and injection via libtcgtpm accessors.
+pub mod state;
 /// TPM 2.0 Reference Implementation
 pub mod tcgtpm;
 
