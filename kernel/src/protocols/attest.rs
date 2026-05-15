@@ -71,17 +71,6 @@ pub struct AttestServicesOp {
 }
 
 impl AttestServicesOp {
-    /// Take a slice and return a reference for Self
-    pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
-        let ops: &Self =
-            Self::ref_from_bytes(buffer).map_err(|_| SvsmReqError::invalid_parameter())?;
-        if !ops.is_reserved_clear() {
-            return Err(SvsmReqError::invalid_parameter());
-        }
-
-        Ok(ops)
-    }
-
     pub fn check_valid(&self) -> Result<(), SvsmReqError> {
         if !self.is_reserved_clear() {
             Err(SvsmReqError::invalid_parameter())
@@ -268,17 +257,6 @@ pub struct AttestSingleServiceOp {
 }
 
 impl AttestSingleServiceOp {
-    /// Take a slice and return a reference for Self
-    pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
-        let ops: &Self =
-            Self::ref_from_bytes(buffer).map_err(|_| SvsmReqError::invalid_parameter())?;
-        if !ops.is_reserved_clear() || !ops.is_manifest_version_valid() {
-            return Err(SvsmReqError::invalid_parameter());
-        }
-
-        Ok(ops)
-    }
-
     /// Checks whether this is a valid request
     pub fn check_valid(&self) -> Result<(), SvsmReqError> {
         if self.is_reserved_clear() && self.is_manifest_version_valid() {
