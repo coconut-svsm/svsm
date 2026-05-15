@@ -220,7 +220,9 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
-        // Setup GHCB
+        if cpu.shared().cpu_index() == 0 {
+            verify_ghcb_version();
+        }
         cpu.setup_ghcb()
     }
 
@@ -310,21 +312,6 @@ impl SvsmPlatform for SnpPlatform {
         current_ghcb()
             .wrmsr(msr, value)
             .expect("Host MSR access failed");
-    }
-
-    fn setup_guest_host_comm(&mut self, cpu: &PerCpu, is_bsp: bool) {
-        if is_bsp {
-            verify_ghcb_version();
-        }
-
-        cpu.setup_ghcb().unwrap_or_else(|_| {
-            if is_bsp {
-                panic!("Failed to setup BSP GHCB");
-            } else {
-                panic!("Failed to setup AP GHCB");
-            }
-        });
-        cpu.register_ghcb().expect("Failed to register GHCB");
     }
 
     fn get_io_port(&self) -> &'static dyn IOPort {

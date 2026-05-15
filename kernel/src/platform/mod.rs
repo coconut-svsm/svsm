@@ -182,9 +182,6 @@ pub trait SvsmPlatform: Sync {
     /// affect memory safety.
     unsafe fn write_host_msr(&self, msr: u32, value: u64);
 
-    /// Establishes state required for guest/host communication.
-    fn setup_guest_host_comm(&mut self, _cpu: &PerCpu, _is_bsp: bool) {}
-
     /// Obtains a reference to an I/O port implemetation appropriate to the
     /// platform.
     fn get_io_port(&self) -> &'static dyn IOPort;
