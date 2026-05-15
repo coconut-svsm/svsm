@@ -10,6 +10,9 @@
 /// TPM 2.0 command construction over a pluggable transport (used to proxy
 /// commands to a TPM endpoint outside the CVM).
 pub mod proxy;
+/// Two-layer container (AES-256-GCM + TPM2_Seal of a key bundle) for
+/// persisting vTPM state across cold boots.
+pub mod sealed;
 /// Pluggable storage backend for the sealed vTPM blob.
 pub mod sealed_store;
 /// TPM 2.0 Reference Implementation
