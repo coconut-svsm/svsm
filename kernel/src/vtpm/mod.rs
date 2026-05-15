@@ -10,6 +10,8 @@
 /// TPM 2.0 command construction over a pluggable transport (used to proxy
 /// commands to a TPM endpoint outside the CVM).
 pub mod proxy;
+/// Pluggable storage backend for the sealed vTPM blob.
+pub mod sealed_store;
 /// TPM 2.0 Reference Implementation
 pub mod tcgtpm;
 
