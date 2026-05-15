@@ -22,12 +22,11 @@ use crate::utils::MemoryRegion;
 #[cfg(all(feature = "vtpm", not(test)))]
 use crate::vtpm::vtpm_get_manifest;
 
+use crate::sev::ghcb::GhcbError;
+use crate::types::PAGE_SHIFT;
 use alloc::{boxed::Box, vec::Vec};
 use uuid::{Uuid, uuid};
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
-
-use crate::sev::ghcb::GhcbError;
-use crate::types::PAGE_SHIFT;
 
 pub const ATTEST_PROTOCOL_VERSION_MIN: u32 = 1;
 pub const ATTEST_PROTOCOL_VERSION_MAX: u32 = 1;
@@ -81,6 +80,14 @@ impl AttestServicesOp {
         }
 
         Ok(ops)
+    }
+
+    pub fn check_valid(&self) -> Result<(), SvsmReqError> {
+        if !self.is_reserved_clear() {
+            Err(SvsmReqError::invalid_parameter())
+        } else {
+            Ok(())
+        }
     }
 
     /// Checks if reserved fields are all set to zero
@@ -270,6 +277,15 @@ impl AttestSingleServiceOp {
         }
 
         Ok(ops)
+    }
+
+    /// Checks whether this is a valid request
+    pub fn check_valid(&self) -> Result<(), SvsmReqError> {
+        if self.is_reserved_clear() && self.is_manifest_version_valid() {
+            Ok(())
+        } else {
+            Err(SvsmReqError::invalid_parameter())
+        }
     }
 
     /// Checks if reserved fields are all set to zero
@@ -541,6 +557,8 @@ fn attest_multiple_services(params: &mut RequestParams) -> Result<(), SvsmReqErr
     let attest_op =
         read_from_guest::<AttestServicesOp>(gpa).map_err(|_| SvsmReqError::invalid_parameter())?;
 
+    attest_op.check_valid()?;
+
     // Attest multiple services is expected to return a GUID table (mixed endian ordering) of the
     // enumerated active services' attestation manifest. A service that does not have its own
     // manifest is still enumerated, but with an empty data blob.
@@ -568,6 +586,8 @@ fn attest_single_service_handler(params: &mut RequestParams) -> Result<(), SvsmR
 
     let attest_op = read_from_guest::<AttestSingleServiceOp>(gpa)
         .map_err(|_| SvsmReqError::invalid_parameter())?;
+
+    attest_op.check_valid()?;
 
     // Extract the GUID from the Attest Single Service Operation structure.
     // The GUID is used to determine the specific service to be attested.
