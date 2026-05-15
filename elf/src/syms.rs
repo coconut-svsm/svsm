@@ -146,7 +146,7 @@ impl<'a> Elf64Symtab<'a> {
     /// - [`Result<Elf64Sym, ElfError>`]: A [`Result`] containing the [`Elf64Sym`] if found,
     ///   or an [`ElfError`] if the index is out of bounds or the symbol is invalid.
     pub fn read_sym(&self, i: Elf64Word) -> Result<Elf64Sym, ElfError> {
-        if i > self.syms_num {
+        if i >= self.syms_num {
             return Err(ElfError::InvalidSymbolIndex);
         }
         let i = usize::try_from(i).map_err(|_| ElfError::InvalidSymbolIndex)?;
