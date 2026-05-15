@@ -72,8 +72,14 @@ use svsm::utils::ScopedMut;
 use svsm::utils::round_to_pages;
 #[cfg(all(feature = "virtio-drivers", any(feature = "block", feature = "vsock")))]
 use svsm::virtio::probe_mmio_slots;
+#[cfg(all(feature = "vtpm", not(feature = "vsock"), not(test)))]
+use svsm::vtpm::MockTransport;
+#[cfg(all(feature = "vtpm", feature = "vsock", not(test)))]
+use svsm::vtpm::VsockTransport;
 #[cfg(all(feature = "vtpm", not(test)))]
-use svsm::vtpm::vtpm_init;
+use svsm::vtpm::{SealedBlobStore, StaticBufStore, VtpmBootMode, vtpm_init_sealed};
+#[cfg(all(feature = "vtpm", feature = "vsock", not(test)))]
+use svsm::vtpm::{VSOCK_HOST_CID, VSOCK_TPM_PORT};
 
 use alloc::string::String;
 use release::COCONUT_VERSION;
@@ -571,7 +577,47 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     }
 
     #[cfg(all(feature = "vtpm", not(test)))]
-    vtpm_init().expect("vTPM failed to initialize");
+    {
+        // SealedBlob persistence is driven through the `SealedBlobStore`
+        // trait so that the same code path can target any backend
+        // (warm-reboot static buffer for dev/test, IGVM variable, the
+        // upcoming SVSM block layer, KBS-stateful vTPM service, ...).
+        // The default in this tree is the static buffer backend, which
+        // survives warm reboots within a single CVM lifetime.
+        static SEALED_BLOB_STORE: StaticBufStore = StaticBufStore::new();
+        let store: &dyn SealedBlobStore = &SEALED_BLOB_STORE;
+
+        let blob_opt = store.load().expect("SealedBlobStore::load failed");
+        let (boot_mode, blob_slice) = match blob_opt.as_deref() {
+            Some(b) => (VtpmBootMode::Recover, Some(b)),
+            None => (VtpmBootMode::Provision, None),
+        };
+
+        let vm_id: [u8; 16] = [0u8; 16]; // TODO: derive from IGVM guest_context
+
+        #[cfg(feature = "vsock")]
+        let transport = VsockTransport::new(VSOCK_HOST_CID, VSOCK_TPM_PORT);
+        #[cfg(not(feature = "vsock"))]
+        let transport = {
+            log::warn!("VTPM: no VSOCK, using MockTransport (debug only)");
+            MockTransport::new()
+        };
+
+        let maybe_blob = vtpm_init_sealed(transport, boot_mode, vm_id, blob_slice)
+            .expect("vTPM sealed init failed");
+
+        if let Some(blob_bytes) = maybe_blob {
+            store
+                .save(&blob_bytes)
+                .expect("SealedBlobStore::save failed");
+            log::info!(
+                "VTPM: SealedBlob ({} bytes) stored for next boot",
+                blob_bytes.len()
+            );
+        }
+
+        log::info!("VTPM: sealed init complete (mode={boot_mode:?})");
+    }
 
     virt_log_usage();
 
