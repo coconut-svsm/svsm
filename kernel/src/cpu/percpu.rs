@@ -1373,8 +1373,15 @@ impl PerCpuVmsas {
         guest_owned: bool,
     ) -> Result<(), SvsmError> {
         let mut guard = self.vmsas.lock_write();
+        let vmsa_region = MemoryRegion::new(paddr, PAGE_SIZE);
+        let caa_region = MemoryRegion::new(caa, 8);
         if guard.iter().any(|vmsa| {
-            vmsa.paddr == paddr || vmsa.caa == paddr || vmsa.paddr == caa || vmsa.caa == caa
+            let vr = MemoryRegion::new(vmsa.paddr, PAGE_SIZE);
+            let cr = MemoryRegion::new(vmsa.caa, 8);
+            vr.overlap(&vmsa_region)
+                || vr.overlap(&caa_region)
+                || cr.overlap(&vmsa_region)
+                || cr.overlap(&caa_region)
         }) {
             return Err(SvsmError::InvalidAddress);
         }
