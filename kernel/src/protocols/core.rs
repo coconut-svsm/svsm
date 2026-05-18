@@ -10,7 +10,7 @@ use crate::cpu::{flush_tlb_global_sync, flush_tlb_global_sync_page};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
-use crate::mm::{GuestPtr, valid_phys_address, valid_phys_region, writable_phys_addr};
+use crate::mm::{GuestPtr, valid_phys_region, writable_phys_addr};
 use crate::mm::{PerCPUMapping, PerCPUPageMappingGuard};
 use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::attest::{ATTEST_PROTOCOL_VERSION_MAX, ATTEST_PROTOCOL_VERSION_MIN};
@@ -93,22 +93,19 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     let pcaa = PhysAddr::from(params.rdx);
     let apic_id: u32 = (params.r8 & 0xffff_ffff) as u32;
 
-    // Check VMSA address
-    if !valid_phys_address(paddr) || !paddr.is_page_aligned() {
+    // Check alignment
+    if !paddr.is_page_aligned() || !pcaa.is_aligned(8) {
         return Err(SvsmReqError::invalid_address());
     }
 
-    // Check CAA address
-    if !valid_phys_address(pcaa) || !pcaa.is_page_aligned() {
-        return Err(SvsmReqError::invalid_address());
-    }
+    let vmsa_region = MemoryRegion::new(paddr, PAGE_SIZE);
+    let caa_region = MemoryRegion::new(pcaa, 8);
 
-    // Check whether VMSA page and CAA region overlap
-    //
-    // Since both areas are 4kb aligned and 4kb in size, and correct alignment
-    // was already checked, it is enough here to check whether VMSA and CAA
-    // page have the same starting address.
-    if paddr == pcaa {
+    // Check for region overlap
+    if vmsa_region.overlap(&caa_region)
+        || !valid_phys_region(&vmsa_region)
+        || !valid_phys_region(&caa_region)
+    {
         return Err(SvsmReqError::invalid_address());
     }
 
@@ -442,7 +439,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // SAFETY: guest_page is obtained from a guest-provided physical address
     // (untrusted), so it needs to be valid (ie. belongs to the guest and only
-    // the guest). The physical address is validated by valid_phys_address()
+    // the guest). The physical address is validated by valid_phys_region()
     // called at the beginning of SVSM_CORE_PVALIDATE handler (this one).
     if let Err(e) = unsafe { guest_page.write_ref(&request) } {
         loop_result = Err(e.into());
@@ -454,7 +451,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
 fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
 
-    if !gpa.is_aligned(8) || !valid_phys_address(gpa) || gpa.crosses_page(8) {
+    if !gpa.is_aligned(8) || !valid_phys_region(&MemoryRegion::new(gpa, 8)) || gpa.crosses_page(8) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
