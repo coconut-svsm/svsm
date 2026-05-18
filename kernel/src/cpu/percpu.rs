@@ -1037,7 +1037,7 @@ impl PerCpu {
         }
 
         if let Some(paddr) = locked.caa_phys() {
-            self.map_guest_caa(paddr)?
+            self.map_guest_caa(paddr.page_align())?
         }
 
         locked.set_updated();
