@@ -120,6 +120,16 @@ impl TcgTpmSimulatorInterface for TcgTpm {
             if response_ffi_size == 0 || response_ffi_size as usize > response_ffi.capacity() {
                 return Err(SvsmReqError::invalid_request());
             }
+            // In TPM failure mode, _plat__RunCommand() redirects the response
+            // pointer to an internal static buffer instead of writing into the
+            // provided one.
+            if response_ffi_p != response_ffi.as_mut_ptr() {
+                core::ptr::copy(
+                    response_ffi_p,
+                    response_ffi.as_mut_ptr(),
+                    response_ffi_size as usize,
+                );
+            }
             response_ffi.set_len(response_ffi_size as usize);
         }
 
