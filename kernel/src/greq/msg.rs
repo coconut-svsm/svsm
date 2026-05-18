@@ -8,9 +8,9 @@
 
 use core::mem::{offset_of, size_of};
 
+use crate::error::SvsmError;
 use crate::{
     crypto::aead::{AUTHTAG_SIZE, Aes256Gcm, Aes256GcmTrait, IV_SIZE},
-    protocols::errors::SvsmReqError,
     sev::secrets_page::VMPCK_SIZE,
     types::PAGE_SIZE,
 };
@@ -40,14 +40,14 @@ pub enum SnpGuestRequestMsgType {
 }
 
 impl TryFrom<u8> for SnpGuestRequestMsgType {
-    type Error = SvsmReqError;
+    type Error = SvsmError;
 
     fn try_from(v: u8) -> Result<Self, Self::Error> {
         match v {
             x if x == Self::Invalid as u8 => Ok(Self::Invalid),
             x if x == Self::ReportRequest as u8 => Ok(Self::ReportRequest),
             x if x == Self::ReportResponse as u8 => Ok(Self::ReportResponse),
-            _ => Err(SvsmReqError::invalid_parameter()),
+            _ => Err(SvsmError::InvalidParameter),
         }
     }
 }
@@ -110,20 +110,16 @@ impl SnpGuestRequestMsgHdr {
     }
 
     /// Set the authenticated tag
-    fn set_authtag(&mut self, new_tag: &[u8]) -> Result<(), SvsmReqError> {
+    fn set_authtag(&mut self, new_tag: &[u8]) -> Result<(), SvsmError> {
         self.authtag
             .get_mut(..new_tag.len())
-            .ok_or_else(SvsmReqError::invalid_parameter)?
+            .ok_or(SvsmError::InvalidParameter)?
             .copy_from_slice(new_tag);
         Ok(())
     }
 
     /// Validate the [`SnpGuestRequestMsgHdr`] fields
-    fn validate(
-        &self,
-        msg_type: SnpGuestRequestMsgType,
-        msg_seqno: u64,
-    ) -> Result<(), SvsmReqError> {
+    fn validate(&self, msg_type: SnpGuestRequestMsgType, msg_seqno: u64) -> Result<(), SvsmError> {
         if self.hdr_version != HDR_VERSION
             || self.hdr_sz != MSG_HDR_SIZE as u16
             || self.algo != SnpGuestRequestAead::Aes256Gcm as u8
@@ -131,7 +127,7 @@ impl SnpGuestRequestMsgHdr {
             || self.msg_vmpck != 0
             || self.msg_seqno != msg_seqno
         {
-            return Err(SvsmReqError::invalid_format());
+            return Err(SvsmError::InvalidFormat);
         }
         Ok(())
     }
@@ -194,7 +190,7 @@ impl SnpGuestRequestMsg {
     ///
     /// # Returns
     ///
-    /// () on success and [`SvsmReqError`] on error.
+    /// () on success and [`SvsmError`] on error.
     ///
     /// # Panic
     ///
@@ -206,9 +202,9 @@ impl SnpGuestRequestMsg {
         msg_seqno: u64,
         vmpck0: &[u8; VMPCK_SIZE],
         command: &[u8],
-    ) -> Result<(), SvsmReqError> {
+    ) -> Result<(), SvsmError> {
         let payload_size_u16 =
-            u16::try_from(command.len()).map_err(|_| SvsmReqError::invalid_parameter())?;
+            u16::try_from(command.len()).map_err(|_| SvsmError::InvalidParameter)?;
 
         let mut msg_hdr = SnpGuestRequestMsgHdr::new(payload_size_u16, msg_type, msg_seqno);
         let aad: &[u8] = msg_hdr.get_aad_slice();
@@ -224,7 +220,7 @@ impl SnpGuestRequestMsg {
         let authtag = self
             .pld
             .get_mut(ciphertext_end..authtag_end)
-            .ok_or_else(SvsmReqError::invalid_request)?;
+            .ok_or(SvsmError::InvalidParameter)?;
 
         // The command should have the same size when encrypted and decrypted
         assert_eq!(command.len(), ciphertext_end);
@@ -257,14 +253,14 @@ impl SnpGuestRequestMsg {
     /// * Success
     ///     * usize: Number of bytes written to `outbuf`
     /// * Error
-    ///     * [`SvsmReqError`]
+    ///     * [`SvsmError`]
     pub fn decrypt_get(
         &mut self,
         msg_type: SnpGuestRequestMsgType,
         msg_seqno: u64,
         vmpck0: &[u8; VMPCK_SIZE],
         outbuf: &mut [u8],
-    ) -> Result<usize, SvsmReqError> {
+    ) -> Result<usize, SvsmError> {
         self.hdr.validate(msg_type, msg_seqno)?;
 
         let iv: [u8; IV_SIZE] = build_iv(msg_seqno);
@@ -280,18 +276,18 @@ impl SnpGuestRequestMsg {
             .hdr
             .authtag
             .get(..AUTHTAG_SIZE)
-            .ok_or_else(SvsmReqError::invalid_request)?;
+            .ok_or(SvsmError::MessageDecryptionFailure)?;
         let pld_tag = self
             .pld
             .get_mut(ciphertext_end..tag_end)
-            .ok_or_else(SvsmReqError::invalid_request)?;
+            .ok_or(SvsmError::MessageDecryptionFailure)?;
         pld_tag.copy_from_slice(hdr_tag);
 
         // Payload with postfixed authtag
         let inbuf = self
             .pld
             .get(..tag_end)
-            .ok_or_else(SvsmReqError::invalid_request)?;
+            .ok_or(SvsmError::MessageDecryptionFailure)?;
 
         let outbuf_len: usize = Aes256Gcm::decrypt(&iv, vmpck0, aad, inbuf, outbuf)?;
 

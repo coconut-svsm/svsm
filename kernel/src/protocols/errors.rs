@@ -83,6 +83,11 @@ impl From<SvsmError> for SvsmReqError {
                 ApicError::Registration => Self::protocol(SVSM_ERR_APIC_CANNOT_REGISTER),
             },
             SvsmError::Attestation(e) => Self::protocol(e as u64),
+            SvsmError::InvalidParameter => Self::invalid_parameter(),
+            SvsmError::InvalidFormat => Self::invalid_format(),
+            SvsmError::NotSupported
+            | SvsmError::MessageDecryptionFailure
+            | SvsmError::SnpGuestRequest(_) => Self::invalid_request(),
             // Use a fatal error for now
             _ => Self::FatalError(err),
         }

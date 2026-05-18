@@ -22,7 +22,6 @@ use crate::{
     error::SvsmError,
     greq::msg::{SnpGuestRequestExtData, SnpGuestRequestMsg, SnpGuestRequestMsgType},
     locking::SpinLock,
-    protocols::errors::{SvsmReqError, SvsmResultCode},
     sev::{VMPCK_SIZE, ghcb::GhcbError, secrets_page, secrets_page_mut},
     types::PAGE_SHIFT,
 };
@@ -80,7 +79,7 @@ struct SnpGuestRequestDriver {
 
 impl SnpGuestRequestDriver {
     /// Create a new [`SnpGuestRequestDriver`]
-    pub fn new() -> Result<Self, SvsmReqError> {
+    pub fn new() -> Result<Self, SvsmError> {
         let request = SharedBox::try_new_zeroed()?;
         let response = SharedBox::try_new_zeroed()?;
         let staging = SnpGuestRequestMsg::new_box_zeroed()
@@ -110,10 +109,10 @@ impl SnpGuestRequestDriver {
     }
 
     /// Set the user_extdata_size to `n` and clear the first `n` bytes from `ext_data`
-    pub fn set_user_extdata_size(&mut self, n: usize) -> Result<(), SvsmReqError> {
+    pub fn set_user_extdata_size(&mut self, n: usize) -> Result<(), SvsmError> {
         // At least one page
         if (n >> PAGE_SHIFT) == 0 {
-            return Err(SvsmReqError::invalid_parameter());
+            return Err(SvsmError::InvalidParameter);
         }
         self.ext_data.nclear(n)?;
         self.user_extdata_size = n;
@@ -123,7 +122,7 @@ impl SnpGuestRequestDriver {
 
     /// Call the GHCB layer to send the encrypted SNP_GUEST_REQUEST message
     /// to the PSP.
-    fn send(&mut self, req_class: SnpGuestRequestClass) -> Result<(), SvsmReqError> {
+    fn send(&mut self, req_class: SnpGuestRequestClass) -> Result<(), SvsmError> {
         let req_page = self.request.addr();
         let resp_page = self.response.addr();
         let data_pages = self.ext_data.addr();
@@ -148,13 +147,13 @@ impl SnpGuestRequestDriver {
         msg_seqno: u64,
         buffer: &[u8],
         command_len: usize,
-    ) -> Result<(), SvsmReqError> {
+    ) -> Result<(), SvsmError> {
         // VMPL0 `SNP_GUEST_REQUEST` commands are encrypted with the VMPCK0 key
         let vmpck0: [u8; VMPCK_SIZE] = secrets_page().unwrap().get_vmpck(0);
 
         let inbuf = buffer
             .get(..command_len)
-            .ok_or_else(SvsmReqError::invalid_parameter)?;
+            .ok_or(SvsmError::InvalidParameter)?;
 
         // For security reasons, encrypt the message in protected memory (staging)
         // and then copy the result to shared memory (request)
@@ -170,7 +169,7 @@ impl SnpGuestRequestDriver {
         msg_seqno: u64,
         msg_type: SnpGuestRequestMsgType,
         buffer: &mut [u8],
-    ) -> Result<usize, SvsmReqError> {
+    ) -> Result<usize, SvsmError> {
         let vmpck0: [u8; VMPCK_SIZE] = secrets_page().unwrap().get_vmpck(0);
 
         // For security reasons, decrypt the message in protected memory (staging)
@@ -183,7 +182,7 @@ impl SnpGuestRequestDriver {
             match e {
                 // The buffer provided is too small to store the unwrapped response.
                 // There is no need to clear the VMPCK0, just report it as invalid parameter.
-                SvsmReqError::RequestError(SvsmResultCode::INVALID_PARAMETER) => (),
+                SvsmError::InvalidParameter => (),
                 _ => secrets_page_mut().unwrap().clear_vmpck(0),
             }
         }
@@ -208,16 +207,16 @@ impl SnpGuestRequestDriver {
     /// * Success:
     ///     * `usize`: Size (in bytes) of the response stored in `buffer`
     /// * Error:
-    ///     * [`SvsmReqError`]
+    ///     * [`SvsmError`]
     fn send_request(
         &mut self,
         req_class: SnpGuestRequestClass,
         msg_type: SnpGuestRequestMsgType,
         buffer: &mut [u8],
         command_len: usize,
-    ) -> Result<usize, SvsmReqError> {
+    ) -> Result<usize, SvsmError> {
         if secrets_page().unwrap().is_vmpck_clear(0) {
-            return Err(SvsmReqError::invalid_request());
+            return Err(SvsmError::NotSupported);
         }
 
         // Message sequence number overflow, the driver will not able
@@ -226,15 +225,13 @@ impl SnpGuestRequestDriver {
         let Some(msg_seqno) = self.seqno_last_used().checked_add(1) else {
             log::error!("SNP_GUEST_REQUEST: sequence number overflow");
             secrets_page_mut().unwrap().clear_vmpck(0);
-            return Err(SvsmReqError::invalid_request());
+            return Err(SvsmError::NotSupported);
         };
 
         self.encrypt_request(msg_type, msg_seqno, buffer, command_len)?;
 
         if let Err(e) = self.send(req_class) {
-            if let SvsmReqError::FatalError(SvsmError::Ghcb(GhcbError::VmgexitError(_rbx, info2))) =
-                e
-            {
+            if let SvsmError::Ghcb(GhcbError::VmgexitError(_rbx, info2)) = e {
                 // For some reason the hypervisor did not forward the request to the PSP.
                 //
                 // Because the message sequence number is used as part of the AES-GCM IV, it is important that the
@@ -256,7 +253,7 @@ impl SnpGuestRequestDriver {
                             // We sent a regular SNP_GUEST_REQUEST, but the hypervisor returned
                             // an error code that is exclusive for extended SNP_GUEST_REQUEST
                             secrets_page_mut().unwrap().clear_vmpck(0);
-                            return Err(SvsmReqError::invalid_request());
+                            return Err(SvsmError::NotSupported);
                         }
                     }
                     // The hypervisor is busy.
@@ -291,7 +288,7 @@ impl SnpGuestRequestDriver {
         msg_type: SnpGuestRequestMsgType,
         buffer: &mut [u8],
         command_len: usize,
-    ) -> Result<usize, SvsmReqError> {
+    ) -> Result<usize, SvsmError> {
         self.send_request(SnpGuestRequestClass::Regular, msg_type, buffer, command_len)
     }
 
@@ -302,7 +299,7 @@ impl SnpGuestRequestDriver {
         buffer: &mut [u8],
         command_len: usize,
         certs: &mut [u8],
-    ) -> Result<usize, SvsmReqError> {
+    ) -> Result<usize, SvsmError> {
         self.set_user_extdata_size(certs.len())?;
 
         let outbuf_len: usize = self.send_request(
@@ -343,10 +340,9 @@ pub fn send_regular_guest_request(
     msg_type: SnpGuestRequestMsgType,
     buffer: &mut [u8],
     request_len: usize,
-) -> Result<usize, SvsmReqError> {
+) -> Result<usize, SvsmError> {
     let mut cell = GREQ_DRIVER.lock();
-    let driver: &mut SnpGuestRequestDriver =
-        cell.get_mut().ok_or_else(SvsmReqError::invalid_request)?;
+    let driver: &mut SnpGuestRequestDriver = cell.get_mut().ok_or(SvsmError::NotSupported)?;
     driver.send_regular_guest_request(msg_type, buffer, request_len)
 }
 
@@ -357,9 +353,8 @@ pub fn send_extended_guest_request(
     buffer: &mut [u8],
     request_len: usize,
     certs: &mut [u8],
-) -> Result<usize, SvsmReqError> {
+) -> Result<usize, SvsmError> {
     let mut cell = GREQ_DRIVER.lock();
-    let driver: &mut SnpGuestRequestDriver =
-        cell.get_mut().ok_or_else(SvsmReqError::invalid_request)?;
+    let driver: &mut SnpGuestRequestDriver = cell.get_mut().ok_or(SvsmError::NotSupported)?;
     driver.send_extended_guest_request(msg_type, buffer, request_len, certs)
 }
