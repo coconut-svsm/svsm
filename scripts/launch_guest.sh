@@ -119,6 +119,9 @@ if [ "$VIRTIO" -eq 1 ]; then
   VIRTIO_CONFIG="-global virtio-mmio.force-legacy=false "
 fi
 
+# Obtain the kernel version
+KERNEL_VERSION=$(uname -r)
+
 # Split the QEMU version number so we can specify the correct parameters
 QEMU_VERSION=$($QEMU --version | grep -Po '(?<=version )[^ ]+')
 QEMU_MAJOR=${QEMU_VERSION%%.*}
@@ -170,10 +173,11 @@ fi
 echo "============================="
 echo "Launching SVSM guest"
 echo "============================="
-echo "QEMU:         ${QEMU}"
-echo "QEMU Version: ${QEMU_VERSION}"
-echo "IGVM:         ${IGVM}"
-echo "IMAGE:        ${IMAGE}"
+echo "KERNEL_VERSION: ${KERNEL_VERSION}"
+echo "QEMU:           ${QEMU}"
+echo "QEMU Version:   ${QEMU_VERSION}"
+echo "IGVM:           ${IGVM}"
+echo "IMAGE:          ${IMAGE}"
 echo "============================="
 
 
