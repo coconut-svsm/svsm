@@ -4,6 +4,7 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use super::CpuVendor;
 use super::PageEncryptionMasks;
 use super::PageStateChangeOp;
 use super::PageValidateOp;
@@ -180,6 +181,10 @@ impl SvsmPlatform for SnpPlatform {
         }
         guest_request_driver_init();
         Ok(())
+    }
+
+    fn get_cpu_vendor(&self) -> CpuVendor {
+        CpuVendor::AMD
     }
 
     /// # Safety

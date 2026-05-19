@@ -6,8 +6,13 @@
 // Author: Jon Lange <jlange@microsoft.com>
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use super::CpuVendor;
+use super::PageEncryptionMasks;
+use super::PageStateChangeOp;
+use super::PageValidateOp;
+use super::SvsmPlatform;
 use super::capabilities::Caps;
-use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
+use super::cpuid;
 use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::IrqGuard;
@@ -82,6 +87,18 @@ impl SvsmPlatform for NativePlatform {
 
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
         Ok(())
+    }
+
+    fn get_cpu_vendor(&self) -> CpuVendor {
+        if let Some(r) = cpuid(0, 0) {
+            match r.edx {
+                0x69746e65 => CpuVendor::AMD,
+                0x49656e69 => CpuVendor::Intel,
+                _ => CpuVendor::Unknown,
+            }
+        } else {
+            CpuVendor::Unknown
+        }
     }
 
     fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {

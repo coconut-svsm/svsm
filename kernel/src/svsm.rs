@@ -341,6 +341,7 @@ unsafe fn svsm_start(
     platform
         .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
         .expect("Early environment setup failed");
+    log::info!("CPU vendor {:?}", platform.get_cpu_vendor());
 
     // Load symbol info now that there is a console
     // SAFETY: the launch info here is the launch info passed by the boot
