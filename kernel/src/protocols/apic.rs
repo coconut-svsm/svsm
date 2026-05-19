@@ -8,6 +8,7 @@ use crate::cpu::percpu::this_cpu;
 use crate::platform::SVSM_PLATFORM;
 use crate::protocols::RequestParams;
 use crate::protocols::errors::SvsmReqError;
+use bitfield_struct::bitfield;
 
 const SVSM_REQ_APIC_QUERY_FEATURES: u32 = 0;
 const SVSM_REQ_APIC_CONFIGURE: u32 = 1;
@@ -17,6 +18,15 @@ const SVSM_REQ_APIC_CONFIGURE_VECTOR: u32 = 4;
 
 pub const APIC_PROTOCOL_VERSION_MIN: u32 = 1;
 pub const APIC_PROTOCOL_VERSION_MAX: u32 = 1;
+
+#[bitfield(u64)]
+struct VectorConfig {
+    vector: u8,
+    enable: bool,
+    all_vectors: bool,
+    #[bits(54)]
+    rsvd: u64,
+}
 
 fn apic_query_features(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     // No features are supported beyond the base feature set.
@@ -76,14 +86,20 @@ fn apic_configure_vector(params: &RequestParams) -> Result<(), SvsmReqError> {
     if !cpu.use_apic_emulation() {
         return Err(SvsmReqError::invalid_request());
     }
-    if params.rcx <= 0x1FF {
-        let vector: u8 = (params.rcx & 0xFF) as u8;
-        let allowed = (params.rcx & 0x100) != 0;
-        cpu.configure_apic_vector(vector, allowed)?;
-        Ok(())
-    } else {
-        Err(SvsmReqError::invalid_parameter())
+
+    let config = VectorConfig::from_bits(params.rcx);
+
+    if config.rsvd() != 0 {
+        return Err(SvsmReqError::invalid_parameter());
     }
+
+    if config.all_vectors() {
+        cpu.configure_apic_all_vectors(config.enable())?;
+    } else {
+        cpu.configure_apic_vector(config.vector(), config.enable())?;
+    }
+
+    Ok(())
 }
 
 pub fn apic_protocol_request(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
