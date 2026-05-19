@@ -172,9 +172,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     let paddr = PhysAddr::from(params.rcx);
 
-    PERCPU_VMSAS
-        .unregister(paddr, true)
-        .map_err(|_| SvsmReqError::invalid_parameter())?;
+    PERCPU_VMSAS.unregister(paddr, true)?;
 
     // Map the VMSA
     // SAFETY: the physical address is known to point to a VMSA which is not

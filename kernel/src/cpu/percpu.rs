@@ -1419,12 +1419,16 @@ impl PerCpuVmsas {
         Ok(())
     }
 
-    pub fn unregister(&self, paddr: PhysAddr, in_use: bool) -> Result<VmsaRegistryEntry, u64> {
+    pub fn unregister(
+        &self,
+        paddr: PhysAddr,
+        in_use: bool,
+    ) -> Result<VmsaRegistryEntry, SvsmError> {
         let mut guard = self.vmsas.lock_write();
         let index = guard
             .iter()
             .position(|vmsa| vmsa.paddr == paddr && vmsa.in_use == in_use)
-            .ok_or(0u64)?;
+            .ok_or(SvsmError::InvalidParameter)?;
 
         if in_use {
             let vmsa = &guard[index];
