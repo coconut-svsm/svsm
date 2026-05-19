@@ -4,8 +4,12 @@
 //
 // Author: Peter Fang <peter.fang@intel.com>
 
+use super::CpuVendor;
+use super::PageEncryptionMasks;
+use super::PageStateChangeOp;
+use super::PageValidateOp;
+use super::SvsmPlatform;
 use super::capabilities::Caps;
-use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::features::{Feature, cpu_get_feat, cpu_has_feat};
@@ -79,6 +83,10 @@ impl SvsmPlatform for TdpPlatform {
 
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
         Ok(())
+    }
+
+    fn get_cpu_vendor(&self) -> CpuVendor {
+        CpuVendor::Intel
     }
 
     fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {

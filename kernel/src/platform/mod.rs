@@ -48,6 +48,13 @@ pub static SVSM_PLATFORM: ImmutAfterInitCell<&dyn SvsmPlatform> = ImmutAfterInit
 pub static CAPS: ImmutAfterInitCell<Caps> = ImmutAfterInitCell::uninit();
 
 #[derive(Clone, Copy, Debug)]
+pub enum CpuVendor {
+    Unknown,
+    Intel,
+    AMD,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct PageEncryptionMasks {
     pub private_pte_mask: usize,
     pub shared_pte_mask: usize,
@@ -119,6 +126,9 @@ pub trait SvsmPlatform: Sync {
     /// Performs initialiation of the kernel environment once the boot task
     /// is running.
     fn env_setup_svsm(&self) -> Result<(), SvsmError>;
+
+    /// Determines which CPU vendor is running this SVSM instance.
+    fn get_cpu_vendor(&self) -> CpuVendor;
 
     /// Frees a platforms-specific page if it is not used by the underlying
     /// platform.
