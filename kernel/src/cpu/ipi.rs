@@ -365,6 +365,12 @@ fn send_ipi(target_set: IpiTarget<'_>, ipi_helper: &mut dyn IpiHelper) {
     let mut interrupt_target = target_set;
     let mut interrupt_set: MaybeUninit<CpuSet> = MaybeUninit::uninit();
 
+    // There should be no pending activity for the current IPI board.  This is
+    // a debug assert because it does not affect safety, and it should normally
+    // be guaranteed by the design of the IPI logic without depending on the
+    // behavior of any routine that invokes the IPI logic.
+    debug_assert_eq!(ipi_board.pending.load(Ordering::Relaxed), 0);
+
     // Enumerate all CPUs in the target set to advise that an IPI message has
     // been posted.
     let mut include_self = false;
@@ -374,7 +380,7 @@ fn send_ipi(target_set: IpiTarget<'_>, ipi_helper: &mut dyn IpiHelper) {
             if cpu_index == sender_cpu_index {
                 include_self = true;
             } else {
-                ipi_board.pending.store(1, Ordering::Relaxed);
+                ipi_board.pending.fetch_add(1, Ordering::Relaxed);
                 // SAFETY: advertising an IPI message from this CPU is safe
                 // because the IPI board is fully constructed.
                 unsafe {
@@ -385,11 +391,12 @@ fn send_ipi(target_set: IpiTarget<'_>, ipi_helper: &mut dyn IpiHelper) {
             }
         }
         IpiTarget::Multiple(cpu_set) => {
+            let mut target_count: usize = 0;
             for cpu_index in cpu_set.iter() {
                 if cpu_index == sender_cpu_index {
                     include_self = true;
                 } else {
-                    ipi_board.pending.fetch_add(1, Ordering::Relaxed);
+                    target_count += 1;
                     // SAFETY: advertising an IPI message from this CPU is safe
                     // because the IPI board is fully constructed.
                     unsafe {
@@ -398,6 +405,11 @@ fn send_ipi(target_set: IpiTarget<'_>, ipi_helper: &mut dyn IpiHelper) {
                     send_interrupt = true;
                 }
             }
+
+            // Record the count of targets that will need to respond before
+            // this IPI can complete.
+            ipi_board.pending.fetch_add(target_count, Ordering::Relaxed);
+
             if include_self {
                 // The CPU set used to send the interrupt must be modified to
                 // remove the current CPU.  This cannot be done in place,
@@ -425,7 +437,7 @@ fn send_ipi(target_set: IpiTarget<'_>, ipi_helper: &mut dyn IpiHelper) {
 
             // Record the count of targets that will need to respond before
             // this IPI can complete.
-            ipi_board.pending.store(target_count, Ordering::Relaxed);
+            ipi_board.pending.fetch_add(target_count, Ordering::Relaxed);
 
             // Send an interrupt only if there are targets to receive it.
             send_interrupt = target_count != 0;
