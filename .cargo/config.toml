@@ -14,5 +14,5 @@ rustflags = [
 ]
 
 [alias]
-verify = "v build --features verus"
+verify = "verus focus --features verus"
 xbuild = "run --package xbuild --release --"

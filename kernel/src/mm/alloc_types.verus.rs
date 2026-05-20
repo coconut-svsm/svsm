@@ -6,6 +6,7 @@
 //
 // Proves the encode/decode functions for PageInfo used in alloc.rs.
 use vstd::simple_pptr::MemContents;
+use vstd::std_specs::convert::TryFromSpec;
 verus! {
 
 // prove the size of PageStorageType
@@ -408,22 +409,21 @@ impl SpecDecoderProof<PageStorageType> for ReservedInfo {
     }
 }
 
-impl PageType {
-    spec fn spec_try_from(val: u64) -> Option<Self> {
-        match val {
-            v if v == Self::Free as u64 => Some(Self::Free),
-            v if v == Self::Allocated as u64 => Some(Self::Allocated),
-            v if v == Self::SlabPage as u64 => Some(Self::SlabPage),
-            v if v == Self::Compound as u64 => Some(Self::Compound),
-            v if v == Self::File as u64 => Some(Self::File),
-            v if v == Self::Reserved as u64 => Some(Self::Reserved),
-            _ => None,
-        }
+impl vstd::std_specs::convert::TryFromSpecImpl<u64> for PageType {
+    closed spec fn obeys_try_from_spec() -> bool {
+        true
     }
 
-    pub closed spec fn ens_try_from(val: u64, ret: Result<Self, AllocError>) -> bool {
-        &&& ret.is_ok() == PageType::spec_try_from(val).is_some()
-        &&& ret.is_ok() ==> ret.unwrap() == PageType::spec_try_from(val).unwrap()
+    closed spec fn try_from_spec(val: u64) -> Result<Self, Self::Error> {
+        match val {
+            v if v == Self::Free as u64 => Ok(Self::Free),
+            v if v == Self::Allocated as u64 => Ok(Self::Allocated),
+            v if v == Self::SlabPage as u64 => Ok(Self::SlabPage),
+            v if v == Self::Compound as u64 => Ok(Self::Compound),
+            v if v == Self::File as u64 => Ok(Self::File),
+            v if v == Self::Reserved as u64 => Ok(Self::Reserved),
+            _ => Err(AllocError::InvalidPageType),
+        }
     }
 }
 
@@ -434,7 +434,7 @@ impl SpecDecoderProof<PageStorageType> for PageType {
 
     spec fn spec_decode(mem: PageStorageType) -> Option<Self> {
         let val = mem.0 & PageStorageType::TYPE_MASK;
-        PageType::spec_try_from(val)
+        PageType::try_from_spec(val).ok()
     }
 
     proof fn lemma_encode_decode(&self) {

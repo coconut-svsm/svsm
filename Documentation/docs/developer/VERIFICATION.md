@@ -31,8 +31,17 @@ Run the following commands to install Verus tools.
 
 ```shell
 cd svsm
-./scripts/vinstall.sh
+./scripts/vinstall.sh --use-prebuilt
 ```
+
+The script skips installation if a matching version of Verus is already installed.
+To force reinstallation (e.g., some verus-related tools are missing), add the --force flag.
+To build both Verus and Z3 from source instead of using prebuilt binaries, omit the --use-prebuilt flag. Building from source is required for CI.
+
+> Can I use latest Verus toolchain?
+>> The `vinstall.sh` script and our Cargo dependencies are pinned to a specific
+ Verus version, but newer releases may work as well. Verus runs cross-project CI
+ to check whether new Verus changes remain compatible with Coconut SVSM.
 
 > Why am I using a different Rust toolchain?
 >> Verus requires a specific version of Rust (e.g., 1.88.0) because it depends
@@ -50,29 +59,28 @@ cd svsm/kernel
 cargo verify
 ```
 
-By default, it only verifies the current crate (`cargo verify` is an alias of `cargo v --features verus`), while using spec/proof from external crates. To verify all external crates, run `cargo v --features verusall`
-
-
+By default, `cargo verify` verifies only the current crate. It is an alias for
+`cargo verus focus --features verus` and uses specifications and proofs from
+dependency crates without re-verifying them. To verify dependency crates as
+well, run `cargo verus verify --features verus`.
 
 ### Pass verus arguments for verification
 
 For debugging purposes, it is helpful to pass additional Verus arguments.
-You can specify extra arguments using the environmental variable
-{crate}_{lib/bin}_VERUS_ARGS for a specific crate
-{crate} or VERUS_ARGS for all crates.
+You can specify extra arguments using `cargo verify -- $extra_verus_args`
 
 **Examples**
 
 * Compiles a crate without verifying svsm crate using verus compilation:
 
     ```shell
-    svsm_lib_VERUS_ARGS="--no-verify" cargo verify
+    cargo verify -- --no-verify
     ```
 
 * Compiles a crate while only verifying address module in svsm crate:
 
     ```shell
-    svsm_lib_VERUS_ARGS="--verify-module address --verify-function VirtAddr::new" cargo verify
+    cargo verify -- --verify-only-module address --verify-function VirtAddr::new
     ```
 
 ### Build without verification

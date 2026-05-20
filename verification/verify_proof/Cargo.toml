@@ -19,3 +19,6 @@ workspace = true
 default = []
 noverify = []
 verus = ["verus_builtin", "vstd"]
+
+[package.metadata.verus]
+verify = true
