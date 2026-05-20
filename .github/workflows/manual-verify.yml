@@ -29,6 +29,28 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Calculate Verus cache key
+        run: |
+          VERUS_SCRIPT_SHA=$(shasum scripts/vinstall.sh | awk '{print $1}')
+          echo "VERUS_SCRIPT_SHA=${VERUS_SCRIPT_SHA}" >> "$GITHUB_ENV"
+          VERIFY_YML_SHA=$(shasum .github/workflows/manual-verify.yml | awk '{print $1}')
+          echo "VERIFY_YML_SHA=${VERIFY_YML_SHA}" >> "$GITHUB_ENV"
+
+      - name: Get Verus toolchain from cache
+        id: verus_cache
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/bin/verus
+            ~/.cargo/bin/rust_verify
+            ~/.cargo/bin/z3
+            ~/.cargo/bin/cargo-verus
+            ~/.cargo/bin/verus-root
+            ~/.cargo/bin/verusfmt
+          key: verus-${{ env.VERUS_SCRIPT_SHA }}--config-${{ env.VERIFY_YML_SHA }}
+
+      # vinstall.sh checks `verus --version` and exits early if the
+      # correct version is already installed (restored from cache above).
       - name: Install verus toolchains
         run: ./scripts/vinstall.sh
 
