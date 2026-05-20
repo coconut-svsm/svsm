@@ -32,8 +32,9 @@ impl GenericPageTableFlags for PTEntryFlags {
     const HUGE: Self = Self::HUGE;
 
     /// present, writable, user-accessible, and accessed.
+    /// ACCESSED & DIRTY => prevent future hardware mutations.
     fn parent_flags() -> Self {
-        Self::PRESENT | Self::WRITABLE | Self::USER | Self::ACCESSED
+        Self::PRESENT | Self::WRITABLE | Self::USER | Self::ACCESSED | Self::DIRTY
     }
 
     /// page table is not accessible by user mode, and is not executable.
