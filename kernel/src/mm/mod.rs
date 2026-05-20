@@ -22,7 +22,7 @@ pub mod vm;
 
 pub use address_space::*;
 pub use guestmem::{GuestPtr, copy_from_user, copy_to_user};
-pub use memory::{valid_phys_address, writable_phys_addr};
+pub use memory::{valid_phys_address, valid_phys_region, writable_phys_addr};
 pub use pagebox::*;
 pub use ptguards::*;
 

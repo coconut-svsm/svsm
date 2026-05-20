@@ -961,7 +961,7 @@ impl PerCpu {
         self.shared().guest_vmsa.lock()
     }
 
-    pub fn alloc_guest_vmsa(&self) -> Result<(), SvsmError> {
+    pub fn alloc_guest_vmsa(&self) -> Result<PhysAddr, SvsmError> {
         // Enable alternate injection if the hypervisor supports it.
         let use_alternate_injection = SVSM_PLATFORM.query_apic_registration_state();
         if use_alternate_injection {
@@ -984,7 +984,7 @@ impl PerCpu {
         self.shared().update_guest_vmsa(paddr);
         let _ = VmsaPage::leak(vmsa);
 
-        Ok(())
+        Ok(paddr)
     }
 
     /// Returns a shared reference to the local APIC, or `None` if APIC
@@ -1037,7 +1037,7 @@ impl PerCpu {
         }
 
         if let Some(paddr) = locked.caa_phys() {
-            self.map_guest_caa(paddr)?
+            self.map_guest_caa(paddr.page_align())?
         }
 
         locked.set_updated();
@@ -1318,15 +1318,17 @@ pub fn current_ghcb() -> &'static GHCB {
 #[derive(Debug, Clone, Copy)]
 pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,
+    pub caa: PhysAddr,
     pub cpu_index: usize,
     pub guest_owned: bool,
     pub in_use: bool,
 }
 
 impl VmsaRegistryEntry {
-    pub const fn new(paddr: PhysAddr, cpu_index: usize, guest_owned: bool) -> Self {
+    pub const fn new(paddr: PhysAddr, caa: PhysAddr, cpu_index: usize, guest_owned: bool) -> Self {
         VmsaRegistryEntry {
             paddr,
+            caa,
             cpu_index,
             guest_owned,
             in_use: false,
@@ -1353,28 +1355,45 @@ impl PerCpuVmsas {
         self.vmsas
             .lock_read()
             .iter()
-            .any(|vmsa| vmsa.paddr == paddr)
+            .any(|vmsa| vmsa.paddr == paddr || vmsa.caa == paddr)
     }
 
-    pub fn overlaps(&self, region: &MemoryRegion<PhysAddr>) -> bool {
+    pub fn vmsa_exists(&self, paddr: PhysAddr) -> bool {
         self.vmsas
             .lock_read()
             .iter()
-            .any(|vmsa| region.overlap(&MemoryRegion::new(vmsa.paddr, PAGE_SIZE)))
+            .any(|vmsa| vmsa.paddr == paddr && vmsa.in_use)
+    }
+
+    pub fn overlaps(&self, region: &MemoryRegion<PhysAddr>) -> bool {
+        self.vmsas.lock_read().iter().any(|vmsa| {
+            region.overlap(&MemoryRegion::new(vmsa.paddr, PAGE_SIZE))
+                || region.overlap(&MemoryRegion::new(vmsa.caa, 8))
+        })
     }
 
     pub fn register(
         &self,
         paddr: PhysAddr,
+        caa: PhysAddr,
         cpu_index: usize,
         guest_owned: bool,
     ) -> Result<(), SvsmError> {
         let mut guard = self.vmsas.lock_write();
-        if guard.iter().any(|vmsa| vmsa.paddr == paddr) {
+        let vmsa_region = MemoryRegion::new(paddr, PAGE_SIZE);
+        let caa_region = MemoryRegion::new(caa, 8);
+        if guard.iter().any(|vmsa| {
+            let vr = MemoryRegion::new(vmsa.paddr, PAGE_SIZE);
+            let cr = MemoryRegion::new(vmsa.caa, 8);
+            vr.overlap(&vmsa_region)
+                || vr.overlap(&caa_region)
+                || cr.overlap(&vmsa_region)
+                || cr.overlap(&caa_region)
+        }) {
             return Err(SvsmError::InvalidAddress);
         }
 
-        guard.push(VmsaRegistryEntry::new(paddr, cpu_index, guest_owned));
+        guard.push(VmsaRegistryEntry::new(paddr, caa, cpu_index, guest_owned));
         Ok(())
     }
 
@@ -1389,12 +1408,34 @@ impl PerCpuVmsas {
             })
     }
 
-    pub fn unregister(&self, paddr: PhysAddr, in_use: bool) -> Result<VmsaRegistryEntry, u64> {
+    pub fn remap_ca(&self, old_caa: PhysAddr, new_caa: PhysAddr) -> Result<(), SvsmError> {
+        let mut guard = self.vmsas.lock_write();
+        if guard.iter().any(|vmsa| {
+            let r1 = MemoryRegion::new(vmsa.paddr, PAGE_SIZE);
+            vmsa.caa == new_caa || r1.overlap(&MemoryRegion::new(new_caa, 8))
+        }) {
+            return Err(SvsmError::InvalidAddress);
+        }
+        guard
+            .iter_mut()
+            .find(|vmsa| vmsa.caa == old_caa)
+            .map(|vmsa| {
+                vmsa.caa = new_caa;
+                new_caa
+            });
+        Ok(())
+    }
+
+    pub fn unregister(
+        &self,
+        paddr: PhysAddr,
+        in_use: bool,
+    ) -> Result<VmsaRegistryEntry, SvsmError> {
         let mut guard = self.vmsas.lock_write();
         let index = guard
             .iter()
             .position(|vmsa| vmsa.paddr == paddr && vmsa.in_use == in_use)
-            .ok_or(0u64)?;
+            .ok_or(SvsmError::InvalidParameter)?;
 
         if in_use {
             let vmsa = &guard[index];

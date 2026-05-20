@@ -22,12 +22,11 @@ use crate::utils::MemoryRegion;
 #[cfg(all(feature = "vtpm", not(test)))]
 use crate::vtpm::vtpm_get_manifest;
 
+use crate::sev::ghcb::GhcbError;
+use crate::types::PAGE_SHIFT;
 use alloc::{boxed::Box, vec::Vec};
 use uuid::{Uuid, uuid};
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
-
-use crate::sev::ghcb::GhcbError;
-use crate::types::PAGE_SHIFT;
 
 pub const ATTEST_PROTOCOL_VERSION_MIN: u32 = 1;
 pub const ATTEST_PROTOCOL_VERSION_MAX: u32 = 1;
@@ -72,15 +71,12 @@ pub struct AttestServicesOp {
 }
 
 impl AttestServicesOp {
-    /// Take a slice and return a reference for Self
-    pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
-        let ops: &Self =
-            Self::ref_from_bytes(buffer).map_err(|_| SvsmReqError::invalid_parameter())?;
-        if !ops.is_reserved_clear() {
-            return Err(SvsmReqError::invalid_parameter());
+    pub fn check_valid(&self) -> Result<(), SvsmReqError> {
+        if !self.is_reserved_clear() {
+            Err(SvsmReqError::invalid_parameter())
+        } else {
+            Ok(())
         }
-
-        Ok(ops)
     }
 
     /// Checks if reserved fields are all set to zero
@@ -116,7 +112,9 @@ impl AttestServicesOp {
             return Err(SvsmReqError::invalid_parameter());
         }
 
-        Ok(MemoryRegion::new(gpa, size))
+        // Make sure the region is valid
+        let region = MemoryRegion::checked_new(gpa, size).ok_or(SvsmReqError::invalid_address())?;
+        Ok(region)
     }
 
     /// Returns the report buffer gpa and size
@@ -130,7 +128,9 @@ impl AttestServicesOp {
             return Err(SvsmReqError::invalid_parameter());
         }
 
-        Ok(MemoryRegion::new(gpa, size))
+        // Make sure the region is valid
+        let region = MemoryRegion::checked_new(gpa, size).ok_or(SvsmReqError::invalid_address())?;
+        Ok(region)
     }
 
     /// Returns an optional MemoryRegion describing the certificate buffer.
@@ -168,7 +168,10 @@ impl AttestServicesOp {
             return Err(SvsmReqError::invalid_parameter());
         }
 
-        Ok(Some(MemoryRegion::new(gpa, size)))
+        // Make sure the region is valid
+        let region = MemoryRegion::checked_new(gpa, size).ok_or(SvsmReqError::invalid_address())?;
+
+        Ok(Some(region))
     }
 
     /// Returns true if an extended report is requested
@@ -254,15 +257,13 @@ pub struct AttestSingleServiceOp {
 }
 
 impl AttestSingleServiceOp {
-    /// Take a slice and return a reference for Self
-    pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
-        let ops: &Self =
-            Self::ref_from_bytes(buffer).map_err(|_| SvsmReqError::invalid_parameter())?;
-        if !ops.is_reserved_clear() || !ops.is_manifest_version_valid() {
-            return Err(SvsmReqError::invalid_parameter());
+    /// Checks whether this is a valid request
+    pub fn check_valid(&self) -> Result<(), SvsmReqError> {
+        if self.is_reserved_clear() && self.is_manifest_version_valid() {
+            Ok(())
+        } else {
+            Err(SvsmReqError::invalid_parameter())
         }
-
-        Ok(ops)
     }
 
     /// Checks if reserved fields are all set to zero
@@ -534,6 +535,8 @@ fn attest_multiple_services(params: &mut RequestParams) -> Result<(), SvsmReqErr
     let attest_op =
         read_from_guest::<AttestServicesOp>(gpa).map_err(|_| SvsmReqError::invalid_parameter())?;
 
+    attest_op.check_valid()?;
+
     // Attest multiple services is expected to return a GUID table (mixed endian ordering) of the
     // enumerated active services' attestation manifest. A service that does not have its own
     // manifest is still enumerated, but with an empty data blob.
@@ -561,6 +564,8 @@ fn attest_single_service_handler(params: &mut RequestParams) -> Result<(), SvsmR
 
     let attest_op = read_from_guest::<AttestSingleServiceOp>(gpa)
         .map_err(|_| SvsmReqError::invalid_parameter())?;
+
+    attest_op.check_valid()?;
 
     // Extract the GUID from the Attest Single Service Operation structure.
     // The GUID is used to determine the specific service to be attested.

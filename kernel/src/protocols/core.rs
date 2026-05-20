@@ -5,12 +5,12 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::percpu::{PERCPU_AREAS, PERCPU_VMSAS, this_cpu, this_cpu_shared};
+use crate::cpu::percpu::{PERCPU_AREAS, PERCPU_VMSAS, this_cpu};
 use crate::cpu::{flush_tlb_global_sync, flush_tlb_global_sync_page};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
-use crate::mm::{GuestPtr, valid_phys_address, writable_phys_addr};
+use crate::mm::{GuestPtr, valid_phys_region, writable_phys_addr};
 use crate::mm::{PerCPUMapping, PerCPUPageMappingGuard};
 use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::attest::{ATTEST_PROTOCOL_VERSION_MAX, ATTEST_PROTOCOL_VERSION_MIN};
@@ -25,7 +25,7 @@ use crate::sev::utils::{
 };
 use crate::sev::vmsa::VMSAControl;
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
-use crate::utils::zero_mem_region;
+use crate::utils::{MemoryRegion, zero_mem_region};
 use cpuarch::vmsa::VMSA;
 use zerocopy::{FromBytes, IntoBytes};
 
@@ -93,22 +93,20 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     let pcaa = PhysAddr::from(params.rdx);
     let apic_id: u32 = (params.r8 & 0xffff_ffff) as u32;
 
-    // Check VMSA address
-    if !valid_phys_address(paddr) || !paddr.is_page_aligned() {
+    // Check alignment
+    if !paddr.is_page_aligned() || !pcaa.is_aligned(8) {
         return Err(SvsmReqError::invalid_address());
     }
 
-    // Check CAA address
-    if !valid_phys_address(pcaa) || !pcaa.is_page_aligned() {
-        return Err(SvsmReqError::invalid_address());
-    }
+    let vmsa_region =
+        MemoryRegion::checked_new(paddr, PAGE_SIZE).ok_or(SvsmReqError::invalid_address())?;
+    let caa_region = MemoryRegion::checked_new(pcaa, 8).ok_or(SvsmReqError::invalid_address())?;
 
-    // Check whether VMSA page and CAA region overlap
-    //
-    // Since both areas are 4kb aligned and 4kb in size, and correct alignment
-    // was already checked, it is enough here to check whether VMSA and CAA
-    // page have the same starting address.
-    if paddr == pcaa {
+    // Check for region overlap
+    if vmsa_region.overlap(&caa_region)
+        || !valid_phys_region(&vmsa_region)
+        || !valid_phys_region(&caa_region)
+    {
         return Err(SvsmReqError::invalid_address());
     }
 
@@ -116,8 +114,11 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         .get_by_apic_id(apic_id)
         .ok_or_else(SvsmReqError::invalid_parameter)?;
 
+    // Prevent races between PVALIDATE and VMSA/CAA changes
+    let lock = PVALIDATE_LOCK.lock_write();
+
     // Got valid gPAs and APIC ID, register VMSA immediately to avoid races
-    PERCPU_VMSAS.register(paddr, target_cpu.cpu_index(), true)?;
+    PERCPU_VMSAS.register(paddr, pcaa, target_cpu.cpu_index(), true)?;
 
     // Time to map the VMSA. No need to clean up the registered VMSA on the
     // error path since this is a fatal error anyway.
@@ -125,9 +126,6 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     // already mapped.
     let new_vmsa = unsafe { PerCPUMapping::<VMSA>::create(paddr)? };
     let vaddr = new_vmsa.virt_addr();
-
-    // Prevent any parallel PVALIDATE requests from being processed
-    let lock = PVALIDATE_LOCK.lock_write();
 
     // Make sure the guest can't make modifications to the VMSA page
     rmp_revoke_guest_access(vaddr, PageSize::Regular).inspect_err(|_| {
@@ -161,9 +159,9 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         })?;
     }
 
+    assert!(PERCPU_VMSAS.set_used(paddr) == Some(target_cpu.cpu_index()));
     drop(lock);
 
-    assert!(PERCPU_VMSAS.set_used(paddr) == Some(target_cpu.cpu_index()));
     target_cpu.update_guest_vmsa_caa(paddr, pcaa);
 
     Ok(())
@@ -172,9 +170,12 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     let paddr = PhysAddr::from(params.rcx);
 
-    PERCPU_VMSAS
-        .unregister(paddr, true)
-        .map_err(|_| SvsmReqError::invalid_parameter())?;
+    if !(paddr.is_page_aligned() && PERCPU_VMSAS.vmsa_exists(paddr)) {
+        return Err(SvsmReqError::invalid_parameter());
+    }
+
+    // Prevent races between PVALIDATE and VMSA/CAA changes
+    let _lock = PVALIDATE_LOCK.lock_write();
 
     // Map the VMSA
     // SAFETY: the physical address is known to point to a VMSA which is not
@@ -195,6 +196,11 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Tell everyone the news and flush temporary mapping
     flush_tlb_global_sync_page(vaddr, PageSize::Regular);
+
+    // All done, now de-register the VMSA
+    if res.is_ok() {
+        PERCPU_VMSAS.unregister(paddr, true)?;
+    }
 
     res
 }
@@ -269,8 +275,16 @@ fn core_configure_vtom(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     }
 }
 
+/// Reserved bits per pvalidate-entry
+const PVALIDATE_RSVD_MASK: u64 = 0xff0u64;
+
 fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
     let mut flush = false;
+
+    // Reject entry when reserved bits are set
+    if (entry & PVALIDATE_RSVD_MASK) != 0 {
+        return Err(SvsmReqError::invalid_parameter());
+    }
 
     let (page_size_bytes, valign, huge) = match entry & 3 {
         0 => (PAGE_SIZE, VIRT_ALIGN_4K, PageSize::Regular),
@@ -290,16 +304,16 @@ fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
         return Err(SvsmReqError::invalid_parameter());
     }
 
-    if !valid_phys_address(paddr) {
+    let r =
+        MemoryRegion::checked_new(paddr, page_size_bytes).ok_or(SvsmReqError::invalid_address())?;
+
+    if !valid_phys_region(&r) {
         log::debug!("Invalid phys address: {paddr:#x}");
         return Err(SvsmReqError::invalid_address());
     }
 
     let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign)?;
     let vaddr = guard.virt_addr();
-
-    // Take lock to prevent races with CREATE_VCPU calls
-    let lock = PVALIDATE_LOCK.lock_read();
 
     if valid == PvalidateOp::Invalid {
         flush = true;
@@ -314,8 +328,6 @@ fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
             _ => Err(err),
         })?;
     }
-
-    drop(lock);
 
     if valid == PvalidateOp::Valid {
         // Zero out a page when it is validated and before giving other VMPLs
@@ -370,13 +382,17 @@ fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
 
 fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
+    let header_region = MemoryRegion::checked_new(gpa, 8).ok_or(SvsmReqError::invalid_address())?;
 
-    if !gpa.is_aligned(8) || !valid_phys_address(gpa) {
+    if !gpa.is_aligned(8) || !valid_phys_region(&header_region) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
     let paddr = gpa.page_align();
     let offset = gpa.page_offset();
+
+    // Take lock to prevent races with CREATE_VCPU calls
+    let _lock = PVALIDATE_LOCK.lock_read();
 
     let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let start = guard.virt_addr();
@@ -395,6 +411,13 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     .unwrap();
 
     if entries == 0 || entries > max_entries || entries <= next {
+        return Err(SvsmReqError::invalid_parameter());
+    }
+
+    let entries_len = ((entries + 1) * 8) as usize;
+    let region =
+        MemoryRegion::checked_new(gpa, entries_len).ok_or(SvsmReqError::invalid_address())?;
+    if !valid_phys_region(&region) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
@@ -424,7 +447,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // SAFETY: guest_page is obtained from a guest-provided physical address
     // (untrusted), so it needs to be valid (ie. belongs to the guest and only
-    // the guest). The physical address is validated by valid_phys_address()
+    // the guest). The physical address is validated by valid_phys_region()
     // called at the beginning of SVSM_CORE_PVALIDATE handler (this one).
     if let Err(e) = unsafe { guest_page.write_ref(&request) } {
         loop_result = Err(e.into());
@@ -435,13 +458,17 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
 
 fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
+    let region = MemoryRegion::checked_new(gpa, 8).ok_or(SvsmReqError::invalid_address())?;
 
-    if !gpa.is_aligned(8) || !valid_phys_address(gpa) || gpa.crosses_page(8) {
+    if !gpa.is_aligned(8) || !valid_phys_region(&region) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
     let offset = gpa.page_offset();
     let paddr = gpa.page_align();
+
+    // Prevent races between PVALIDATE and VMSA/CAA changes
+    let _lock = PVALIDATE_LOCK.lock_write();
 
     // Temporarily map new CAA to clear it
     let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
@@ -455,7 +482,20 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     // ensure that any pending lazy EOI has been processed.
     this_cpu().clear_pending_interrupts();
 
-    this_cpu_shared().update_guest_caa(gpa);
+    let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+    let caa = vmsa_ref.caa_phys();
+
+    // Check if address is not used as VMSA or CAA already and update
+    // PERCPU_VMSAS.
+    if let Some(cur_caa) = caa {
+        if cur_caa == gpa {
+            // Remapping to current CAA is a no-op
+            return Ok(());
+        }
+        PERCPU_VMSAS.remap_ca(cur_caa, gpa)?;
+    }
+
+    vmsa_ref.update_caa(Some(gpa));
 
     Ok(())
 }
