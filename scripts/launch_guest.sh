@@ -17,7 +17,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 # in the guest.
 REDUCED_PHYS_BITS=1
 C_BIT_POS=$(cargo run --package cbit || true)
-COM1_SERIAL="-serial stdio" # console
+COM1_SERIAL="-serial mon:stdio" # console
 COM2_SERIAL="-serial null"  # debug
 COM3_SERIAL="-serial null"  # used by hyper-v
 COM4_SERIAL="-serial null"  # used by in-SVSM tests
@@ -179,19 +179,8 @@ echo "QEMU Version:   ${QEMU_VERSION}"
 echo "IGVM:           ${IGVM}"
 echo "IMAGE:          ${IMAGE}"
 echo "============================="
-
-
-# Remap Ctrl-C to Ctrl-] to allow the guest to handle Ctrl-C,
-# if we are running with a TTY attached.
-if [ -t 0 ]; then
-  echo "Press Ctrl-] to interrupt"
-  echo "============================="
-  # Store original terminal settings and restore it on exit
-  STTY_ORIGINAL=$(stty -g)
-  trap 'stty "$STTY_ORIGINAL"' EXIT
-
-  stty intr ^]
-fi
+echo "Press Ctrl-A to enter in the QEMU monitor, then x to exit"
+echo "============================="
 
 # Temporarily use -vga none to avoid IGVM VGA init failure in QEMU 10.1
 $SUDO_CMD \
@@ -207,7 +196,6 @@ $SUDO_CMD \
     $IMAGE_DISK \
     -nographic \
     -vga none \
-    -monitor none \
     $COM1_SERIAL \
     $COM2_SERIAL \
     $COM3_SERIAL \
