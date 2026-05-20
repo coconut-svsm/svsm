@@ -137,6 +137,11 @@ jobs:
 
       ########################
 
+      - name: Enable KVM diagnostic logging
+        run: |
+          echo Y | sudo tee /sys/module/kvm_amd/parameters/dump_invalid_vmcb || true
+          echo Y | sudo tee /sys/module/kvm_intel/parameters/dump_invalid_vmcs || true
+
       - name: Run test-in-svsm in QEMU
         run: |
           # Use the pull request number for the port and the cid to avoid conflicts if two (or more)
@@ -150,4 +155,8 @@ jobs:
             --vsock-port $VSOCK_PORT --vsock-cid $VSOCK_CID \
             --nocc --timeout 180 \
             </dev/null 2>&1
+
+      - name: Dump host kernel messages on QEMU or test failure
+        if: failure()
+        run: sudo dmesg
 
