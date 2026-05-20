@@ -514,7 +514,12 @@ impl<A: ArchPagingMeta, P: PagingHandler + SelfMap> GenericPageTable<A, P, Pagin
 
 impl<A: ArchPagingMeta, P: PagingHandler, L: PagingLevel> GenericPageTable<A, P, L> {
     /// Allocate from level 3 (PML4E) down to the target level.
-    fn alloc_pte_lvl3(entry: &mut PTEntry<A>, vaddr: VirtAddr, size: PageSize) -> Mapping<'_, A> {
+    fn alloc_pte_lvl3(
+        entry: &mut PTEntry<A>,
+        vaddr: VirtAddr,
+        size: PageSize,
+        parent_flags: A::PTFlags,
+    ) -> Mapping<'_, A> {
         if entry.flags().contains(A::PTFlags::PRESENT) {
             return Mapping::new(PageLevel::Level3, entry);
         }
@@ -523,14 +528,19 @@ impl<A: ArchPagingMeta, P: PagingHandler, L: PagingLevel> GenericPageTable<A, P,
             return Mapping::new(PageLevel::Level3, entry);
         };
 
-        entry.set(A::make_private_address(paddr), A::PTFlags::parent_flags());
+        entry.set(A::make_private_address(paddr), parent_flags);
 
         let idx = vaddr.to_pgtbl_idx::<2>();
-        Self::alloc_pte_lvl2(&mut page[idx], vaddr, size)
+        Self::alloc_pte_lvl2(&mut page[idx], vaddr, size, parent_flags)
     }
 
     /// Allocate from level 2 (PDPTE) down to the target level.
-    fn alloc_pte_lvl2(entry: &mut PTEntry<A>, vaddr: VirtAddr, size: PageSize) -> Mapping<'_, A> {
+    fn alloc_pte_lvl2(
+        entry: &mut PTEntry<A>,
+        vaddr: VirtAddr,
+        size: PageSize,
+        parent_flags: A::PTFlags,
+    ) -> Mapping<'_, A> {
         if entry.flags().contains(A::PTFlags::PRESENT) {
             return Mapping::new(PageLevel::Level2, entry);
         }
@@ -539,15 +549,20 @@ impl<A: ArchPagingMeta, P: PagingHandler, L: PagingLevel> GenericPageTable<A, P,
             return Mapping::new(PageLevel::Level2, entry);
         };
 
-        entry.set(A::make_private_address(paddr), A::PTFlags::parent_flags());
+        entry.set(A::make_private_address(paddr), parent_flags);
 
         let idx = vaddr.to_pgtbl_idx::<1>();
-        Self::alloc_pte_lvl1(&mut page[idx], vaddr, size)
+        Self::alloc_pte_lvl1(&mut page[idx], vaddr, size, parent_flags)
     }
 
     /// Allocate from level 1 (PDE) down to level 0.
     /// Returns at level 1 if `size` is `Huge` (2 MiB page).
-    fn alloc_pte_lvl1(entry: &mut PTEntry<A>, vaddr: VirtAddr, size: PageSize) -> Mapping<'_, A> {
+    fn alloc_pte_lvl1(
+        entry: &mut PTEntry<A>,
+        vaddr: VirtAddr,
+        size: PageSize,
+        parent_flags: A::PTFlags,
+    ) -> Mapping<'_, A> {
         let flags = entry.flags();
         if size == PageSize::Huge || flags.contains(A::PTFlags::PRESENT) {
             return Mapping::new(PageLevel::Level1, entry);
@@ -557,7 +572,7 @@ impl<A: ArchPagingMeta, P: PagingHandler, L: PagingLevel> GenericPageTable<A, P,
             return Mapping::new(PageLevel::Level1, entry);
         };
 
-        entry.set(A::make_private_address(paddr), A::PTFlags::parent_flags());
+        entry.set(A::make_private_address(paddr), parent_flags);
 
         let idx = vaddr.to_pgtbl_idx::<0>();
         Mapping::new(PageLevel::Level0, &mut page[idx])
@@ -567,15 +582,23 @@ impl<A: ArchPagingMeta, P: PagingHandler, L: PagingLevel> GenericPageTable<A, P,
     ///
     /// # Parameters
     /// - `vaddr`: The virtual address for which to allocate the PTE.
+    /// - `parent_flags`: The flags to apply to the allocated page table entries.
+    ///
     /// # Returns
     /// A `Mapping` representing the allocated or existing PTE for the address.
-    fn alloc_pte_4k(&mut self, vaddr: VirtAddr) -> Mapping<'_, A> {
+    fn alloc_pte_4k(&mut self, vaddr: VirtAddr, parent_flags: A::PTFlags) -> Mapping<'_, A> {
         let m = self.walk_addr(vaddr);
         match m.level {
             PageLevel::Level0 => m,
-            PageLevel::Level1 => Self::alloc_pte_lvl1(m.entry, vaddr, PageSize::Regular),
-            PageLevel::Level2 => Self::alloc_pte_lvl2(m.entry, vaddr, PageSize::Regular),
-            PageLevel::Level3 => Self::alloc_pte_lvl3(m.entry, vaddr, PageSize::Regular),
+            PageLevel::Level1 => {
+                Self::alloc_pte_lvl1(m.entry, vaddr, PageSize::Regular, parent_flags)
+            }
+            PageLevel::Level2 => {
+                Self::alloc_pte_lvl2(m.entry, vaddr, PageSize::Regular, parent_flags)
+            }
+            PageLevel::Level3 => {
+                Self::alloc_pte_lvl3(m.entry, vaddr, PageSize::Regular, parent_flags)
+            }
         }
     }
 
@@ -583,14 +606,16 @@ impl<A: ArchPagingMeta, P: PagingHandler, L: PagingLevel> GenericPageTable<A, P,
     ///
     /// # Parameters
     /// - `vaddr`: The virtual address for which to allocate the PTE.
+    /// - `parent_flags`: The flags to apply to the allocated page table entries.
+    ///
     /// # Returns
     /// A `Mapping` representing the allocated or existing PTE for the address.
-    fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping<'_, A> {
+    fn alloc_pte_2m(&mut self, vaddr: VirtAddr, parent_flags: A::PTFlags) -> Mapping<'_, A> {
         let m = self.walk_addr(vaddr);
         match m.level {
             PageLevel::Level0 | PageLevel::Level1 => m,
-            PageLevel::Level2 => Self::alloc_pte_lvl2(m.entry, vaddr, PageSize::Huge),
-            PageLevel::Level3 => Self::alloc_pte_lvl3(m.entry, vaddr, PageSize::Huge),
+            PageLevel::Level2 => Self::alloc_pte_lvl2(m.entry, vaddr, PageSize::Huge, parent_flags),
+            PageLevel::Level3 => Self::alloc_pte_lvl3(m.entry, vaddr, PageSize::Huge, parent_flags),
         }
     }
 
@@ -716,16 +741,17 @@ impl<A: ArchPagingMeta, P: PagingHandler, L: PagingLevel> GenericPageTable<A, P,
     ///
     /// # Panics
     /// Panics if either `vaddr` or `paddr` is not aligned to a 2MB boundary.
-    pub fn map_2m(
+    pub fn map_2m_with_parent_flags(
         &mut self,
         vaddr: VirtAddr,
         paddr: PhysAddr,
         flags: A::PTFlags,
         shared: bool,
+        parent_flags: A::PTFlags,
     ) -> Result<(), PagingError> {
         assert!(vaddr.is_aligned(PAGE_SIZE_2M));
         assert!(paddr.is_aligned(PAGE_SIZE_2M));
-        let mapping = self.alloc_pte_2m(vaddr);
+        let mapping = self.alloc_pte_2m(vaddr, parent_flags);
         let addr = if !shared {
             A::make_private_address(paddr)
         } else {
@@ -742,6 +768,29 @@ impl<A: ArchPagingMeta, P: PagingHandler, L: PagingLevel> GenericPageTable<A, P,
         } else {
             Err(PagingError::AllocFrame)
         }
+    }
+
+    /// Maps a 2MB page.
+    ///
+    /// # Parameters
+    /// - `vaddr`: The virtual address to map.
+    /// - `paddr`: The physical address to map to.
+    /// - `flags`: The flags to apply to the mapping.
+    /// - `shared`: Indicates whether the mapping is shared.
+    ///
+    /// # Returns
+    /// A result indicating success or failure ([`PagingError`]).
+    ///
+    /// # Panics
+    /// Panics if either `vaddr` or `paddr` is not aligned to a 2MB boundary.
+    pub fn map_2m(
+        &mut self,
+        vaddr: VirtAddr,
+        paddr: PhysAddr,
+        flags: A::PTFlags,
+        shared: bool,
+    ) -> Result<(), PagingError> {
+        self.map_2m_with_parent_flags(vaddr, paddr, flags, shared, A::PTFlags::parent_flags())
     }
 
     /// Unmaps a 2MB page.
@@ -777,16 +826,19 @@ impl<A: ArchPagingMeta, P: PagingHandler, L: PagingLevel> GenericPageTable<A, P,
     /// - `paddr`: The physical address to map to.
     /// - `flags`: The flags to apply to the mapping.
     /// - `shared`: Indicates whether the mapping is shared.
+    /// - `parent_flags`: The flags to apply to the allocated parent page table entries.
+    ///
     /// # Returns
     /// A result indicating success or failure ([`PagingError`]).
-    pub fn map_4k(
+    pub fn map_4k_with_parent_flags(
         &mut self,
         vaddr: VirtAddr,
         paddr: PhysAddr,
         flags: A::PTFlags,
         shared: bool,
+        parent_flags: A::PTFlags,
     ) -> Result<(), PagingError> {
-        let mapping = self.alloc_pte_4k(vaddr);
+        let mapping = self.alloc_pte_4k(vaddr, parent_flags);
         let addr = if !shared {
             A::make_private_address(paddr)
         } else {
@@ -803,6 +855,26 @@ impl<A: ArchPagingMeta, P: PagingHandler, L: PagingLevel> GenericPageTable<A, P,
         } else {
             Err(PagingError::AllocFrame)
         }
+    }
+
+    /// Maps a 4KB page.
+    ///
+    /// # Parameters
+    /// - `vaddr`: The virtual address to map.
+    /// - `paddr`: The physical address to map to.
+    /// - `flags`: The flags to apply to the mapping.
+    /// - `shared`: Indicates whether the mapping is shared.
+    ///
+    /// # Returns
+    /// A result indicating success or failure ([`PagingError`]).
+    pub fn map_4k(
+        &mut self,
+        vaddr: VirtAddr,
+        paddr: PhysAddr,
+        flags: A::PTFlags,
+        shared: bool,
+    ) -> Result<(), PagingError> {
+        self.map_4k_with_parent_flags(vaddr, paddr, flags, shared, A::PTFlags::parent_flags())
     }
 
     /// Unmaps a 4KB page.
