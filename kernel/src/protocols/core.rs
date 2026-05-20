@@ -98,8 +98,9 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         return Err(SvsmReqError::invalid_address());
     }
 
-    let vmsa_region = MemoryRegion::new(paddr, PAGE_SIZE);
-    let caa_region = MemoryRegion::new(pcaa, 8);
+    let vmsa_region =
+        MemoryRegion::checked_new(paddr, PAGE_SIZE).ok_or(SvsmReqError::invalid_address())?;
+    let caa_region = MemoryRegion::checked_new(pcaa, 8).ok_or(SvsmReqError::invalid_address())?;
 
     // Check for region overlap
     if vmsa_region.overlap(&caa_region)
@@ -303,7 +304,10 @@ fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
         return Err(SvsmReqError::invalid_parameter());
     }
 
-    if !valid_phys_region(&MemoryRegion::new(paddr, page_size_bytes)) {
+    let r =
+        MemoryRegion::checked_new(paddr, page_size_bytes).ok_or(SvsmReqError::invalid_address())?;
+
+    if !valid_phys_region(&r) {
         log::debug!("Invalid phys address: {paddr:#x}");
         return Err(SvsmReqError::invalid_address());
     }
@@ -378,8 +382,9 @@ fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
 
 fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
+    let header_region = MemoryRegion::checked_new(gpa, 8).ok_or(SvsmReqError::invalid_address())?;
 
-    if !gpa.is_aligned(8) || !valid_phys_region(&MemoryRegion::new(gpa, 8)) {
+    if !gpa.is_aligned(8) || !valid_phys_region(&header_region) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
@@ -410,7 +415,9 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     }
 
     let entries_len = ((entries + 1) * 8) as usize;
-    if !valid_phys_region(&MemoryRegion::new(gpa, entries_len)) {
+    let region =
+        MemoryRegion::checked_new(gpa, entries_len).ok_or(SvsmReqError::invalid_address())?;
+    if !valid_phys_region(&region) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
@@ -451,8 +458,9 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
 
 fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
+    let region = MemoryRegion::checked_new(gpa, 8).ok_or(SvsmReqError::invalid_address())?;
 
-    if !gpa.is_aligned(8) || !valid_phys_region(&MemoryRegion::new(gpa, 8)) || gpa.crosses_page(8) {
+    if !gpa.is_aligned(8) || !valid_phys_region(&region) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
