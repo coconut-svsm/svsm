@@ -113,6 +113,9 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         .get_by_apic_id(apic_id)
         .ok_or_else(SvsmReqError::invalid_parameter)?;
 
+    // Prevent races between PVALIDATE and VMSA/CAA changes
+    let lock = PVALIDATE_LOCK.lock_write();
+
     // Got valid gPAs and APIC ID, register VMSA immediately to avoid races
     PERCPU_VMSAS.register(paddr, pcaa, target_cpu.cpu_index(), true)?;
 
@@ -122,9 +125,6 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     // already mapped.
     let new_vmsa = unsafe { PerCPUMapping::<VMSA>::create(paddr)? };
     let vaddr = new_vmsa.virt_addr();
-
-    // Prevent any parallel PVALIDATE requests from being processed
-    let lock = PVALIDATE_LOCK.lock_write();
 
     // Make sure the guest can't make modifications to the VMSA page
     rmp_revoke_guest_access(vaddr, PageSize::Regular).inspect_err(|_| {
@@ -158,9 +158,9 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         })?;
     }
 
+    assert!(PERCPU_VMSAS.set_used(paddr) == Some(target_cpu.cpu_index()));
     drop(lock);
 
-    assert!(PERCPU_VMSAS.set_used(paddr) == Some(target_cpu.cpu_index()));
     target_cpu.update_guest_vmsa_caa(paddr, pcaa);
 
     Ok(())
@@ -172,6 +172,9 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     if !(paddr.is_page_aligned() && PERCPU_VMSAS.vmsa_exists(paddr)) {
         return Err(SvsmReqError::invalid_parameter());
     }
+
+    // Prevent races between PVALIDATE and VMSA/CAA changes
+    let _lock = PVALIDATE_LOCK.lock_write();
 
     // Map the VMSA
     // SAFETY: the physical address is known to point to a VMSA which is not
@@ -308,9 +311,6 @@ fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
     let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign)?;
     let vaddr = guard.virt_addr();
 
-    // Take lock to prevent races with CREATE_VCPU calls
-    let lock = PVALIDATE_LOCK.lock_read();
-
     if valid == PvalidateOp::Invalid {
         flush = true;
         rmp_revoke_guest_access(vaddr, huge)?;
@@ -324,8 +324,6 @@ fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
             _ => Err(err),
         })?;
     }
-
-    drop(lock);
 
     if valid == PvalidateOp::Valid {
         // Zero out a page when it is validated and before giving other VMPLs
@@ -387,6 +385,9 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     let paddr = gpa.page_align();
     let offset = gpa.page_offset();
+
+    // Take lock to prevent races with CREATE_VCPU calls
+    let _lock = PVALIDATE_LOCK.lock_read();
 
     let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let start = guard.virt_addr();
@@ -457,6 +458,9 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     let offset = gpa.page_offset();
     let paddr = gpa.page_align();
+
+    // Prevent races between PVALIDATE and VMSA/CAA changes
+    let _lock = PVALIDATE_LOCK.lock_write();
 
     // Temporarily map new CAA to clear it
     let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
