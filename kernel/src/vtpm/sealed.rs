@@ -66,6 +66,7 @@ pub struct VtpmState {
 
 impl VtpmState {
     /// Serialize VtpmState to a byte vector.
+    #[inline] // R1: avoid sret aggregate-return on Vec<u8>
     pub fn serialize(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(1024);
 
@@ -99,6 +100,7 @@ impl VtpmState {
     }
 
     /// Deserialize VtpmState from bytes.
+    #[inline] // R1: avoid sret aggregate-return on VtpmState
     pub fn deserialize(data: &[u8]) -> Result<Self, &'static str> {
         let (ek_priv, offset) = read_len_prefixed(data, 0)?;
         let (ek_pub, offset) = read_len_prefixed(data, offset)?;
@@ -162,6 +164,7 @@ impl VtpmState {
     }
 }
 
+#[inline] // R1: avoid sret aggregate-return on (Vec<u8>, usize)
 fn read_len_prefixed(data: &[u8], offset: usize) -> Result<(Vec<u8>, usize), &'static str> {
     if offset + 4 > data.len() {
         return Err("buffer underrun at length prefix");
@@ -177,7 +180,7 @@ fn read_len_prefixed(data: &[u8], offset: usize) -> Result<(Vec<u8>, usize), &'s
 }
 
 // ============================================================
-// SealedBlob — On-disk Format (protocol_spec.md §3.2)
+// SealedBlob — On-disk Format
 // ============================================================
 
 /// The on-disk sealed blob format.
@@ -196,6 +199,7 @@ pub struct SealedBlob {
 }
 
 impl SealedBlob {
+    #[inline] // R1: avoid sret aggregate-return on Vec<u8>
     pub fn pack(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(512);
 
@@ -218,6 +222,7 @@ impl SealedBlob {
         out
     }
 
+    #[inline] // R1: avoid sret aggregate-return on SealedBlob
     pub fn unpack(data: &[u8]) -> Result<Self, &'static str> {
         if data.len() < 42 {
             return Err("SealedBlob too short");
@@ -273,6 +278,7 @@ impl SealedBlob {
 /// In prototype: OsRng from rand crate.
 ///
 /// Returns (ciphertext, tag) where the GCM authentication tag is 16 bytes.
+#[inline] // R1: avoid sret aggregate-return on (Vec<u8>, [u8; 16])
 pub fn aes_gcm_encrypt(
     plaintext: &[u8],
     aes_key: &[u8; 32],
@@ -294,6 +300,7 @@ pub fn aes_gcm_encrypt(
 }
 
 /// Decrypt ciphertext with AES-256-GCM.
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 pub fn aes_gcm_decrypt(
     ciphertext: &[u8],
     aes_key: &[u8; 32],
@@ -324,6 +331,7 @@ pub fn aes_gcm_decrypt(
 ///   2. AES-256-GCM encrypt serialized state (key/nonce from caller)
 ///   3. TPM seal the 60-byte (key+tag+nonce) payload
 ///   4. Pack everything into SealedBlob
+#[inline] // R1: avoid sret aggregate-return on SealedBlob
 pub fn seal_state<T: TpmTransport>(
     proxy: &mut TpmProxy<T>,
     state: &VtpmState,
@@ -367,6 +375,7 @@ pub fn seal_state<T: TpmTransport>(
 ///   1. TPM unseal the 60-byte payload → recover (aes_key, tag, nonce)
 ///   2. AES-256-GCM decrypt the encrypted data
 ///   3. Deserialize VtpmState
+#[inline] // R1: avoid sret aggregate-return on VtpmState
 pub fn unseal_state<T: TpmTransport>(
     proxy: &mut TpmProxy<T>,
     blob: &SealedBlob,

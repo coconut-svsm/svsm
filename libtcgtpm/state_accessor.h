@@ -76,6 +76,48 @@ void     set_clear_count(uint32_t val);
 uint64_t get_object_context_id(void);
 void     set_object_context_id(uint64_t val);
 
+/* --- Persistent Data (gp) — Dictionary Attack tracking ---
+ *
+ * Without these the post-Recover guest hits TPM_RC_LOCKOUT (0x921) on the
+ * first auth-bearing command because the simulator re-initializes DA state
+ * to default after deserialize, mismatching the previously-stored
+ * hierarchy auth values. */
+uint32_t get_failed_tries(void);
+void     set_failed_tries(uint32_t val);
+uint32_t get_max_tries(void);
+void     set_max_tries(uint32_t val);
+uint32_t get_recovery_time(void);
+void     set_recovery_time(uint32_t val);
+uint32_t get_lockout_recovery(void);
+void     set_lockout_recovery(uint32_t val);
+/* gp.lockOutAuthEnabled is BOOL (int); marshalled as a single byte (0/1). */
+uint8_t  get_lockout_auth_enabled(void);
+void     set_lockout_auth_enabled(uint8_t val);
+
+/* --- Persistent Data (gp) — Orderly shutdown state ---
+ * TPM_SU is a UINT16. Used by Startup to decide between TPM_SU_CLEAR /
+ * TPM_SU_STATE branches; if missing, NV reload and PCR alloc behave as if
+ * we suffered an unexpected shutdown. */
+uint16_t get_orderly_state(void);
+void     set_orderly_state(uint16_t val);
+
+/* --- Persistent Data (gp) — PCR allocation ---
+ * gp.pcrAllocated is a TPML_PCR_SELECTION (small variable-size struct,
+ * ≤ ~130 B). Without it, the simulator forgets which PCR banks (sha1 /
+ * sha256 / sha384 / sha512) are active and tpm2_pcrread rejects them as
+ * "unsupported bank/algorithm". */
+size_t get_pcr_allocated(uint8_t *out_buf, size_t buf_size);
+void   set_pcr_allocated(const uint8_t *in, size_t len);
+
+/* --- Platform NV memory blob (Tier-B) ---
+ * The TPM Reference Implementation keeps user-defined NV indices and evict
+ * objects inside a flat 16 KB `s_NV[]` buffer. Without restoring this buffer
+ * across cold boot, `tpm2_nvread 0x1500016` after Recover fails with
+ * "handle does not exist" — the simulator scans s_NV at command time, and
+ * the freshly-initialized buffer contains no user indices. */
+size_t get_nv_blob(uint8_t *out_buf, size_t buf_size);
+void   set_nv_blob(const uint8_t *in, size_t len);
+
 /* --- Bulk serialization helpers --- */
 
 /* Serialize all seal-relevant state into a flat buffer.
@@ -93,6 +135,19 @@ void     set_object_context_id(uint64_t val);
  *   0x10 = totalResetCount (8B)
  *   0x11 = resetCount (4B)
  *   0x12 = clearCount (4B)
+ *   0x13 = failedTries (4B)          [Tier-A: DA persistence]
+ *   0x14 = maxTries (4B)
+ *   0x15 = recoveryTime (4B)
+ *   0x16 = lockoutRecovery (4B)
+ *   0x17 = lockOutAuthEnabled (1B)
+ *   0x18 = orderlyState (2B, TPM_SU)
+ *   0x19 = pcrAllocated (TPML_PCR_SELECTION, ≤ ~130B)
+ *   0x1A = platform NV blob (16384B s_NV[]) [Tier-B: user NV index/evict object
+ *          persistence]. MUST be emitted FIRST in the blob so deserialize
+ *          applies it before 0x01-0x19 setters overwrite RAM gp fields.
+ *
+ * Old blobs (without 0x13-0x1A) deserialize fine — unknown sections are
+ * skipped, simulator-default values stay in place for those fields.
  *
  * Returns: number of bytes written, or 0 on buffer too small. */
 size_t serialize_vtpm_state(uint8_t *out_buf, size_t buf_size);

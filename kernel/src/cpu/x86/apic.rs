@@ -157,9 +157,9 @@ impl X86Apic {
     /// - `icr` - Value to write to the ICR register
     #[inline(always)]
     pub fn icr_write(&self, icr: u64) {
-        self.regs()
-            .icr_write(icr)
-            .expect("Failed to write APIC.ICR");
+        if let Err(e) = self.regs().icr_write(icr) {
+            log::warn!("Failed to write APIC.ICR: {e:?}");
+        }
     }
 
     /// Checks whether an IRQ vector is currently in service

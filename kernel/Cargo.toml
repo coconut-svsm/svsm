@@ -81,6 +81,26 @@ virtio-drivers = ["dep:virtio-drivers"]
 block = []
 vsock = []
 
+# Persistent vTPM via TPM-sealing of internal state to an off-CVM TPM
+# endpoint (research extension; mainline behaviour preserved when off).
+#
+# When OFF (default): the `vtpm` feature provides the standard ephemeral
+# vTPM that the mainline COCONUT-SVSM tree exposes — each cold boot
+# re-manufactures the simulator and produces a fresh EK/SRK/IAK.
+#
+# When ON: svsm.rs drives the Provision/Recover seal cycle through a
+# `VsockTransport`/`VsockHostStore` pair. The host helper (TPM endpoint
+# on a VSOCK port + blob store on two VSOCK ports) must be reachable;
+# unreachable endpoints are a fatal error, not a silent fallback,
+# because silent fallback would weaken the security model that treats
+# the physical TPM as a separate root of trust from the platform.
+#
+# Transport / store backends are currently fixed to VSOCK because that
+# is the only supported channel between an SEV-SNP CVM and a host-side
+# TPM endpoint; the `TpmTransport` and `SealedBlobStore` traits keep
+# the door open for future block-layer or KBS backends.
+vtpm-persist = ["vtpm", "vsock"]
+
 [dev-dependencies]
 sha2 = { workspace = true, features = ["force-soft"] }
 

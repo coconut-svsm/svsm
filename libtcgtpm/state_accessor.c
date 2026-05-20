@@ -183,6 +183,106 @@ void set_object_context_id(uint64_t val)
 }
 
 /* ============================================================
+ * Persistent Data (gp) — Dictionary Attack tracking
+ * ============================================================ */
+
+uint32_t get_failed_tries(void)            { return gp.failedTries; }
+void     set_failed_tries(uint32_t val)    { gp.failedTries = val; }
+uint32_t get_max_tries(void)               { return gp.maxTries; }
+void     set_max_tries(uint32_t val)       { gp.maxTries = val; }
+uint32_t get_recovery_time(void)           { return gp.recoveryTime; }
+void     set_recovery_time(uint32_t val)   { gp.recoveryTime = val; }
+uint32_t get_lockout_recovery(void)        { return gp.lockoutRecovery; }
+void     set_lockout_recovery(uint32_t val){ gp.lockoutRecovery = val; }
+
+uint8_t get_lockout_auth_enabled(void)
+{
+    return gp.lockOutAuthEnabled ? 1 : 0;
+}
+
+void set_lockout_auth_enabled(uint8_t val)
+{
+    gp.lockOutAuthEnabled = val ? TRUE : FALSE;
+}
+
+/* ============================================================
+ * Persistent Data (gp) — Orderly shutdown state
+ * ============================================================ */
+
+uint16_t get_orderly_state(void)
+{
+    return (uint16_t)gp.orderlyState;
+}
+
+void set_orderly_state(uint16_t val)
+{
+    gp.orderlyState = (TPM_SU)val;
+}
+
+/* ============================================================
+ * Persistent Data (gp) — PCR allocation
+ * ============================================================ */
+
+size_t get_pcr_allocated(uint8_t *out_buf, size_t buf_size)
+{
+    size_t copy_len = sizeof(gp.pcrAllocated);
+    if (copy_len > buf_size) copy_len = buf_size;
+    memcpy(out_buf, &gp.pcrAllocated, copy_len);
+    return copy_len;
+}
+
+void set_pcr_allocated(const uint8_t *in, size_t len)
+{
+    size_t copy_len = sizeof(gp.pcrAllocated);
+    if (len < copy_len) copy_len = len;
+    memcpy(&gp.pcrAllocated, in, copy_len);
+}
+
+/* ============================================================
+ * Platform NV memory blob (Tier-B)
+ * ============================================================
+ *
+ * The simulator's `s_NV[NV_MEMORY_SIZE]` flat buffer holds, in order:
+ *   [0 .. sizeof(gp))                       PERSISTENT_DATA (mirror of gp)
+ *   [sizeof(gp) .. NV_USER_DYNAMIC)         STATE_RESET / STATE_CLEAR /
+ *                                           index-orderly RAM mirror
+ *   [NV_USER_DYNAMIC .. NV_MEMORY_SIZE)     dynamic area: user NV indices
+ *                                           and evict objects + list end
+ *
+ * NV-index lookup (`NvNext` in NvDynamic.c) walks this byte layout directly
+ * via `_plat__NvMemoryRead`, so there is no separate in-memory index cache to
+ * rebuild — restoring the 16 KB bytes is sufficient for `tpm2_nvread` of a
+ * user index to resolve after cold-boot Recover.
+ */
+
+extern int  _plat__NvMemoryRead(unsigned int startOffset, unsigned int size, void *data);
+extern int  _plat__NvMemoryWrite(unsigned int startOffset, unsigned int size, void *data);
+extern void NvReadPersistent(void);
+
+#define STATE_NV_BACKUP_SIZE 16384u  /* matches TpmProfile_Misc.h NV_MEMORY_SIZE */
+
+size_t get_nv_blob(uint8_t *out_buf, size_t buf_size)
+{
+    if (buf_size < STATE_NV_BACKUP_SIZE) return 0;
+    /* Force RAM gp into s_NV[NV_PERSISTENT_DATA=0] so the dumped blob
+     * reflects the latest in-memory persistent state, not the last NvCommit. */
+    _plat__NvMemoryWrite(0, (unsigned int)sizeof(gp), &gp);
+    _plat__NvMemoryRead(0, STATE_NV_BACKUP_SIZE, out_buf);
+    return STATE_NV_BACKUP_SIZE;
+}
+
+void set_nv_blob(const uint8_t *in, size_t len)
+{
+    unsigned int n = (len < STATE_NV_BACKUP_SIZE) ? (unsigned int)len : STATE_NV_BACKUP_SIZE;
+    /* Cast away const for the platform API; it does a memcpy and never writes
+     * through the pointer. */
+    _plat__NvMemoryWrite(0, n, (void *)(uintptr_t)in);
+    /* Sync the freshly-written s_NV[NV_PERSISTENT_DATA] back into RAM gp.
+     * Subsequent 0x01-0x19 sections will overlay individual fields on top. */
+    NvReadPersistent();
+}
+
+/* ============================================================
  * Bulk Serialization
  * ============================================================
  *
@@ -218,6 +318,30 @@ size_t serialize_vtpm_state(uint8_t *out_buf, size_t buf_size)
 {
     size_t offset = 4; /* reserve 4 bytes for total size */
     size_t written;
+
+    /* 0x1A: platform NV blob (16384B).
+     *
+     * IMPORTANT: emitted FIRST so the deserializer applies it before the
+     * 0x01-0x19 setters. Otherwise `NvReadPersistent()` inside `set_nv_blob`
+     * would clobber the previously-restored RAM gp fields.
+     *
+     * Dumped directly into out_buf to avoid a 16 KB intermediate stack buffer
+     * in the SVSM kernel context (where stack is more constrained than in a
+     * userspace swtpm process). */
+    {
+        size_t needed = offset + 5 + STATE_NV_BACKUP_SIZE;
+        if (needed > buf_size) return 0;
+        /* Force RAM gp into s_NV[NV_PERSISTENT_DATA=0] so the dumped blob
+         * reflects the latest in-memory persistent state. */
+        _plat__NvMemoryWrite(0, (unsigned int)sizeof(gp), &gp);
+        out_buf[offset]     = 0x1A;
+        out_buf[offset + 1] = (uint8_t)(STATE_NV_BACKUP_SIZE & 0xFFu);
+        out_buf[offset + 2] = (uint8_t)((STATE_NV_BACKUP_SIZE >> 8) & 0xFFu);
+        out_buf[offset + 3] = (uint8_t)((STATE_NV_BACKUP_SIZE >> 16) & 0xFFu);
+        out_buf[offset + 4] = (uint8_t)((STATE_NV_BACKUP_SIZE >> 24) & 0xFFu);
+        _plat__NvMemoryRead(0, STATE_NV_BACKUP_SIZE, out_buf + offset + 5);
+        offset += 5 + STATE_NV_BACKUP_SIZE;
+    }
 
     /* 0x01: EP Seed (32B) */
     written = write_section_val(out_buf, buf_size, offset, 0x01,
@@ -306,6 +430,53 @@ size_t serialize_vtpm_state(uint8_t *out_buf, size_t buf_size)
         if (!written) return 0;
         offset += written;
     }
+
+    /* 0x13..0x16: DA UINT32 fields (failedTries, maxTries, recoveryTime, lockoutRecovery) */
+    {
+        const uint32_t da_vals[4] = {
+            gp.failedTries,
+            gp.maxTries,
+            gp.recoveryTime,
+            gp.lockoutRecovery,
+        };
+        const uint8_t  da_ids[4] = { 0x13, 0x14, 0x15, 0x16 };
+        for (int i = 0; i < 4; ++i) {
+            uint8_t v[4];
+            v[0] = (uint8_t)(da_vals[i] & 0xFF);
+            v[1] = (uint8_t)((da_vals[i] >> 8) & 0xFF);
+            v[2] = (uint8_t)((da_vals[i] >> 16) & 0xFF);
+            v[3] = (uint8_t)((da_vals[i] >> 24) & 0xFF);
+            written = write_section_val(out_buf, buf_size, offset, da_ids[i], v, 4);
+            if (!written) return 0;
+            offset += written;
+        }
+    }
+
+    /* 0x17: lockOutAuthEnabled (1B) */
+    {
+        uint8_t lae = gp.lockOutAuthEnabled ? 1 : 0;
+        written = write_section_val(out_buf, buf_size, offset, 0x17, &lae, 1);
+        if (!written) return 0;
+        offset += written;
+    }
+
+    /* 0x18: orderlyState (2B, TPM_SU = UINT16) */
+    {
+        uint8_t os[2];
+        uint16_t v = (uint16_t)gp.orderlyState;
+        os[0] = (uint8_t)(v & 0xFF);
+        os[1] = (uint8_t)((v >> 8) & 0xFF);
+        written = write_section_val(out_buf, buf_size, offset, 0x18, os, 2);
+        if (!written) return 0;
+        offset += written;
+    }
+
+    /* 0x19: pcrAllocated (TPML_PCR_SELECTION, raw struct dump) */
+    written = write_section(out_buf, buf_size, offset, 0x19,
+                            (const uint8_t *)&gp.pcrAllocated,
+                            sizeof(gp.pcrAllocated));
+    if (!written) return 0;
+    offset += written;
 
     /* Write total size at the beginning */
     out_buf[0] = (uint8_t)(offset & 0xFF);
@@ -404,6 +575,54 @@ int deserialize_vtpm_state(const uint8_t *in, size_t len)
                           | ((uint32_t)data[1] << 8)
                           | ((uint32_t)data[2] << 16)
                           | ((uint32_t)data[3] << 24);
+            break;
+        case 0x13: /* failedTries */
+            if (data_len < 4) return -4;
+            gp.failedTries = (uint32_t)data[0]
+                           | ((uint32_t)data[1] << 8)
+                           | ((uint32_t)data[2] << 16)
+                           | ((uint32_t)data[3] << 24);
+            break;
+        case 0x14: /* maxTries */
+            if (data_len < 4) return -4;
+            gp.maxTries = (uint32_t)data[0]
+                        | ((uint32_t)data[1] << 8)
+                        | ((uint32_t)data[2] << 16)
+                        | ((uint32_t)data[3] << 24);
+            break;
+        case 0x15: /* recoveryTime */
+            if (data_len < 4) return -4;
+            gp.recoveryTime = (uint32_t)data[0]
+                            | ((uint32_t)data[1] << 8)
+                            | ((uint32_t)data[2] << 16)
+                            | ((uint32_t)data[3] << 24);
+            break;
+        case 0x16: /* lockoutRecovery */
+            if (data_len < 4) return -4;
+            gp.lockoutRecovery = (uint32_t)data[0]
+                               | ((uint32_t)data[1] << 8)
+                               | ((uint32_t)data[2] << 16)
+                               | ((uint32_t)data[3] << 24);
+            break;
+        case 0x17: /* lockOutAuthEnabled */
+            if (data_len < 1) return -4;
+            gp.lockOutAuthEnabled = data[0] ? TRUE : FALSE;
+            break;
+        case 0x18: /* orderlyState (TPM_SU = UINT16) */
+            if (data_len < 2) return -4;
+            gp.orderlyState = (TPM_SU)((uint16_t)data[0]
+                                     | ((uint16_t)data[1] << 8));
+            break;
+        case 0x19: /* pcrAllocated (TPML_PCR_SELECTION) */
+            if (data_len > sizeof(gp.pcrAllocated)) return -4;
+            memcpy(&gp.pcrAllocated, data, data_len);
+            break;
+        case 0x1A: /* platform NV blob (16384B s_NV[]) — Tier-B */
+            if (data_len != STATE_NV_BACKUP_SIZE) return -4;
+            /* set_nv_blob() writes s_NV[] then re-syncs RAM gp from
+             * s_NV[NV_PERSISTENT_DATA=0]. Subsequent 0x01-0x19 cases will
+             * overwrite individual gp fields with the per-section copies. */
+            set_nv_blob(data, data_len);
             break;
         default:
             /* Unknown section — skip */

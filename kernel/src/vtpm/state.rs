@@ -72,8 +72,12 @@ const MAX_AUTH_SIZE: usize = 64;
 /// Maximum PCR save area size (worst case: SHA-256 + SHA-384 + SHA-512 banks)
 const MAX_PCR_SAVE_SIZE: usize = 4096;
 
-/// Maximum serialized state buffer size
-const MAX_SERIALIZED_SIZE: usize = 8192;
+/// Maximum serialized state buffer size.
+///
+/// Sized for the Tier-A field set (DA + PCR alloc, blob ~3 KB) with
+/// headroom for an upcoming Tier-B section that dumps the full 16 KB
+/// `s_NV[]` platform NV memory.
+const MAX_SERIALIZED_SIZE: usize = 32768;
 
 // ============================================================
 // VtpmInternalState — Mirror of TPM Internal Globals
@@ -136,6 +140,7 @@ impl VtpmInternalState {
 /// Calls the state_accessor.c getter functions, which read gp, gc, gr
 /// directly. This is the fastest path but requires libtcgtpm to be
 /// compiled with state_accessor.c.
+#[inline] // R1: avoid sret aggregate-return on VtpmInternalState
 pub fn extract_vtpm_state() -> Result<VtpmInternalState, SvsmReqError> {
     let mut ep_seed = [0u8; 32];
     let mut sp_seed = [0u8; 32];
@@ -226,6 +231,7 @@ pub fn inject_vtpm_state(state: &VtpmInternalState) -> Result<(), SvsmReqError> 
 /// Returns the serialized bytes. This is the recommended path for
 /// state extraction before sealing, as the C function knows the exact
 /// struct layouts.
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 pub fn extract_serialized_state() -> Result<Vec<u8>, SvsmReqError> {
     let mut buf = vec![0u8; MAX_SERIALIZED_SIZE];
     let written;
@@ -274,6 +280,7 @@ pub fn inject_serialized_state(data: &[u8]) -> Result<(), SvsmReqError> {
 /// NOT YET IMPLEMENTED — placeholder for environments where the direct
 /// libtcgtpm accessors are unavailable.
 #[allow(dead_code)]
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 pub fn extract_vtpm_state_via_commands() -> Result<Vec<u8>, SvsmReqError> {
     // A command-based extraction path would:
     // 1. TPM2_HierarchyChangeAuth(TPM_RH_OWNER) — read ownerAuth

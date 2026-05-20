@@ -14,7 +14,7 @@
     },
     "kernel": {
         "svsm": {
-            "features": "vtpm",
+            "features": "vtpm,virtio-drivers,vsock",
             "binary": false
         },
         "bldr": {

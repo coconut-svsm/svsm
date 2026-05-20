@@ -90,6 +90,7 @@ impl Default for StaticBufStore {
 }
 
 impl SealedBlobStore for StaticBufStore {
+    #[inline] // R1: avoid sret aggregate-return on Option<Vec<u8>>
     fn load(&self) -> Result<Option<Vec<u8>>, SvsmReqError> {
         let g = self.inner.lock();
         if g.valid && g.len > 0 {
@@ -139,6 +140,7 @@ impl Default for IgvmVarStore {
 }
 
 impl SealedBlobStore for IgvmVarStore {
+    #[inline] // R1: avoid sret aggregate-return on Option<Vec<u8>>
     fn load(&self) -> Result<Option<Vec<u8>>, SvsmReqError> {
         log::debug!("IgvmVarStore::load — not yet implemented, returning empty");
         Ok(None)
@@ -183,20 +185,124 @@ impl VsockHostStore {
 
 #[cfg(feature = "vsock")]
 impl SealedBlobStore for VsockHostStore {
+    /// Wire format: the host helper hands the raw blob bytes as a single
+    /// stream — no framing header. The guest reads until peer-EOF and
+    /// returns whatever it got. `Ok(None)` is reserved for two cases:
+    ///
+    ///   1. The helper is not running (connect refused) — interpreted as
+    ///      a cold boot with no prior state.
+    ///   2. The helper accepted the connection but produced 0 bytes —
+    ///      same interpretation.
+    ///
+    /// This matches a `socat VSOCK-LISTEN:<port> OPEN:<file>,rdonly`
+    /// helper that exits with EOF once the file is fully drained.
+    #[inline] // R1: avoid sret aggregate-return on Option<Vec<u8>>
     fn load(&self) -> Result<Option<Vec<u8>>, SvsmReqError> {
-        // TODO: open AF_VSOCK(cid, load_port), read framed blob.
-        log::debug!(
-            "VsockHostStore::load(cid={}, port={}) — not yet wired",
+        use crate::io::Read;
+        use crate::vsock::stream::VsockStream;
+
+        let mut stream = match VsockStream::connect(self.load_port, self.cid) {
+            Ok(s) => s,
+            Err(e) => {
+                log::debug!(
+                    "VsockHostStore::load(cid={}, port={}) — connect failed ({:?}); treating as cold boot",
+                    self.cid,
+                    self.load_port,
+                    e
+                );
+                return Ok(None);
+            }
+        };
+
+        let mut out = Vec::new();
+        let mut chunk = [0u8; 1024];
+        loop {
+            match stream.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => out.extend_from_slice(&chunk[..n]),
+                Err(e) => {
+                    log::error!(
+                        "VsockHostStore::load(cid={}, port={}) — read error: {:?}",
+                        self.cid,
+                        self.load_port,
+                        e
+                    );
+                    return Err(SvsmReqError::invalid_request());
+                }
+            }
+        }
+
+        if out.is_empty() {
+            log::debug!(
+                "VsockHostStore::load(cid={}, port={}) — peer returned 0 bytes",
+                self.cid,
+                self.load_port
+            );
+            return Ok(None);
+        }
+
+        log::info!(
+            "VsockHostStore::load(cid={}, port={}) — got {} bytes",
             self.cid,
-            self.load_port
+            self.load_port,
+            out.len()
         );
-        Ok(None)
+        Ok(Some(out))
     }
 
+    /// Open a fresh connection to the save port, write the blob in full,
+    /// and let `Drop` shut the stream down — the host helper sees EOF
+    /// and commits the file. Atomicity is the helper's responsibility
+    /// (a `socat OPEN:<file>,creat,trunc` pattern truncates on accept
+    /// and writes the new payload before close).
     fn save(&self, blob: &[u8]) -> Result<(), SvsmReqError> {
-        // TODO: open AF_VSOCK(cid, save_port), write framed blob.
-        log::debug!(
-            "VsockHostStore::save(cid={}, port={}, {} bytes) — not yet wired",
+        use crate::io::Write;
+        use crate::vsock::stream::VsockStream;
+
+        let mut stream = VsockStream::connect(self.save_port, self.cid).map_err(|e| {
+            log::error!(
+                "VsockHostStore::save(cid={}, port={}) — connect failed: {:?}",
+                self.cid,
+                self.save_port,
+                e
+            );
+            SvsmReqError::invalid_request()
+        })?;
+
+        // virtio-vsock under SVSM's HAL requires each `share`d buffer be
+        // <= PAGE_SIZE (see kernel/src/virtio/hal.rs). Pre-Tier-B blobs were
+        // ~2.7 KB so the single-shot write worked; the 16 KB s_NV section now
+        // pushes the blob past 4 KB, so we must chunk explicitly here.
+        const SAVE_CHUNK: usize = 2048;
+        let mut written = 0usize;
+        while written < blob.len() {
+            let end = core::cmp::min(blob.len(), written + SAVE_CHUNK);
+            let n = stream.write(&blob[written..end]).map_err(|e| {
+                log::error!(
+                    "VsockHostStore::save(cid={}, port={}) — write error at {}/{}: {:?}",
+                    self.cid,
+                    self.save_port,
+                    written,
+                    blob.len(),
+                    e
+                );
+                SvsmReqError::invalid_request()
+            })?;
+            if n == 0 {
+                log::error!(
+                    "VsockHostStore::save(cid={}, port={}) — write returned 0 at {}/{}",
+                    self.cid,
+                    self.save_port,
+                    written,
+                    blob.len()
+                );
+                return Err(SvsmReqError::invalid_request());
+            }
+            written += n;
+        }
+
+        log::info!(
+            "VsockHostStore::save(cid={}, port={}) — wrote {} bytes",
             self.cid,
             self.save_port,
             blob.len()

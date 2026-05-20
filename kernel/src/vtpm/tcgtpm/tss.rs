@@ -42,6 +42,7 @@ fn extend_empty_auth(buf: &mut Vec<u8>) {
     ]);
 }
 
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 fn create_mtauth_ek_cmd(tpmt_public: &[u8]) -> Vec<u8> {
     let mut cmd = Vec::<u8>::with_capacity(TPM_BUFFER_MAX_SIZE);
 

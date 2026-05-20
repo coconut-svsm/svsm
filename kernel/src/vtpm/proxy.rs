@@ -6,7 +6,7 @@
 // Unseal, FlushContext, NV_*) and sends them to a TPM endpoint reachable
 // through an implementation of `TpmTransport`. The endpoint may be a
 // software vTPM (development/testing), a physical discrete TPM
-// (hardware-anchored persistence), or any other out-of-CVM TPM service.
+// (TPM-rooted persistence), or any other out-of-CVM TPM service.
 // Runs in VMPL0; the transport itself crosses the CVM boundary.
 
 extern crate alloc;
@@ -20,6 +20,8 @@ use alloc::vec::Vec;
 // ============================================================
 
 const TPM_ST_SESSIONS: u16 = 0x8002;
+const TPM_ST_NO_SESSIONS: u16 = 0x8001;
+const TPM_CC_SELF_TEST: u32 = 0x00000143;
 const TPM_CC_CREATEPRIMARY: u32 = 0x00000131;
 const TPM_CC_CREATE: u32 = 0x00000153;
 const TPM_CC_LOAD: u32 = 0x00000157;
@@ -42,12 +44,19 @@ const TPM_ALG_NULL: u16 = 0x0010;
 const TPM_ALG_POLICY: u16 = 0x000F;
 
 const TPM_RC_SUCCESS: u32 = 0;
+/// TPM_RC_RETRY = TPM_RC_WARN (0x900) | 0x022 — transient condition, retry.
+const TPM_RC_RETRY: u32 = 0x922;
+/// TPM_RC_TESTING = TPM_RC_WARN (0x900) | 0x00A — async self-test in progress.
+const TPM_RC_TESTING: u32 = 0x90A;
+/// TPM_RC_NV_UNAVAILABLE = TPM_RC_WARN (0x900) | 0x023 — NV write in progress.
+const TPM_RC_NV_UNAVAILABLE: u32 = 0x923;
 
 // TPMA_OBJECT flags
 const TPMA_OBJECT_FIXEDTPM: u32 = 0x00000002;
 const TPMA_OBJECT_FIXEDPARENT: u32 = 0x00000010;
 const TPMA_OBJECT_SENSITIVEDATAORIGIN: u32 = 0x00000020;
 const TPMA_OBJECT_USERWITHAUTH: u32 = 0x00000040;
+#[allow(dead_code)]
 const TPMA_OBJECT_SIGN_ENCRYPT: u32 = 0x00040000;
 const TPMA_OBJECT_DECRYPT: u32 = 0x00020000;
 const TPMA_OBJECT_RESTRICTED: u32 = 0x00010000;
@@ -59,7 +68,7 @@ const TPMA_OBJECT_RESTRICTED: u32 = 0x00010000;
 /// Pluggable transport for sending TPM 2.0 commands to an out-of-CVM TPM
 /// endpoint. Endpoints may include:
 ///   - a software vTPM running on the host (development / testing)
-///   - a physical discrete TPM (hardware-anchored persistence)
+///   - a physical discrete TPM (TPM-rooted persistence)
 ///   - a KBS-backed TPM service (future)
 ///
 /// Implementations must preserve TPM command/response message boundaries.
@@ -99,6 +108,7 @@ impl MockTransport {
 
     /// Build a minimal success response for the given command code.
     /// Response layout: tag(2) + size(4) + rc(4) + [optional data]
+    #[inline] // R1: avoid sret aggregate-return on Vec<u8>
     pub fn build_ok_response(_cc: u32, extra: &[u8]) -> Vec<u8> {
         let mut r = Vec::with_capacity(10 + extra.len());
         r.extend_from_slice(&0x8002u16.to_be_bytes()); // TPM_ST_SESSIONS
@@ -111,6 +121,7 @@ impl MockTransport {
 }
 
 impl TpmTransport for MockTransport {
+    #[inline] // R1: avoid sret aggregate-return on Vec<u8>
     fn send_command(&self, command: &[u8]) -> Result<Vec<u8>, SvsmReqError> {
         self.commands.borrow_mut().push(command.to_vec());
         self.canned_responses
@@ -159,6 +170,7 @@ impl VsockTransport {
 
 #[cfg(feature = "vsock")]
 impl TpmTransport for VsockTransport {
+    #[inline] // R1: avoid sret aggregate-return on Vec<u8>
     fn send_command(&self, command: &[u8]) -> Result<Vec<u8>, SvsmReqError> {
         use crate::io::{Read, Write};
         use crate::vsock::stream::VsockStream;
@@ -258,6 +270,7 @@ fn pcr_policy_digest_placeholder() -> [u8; 32] {
 }
 
 #[allow(dead_code)]
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 fn build_pcr_selection(pcr_mask: &[u8]) -> Vec<u8> {
     let mut sel = Vec::with_capacity(8);
     sel.extend_from_slice(&TPM_ALG_SHA256.to_be_bytes());
@@ -274,6 +287,7 @@ fn build_pcr_selection(pcr_mask: &[u8]) -> Vec<u8> {
 ///
 /// Creates a primary storage key under TPM_RH_OWNER used as parent
 /// for subsequent TPM2_Create (seal) operations.
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 fn build_create_primary_owner(tpmt_public: &[u8]) -> Vec<u8> {
     let mut cmd = Vec::with_capacity(4096);
 
@@ -288,9 +302,12 @@ fn build_create_primary_owner(tpmt_public: &[u8]) -> Vec<u8> {
     // Authorization block
     extend_empty_auth(&mut cmd);
 
-    // inSensitive: TPM2B_SENSITIVE_CREATE
-    cmd.extend_from_slice(&[0x00, 0x04]); // size
-    cmd.extend_from_slice(&[0x00, 0x00]); // userAuth = empty
+    // inSensitive: TPM2B_SENSITIVE_CREATE wrapping TPMS_SENSITIVE_CREATE.
+    // TPMS_SENSITIVE_CREATE = { userAuth: TPM2B_AUTH, data: TPM2B_SENSITIVE_DATA }.
+    // Both empty → 2 (userAuth.size) + 2 (data.size) = 4 content bytes.
+    cmd.extend_from_slice(&[0x00, 0x04]); // outer TPM2B size = 4
+    cmd.extend_from_slice(&[0x00, 0x00]); // userAuth.size = 0 (empty)
+    cmd.extend_from_slice(&[0x00, 0x00]); // data.size = 0 (empty)
 
     // inPublic: TPM2B_PUBLIC
     cmd.extend_from_slice(&(tpmt_public.len() as u16).to_be_bytes());
@@ -318,6 +335,7 @@ fn build_create_primary_owner(tpmt_public: &[u8]) -> Vec<u8> {
 /// `parent_handle` — handle from CreatePrimary
 /// `data` — the data to seal (≤256 bytes for RSA-2048 parent)
 /// `policy_digest` — 32-byte PCR policy digest
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 fn build_create(parent_handle: u32, data: &[u8], policy_digest: &[u8; 32]) -> Vec<u8> {
     let mut cmd = Vec::with_capacity(4096);
 
@@ -357,6 +375,7 @@ fn build_create(parent_handle: u32, data: &[u8], policy_digest: &[u8; 32]) -> Ve
     cmd
 }
 
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 fn build_keyedhash_public(policy_digest: &[u8; 32]) -> Vec<u8> {
     let mut p = Vec::with_capacity(64);
 
@@ -365,23 +384,22 @@ fn build_keyedhash_public(policy_digest: &[u8; 32]) -> Vec<u8> {
     p.extend_from_slice(&TPM_ALG_KEYEDHASH.to_be_bytes());
     //   nameAlg: TPM_ALG_SHA256
     p.extend_from_slice(&TPM_ALG_SHA256.to_be_bytes());
-    //   objectAttributes: fixedTPM | fixedParent | userWithAuth | signEncrypt
-    let attrs = TPMA_OBJECT_FIXEDTPM
-        | TPMA_OBJECT_FIXEDPARENT
-        | TPMA_OBJECT_USERWITHAUTH
-        | TPMA_OBJECT_SIGN_ENCRYPT;
+    //   objectAttributes: fixedTPM | fixedParent | userWithAuth.
+    //   Sealed-data objects (KEYEDHASH + scheme=NULL + externally-provided data)
+    //   MUST NOT have sign/decrypt/restricted/sensitiveDataOrigin set per TCG
+    //   Part 2 §11.2.4.10 — otherwise the TPM treats this as an HMAC key with
+    //   a contradictory NULL scheme, which IBM TPM2 ref impl rejects.
+    let attrs = TPMA_OBJECT_FIXEDTPM | TPMA_OBJECT_FIXEDPARENT | TPMA_OBJECT_USERWITHAUTH;
     p.extend_from_slice(&attrs.to_be_bytes());
 
     //   authPolicy: 32-byte policy digest
     p.extend_from_slice(&(32u16).to_be_bytes());
     p.extend_from_slice(policy_digest);
 
-    //   parameters (keyedhash union):
-    //     scheme: TPM_ALG_NULL (sealed data, not a signing key)
+    //   parameters (TPMS_KEYEDHASH_PARMS):
+    //     scheme: TPM_ALG_NULL (sealed data, not a signing/HMAC key).
+    //     TPMU_SCHEME_KEYEDHASH for ALG_NULL is empty per TCG Part 2 §11.1.20.
     p.extend_from_slice(&TPM_ALG_NULL.to_be_bytes());
-    //     scheme detail: keyedHashScheme (empty for NULL)
-    p.extend_from_slice(&[0x00, 0x00]); // TPM_ALG_NULL
-    p.extend_from_slice(&TPM_ALG_SHA256.to_be_bytes()); // hashAlg
 
     //   unique (keyedhash union):
     p.extend_from_slice(&[0x00, 0x00]); // zero-length unique
@@ -389,12 +407,14 @@ fn build_keyedhash_public(policy_digest: &[u8; 32]) -> Vec<u8> {
     p
 }
 
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 fn build_sensitive_create(data: &[u8]) -> Vec<u8> {
     let mut s = Vec::with_capacity(data.len() + 8);
-    // TPM2B_SENSITIVE_CREATE outer size
-    let inner_size = 2 + data.len(); // auth(2) + data(size+data)
+    // TPM2B_SENSITIVE_CREATE wrapping TPMS_SENSITIVE_CREATE.
+    // Inner = userAuth (TPM2B_AUTH: 2-byte size, empty) + data (TPM2B_SENSITIVE_DATA: 2-byte size + payload).
+    let inner_size = 2 + 2 + data.len();
     s.extend_from_slice(&(inner_size as u16).to_be_bytes());
-    // userAuth = empty
+    // userAuth.size = 0 (empty)
     s.extend_from_slice(&[0x00, 0x00]);
     // data: TPM2B_SENSITIVE_DATA
     s.extend_from_slice(&(data.len() as u16).to_be_bytes());
@@ -407,6 +427,7 @@ fn build_sensitive_create(data: &[u8]) -> Vec<u8> {
 // ============================================================
 
 /// Build TPM2_Load command to load a sealed object into the TPM.
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 fn build_load(parent_handle: u32, sealed_priv: &[u8], sealed_pub: &[u8]) -> Vec<u8> {
     let mut cmd = Vec::with_capacity(4096);
 
@@ -448,6 +469,7 @@ fn parse_load_handle(response: &[u8]) -> Result<u32, SvsmReqError> {
 // ============================================================
 
 /// Build TPM2_Unseal command.
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 fn build_unseal(item_handle: u32) -> Vec<u8> {
     let mut cmd = Vec::with_capacity(256);
 
@@ -477,6 +499,7 @@ fn build_unseal(item_handle: u32) -> Vec<u8> {
 
 /// Extract unsealed data from TPM2_Unseal response.
 /// Response: tag(2) + size(4) + rc(4) + paramSize(4) + TPM2B_SENSITIVE_DATA
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 fn parse_unseal_data(response: &[u8]) -> Result<Vec<u8>, SvsmReqError> {
     if response.len() < 16 {
         return Err(SvsmReqError::invalid_request());
@@ -493,6 +516,7 @@ fn parse_unseal_data(response: &[u8]) -> Result<Vec<u8>, SvsmReqError> {
 // TPM2_FlushContext
 // ============================================================
 
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 fn build_flushcontext(handle: u32) -> Vec<u8> {
     let mut cmd = Vec::with_capacity(32);
 
@@ -515,6 +539,7 @@ fn build_flushcontext(handle: u32) -> Vec<u8> {
 ///
 /// This is a restricted decryption key used as parent for sealed objects.
 /// Matches tpm2-tools `tpm2_createprimary -C o -G rsa2048` behavior.
+#[inline] // R1: avoid sret aggregate-return on Vec<u8>
 fn build_rsa2048_storage_template() -> Vec<u8> {
     let mut t = Vec::with_capacity(64);
 
@@ -540,11 +565,9 @@ fn build_rsa2048_storage_template() -> Vec<u8> {
     t.extend_from_slice(&TPM_ALG_AES.to_be_bytes());
     t.extend_from_slice(&128u16.to_be_bytes()); // keyBits
     t.extend_from_slice(&TPM_ALG_CFB.to_be_bytes()); // mode
-    //   scheme: TPM_ALG_NULL (decrypt-only, not signing)
+    //   scheme: TPM_ALG_NULL (decrypt-only, not signing).
+    //   TPMU_ASYM_SCHEME for ALG_NULL is empty per TCG Part 2 §11.2.4.2.
     t.extend_from_slice(&TPM_ALG_NULL.to_be_bytes());
-    //   scheme detail
-    t.extend_from_slice(&[0x00, 0x00]); // TPM_ALG_NULL
-    t.extend_from_slice(&TPM_ALG_SHA256.to_be_bytes()); // hashAlg
     //   keyBits: 2048
     t.extend_from_slice(&2048u16.to_be_bytes());
     //   exponent: 0 (default = 65537)
@@ -570,6 +593,7 @@ pub struct TpmProxy<T: TpmTransport> {
     primary_handle: Option<u32>,
     pcr_policy_digest: [u8; 32],
     seal_counter: u64,
+    self_tested: bool,
 }
 
 impl<T: TpmTransport> TpmProxy<T> {
@@ -579,6 +603,7 @@ impl<T: TpmTransport> TpmProxy<T> {
             primary_handle: None,
             pcr_policy_digest: pcr_policy_digest_placeholder(),
             seal_counter: 0,
+            self_tested: false,
         }
     }
 
@@ -586,23 +611,73 @@ impl<T: TpmTransport> TpmProxy<T> {
         self.pcr_policy_digest = digest;
     }
 
+    /// Send a TPM command, automatically retrying on transient warnings
+    /// (`TPM_RC_RETRY` / `TPM_RC_TESTING` / `TPM_RC_NV_UNAVAILABLE`) per
+    /// TCG TPM 2.0 Part 1 §29.6.1 recommendation.
+    #[inline] // R1: avoid sret aggregate-return on Vec<u8>
+    fn send_with_retry(&self, cmd: &[u8]) -> Result<Vec<u8>, SvsmReqError> {
+        const MAX_RETRIES: usize = 8;
+        for attempt in 0..MAX_RETRIES {
+            let response = self.transport.send_command(cmd)?;
+            if response.len() < 10 {
+                return Ok(response);
+            }
+            let rc = tpm_cmd_rc(&response);
+            if rc != TPM_RC_RETRY && rc != TPM_RC_TESTING && rc != TPM_RC_NV_UNAVAILABLE {
+                return Ok(response);
+            }
+            log::warn!(
+                "TPM transient rc=0x{rc:x}, retry {}/{}",
+                attempt + 1,
+                MAX_RETRIES
+            );
+        }
+        log::error!("TPM exceeded {MAX_RETRIES} retries on transient rc");
+        Err(SvsmReqError::invalid_request())
+    }
+
+    /// Send TPM2_SelfTest(fullTest=YES) once, before the first key operation.
+    ///
+    /// IBM TPM 2.0 reference impl (used by swtpm) returns TPM_RC_RETRY (0x922)
+    /// when an algorithm is first exercised without prior self-test. Pre-testing
+    /// all algorithms avoids stalling the first TPM2_Create / keyedhash op.
+    fn ensure_self_tested(&mut self) -> Result<(), SvsmReqError> {
+        if self.self_tested {
+            return Ok(());
+        }
+        // TPM2_SelfTest: tag NO_SESSIONS | size 11 | cc 0x143 | fullTest=YES (0x01)
+        let mut cmd = Vec::with_capacity(11);
+        cmd.extend_from_slice(&TPM_ST_NO_SESSIONS.to_be_bytes());
+        cmd.extend_from_slice(&11u32.to_be_bytes());
+        cmd.extend_from_slice(&TPM_CC_SELF_TEST.to_be_bytes());
+        cmd.push(0x01); // fullTest = YES
+        let response = self.send_with_retry(&cmd)?;
+        let rc = tpm_cmd_rc(&response);
+        // Accept SUCCESS, INITIALIZE (0x100), or TESTING (0x90A — async self-test in progress).
+        if rc != TPM_RC_SUCCESS && rc != 0x100 && rc != 0x90A {
+            log::error!("TPM2_SelfTest failed rc=0x{rc:x}");
+            return Err(SvsmReqError::invalid_request());
+        }
+        log::info!("TPM2_SelfTest ok (rc=0x{rc:x})");
+        self.self_tested = true;
+        Ok(())
+    }
+
     /// Ensure primary storage key exists under Owner hierarchy.
     pub fn ensure_primary(&mut self) -> Result<u32, SvsmReqError> {
         if let Some(handle) = self.primary_handle {
             return Ok(handle);
         }
+        self.ensure_self_tested()?;
 
         let template = build_rsa2048_storage_template();
         let cmd = build_create_primary_owner(&template);
-        let response = self.transport.send_command(&cmd)?;
+        let response = self.send_with_retry(&cmd)?;
 
         let rc = tpm_cmd_rc(&response);
         if rc != TPM_RC_SUCCESS {
-            // TPM_RC_INITIALIZE (0x100) if TPM not started — that's ok,
-            // the handle from the command response may still be valid
-            if rc != 0x100 {
-                log::warn!("CreatePrimary returned rc=0x{rc:x}");
-            }
+            log::error!("CreatePrimary failed rc=0x{rc:x}");
+            return Err(SvsmReqError::invalid_request());
         }
 
         // Object handle is at offset 10 in response
@@ -622,12 +697,13 @@ impl<T: TpmTransport> TpmProxy<T> {
     ///
     /// This seals only the AES key (60 bytes in practice), not bulk data.
     /// Bulk data is AES-256-GCM encrypted separately by the caller.
+    #[inline] // R1: avoid sret aggregate-return on (Vec<u8>, Vec<u8>)
     pub fn seal_payload(&mut self, payload: &[u8]) -> Result<(Vec<u8>, Vec<u8>), SvsmReqError> {
         let parent_handle = self.ensure_primary()?;
         self.seal_counter += 1;
 
         let cmd = build_create(parent_handle, payload, &self.pcr_policy_digest);
-        let response = self.transport.send_command(&cmd)?;
+        let response = self.send_with_retry(&cmd)?;
 
         let rc = tpm_cmd_rc(&response);
         if rc != TPM_RC_SUCCESS {
@@ -667,6 +743,7 @@ impl<T: TpmTransport> TpmProxy<T> {
     ///
     /// Loads the sealed object via TPM2_Load, then unseals via TPM2_Unseal.
     /// Returns the recovered plaintext payload (the AES key).
+    #[inline] // R1: avoid sret aggregate-return on Vec<u8>
     pub fn unseal_payload(
         &mut self,
         sealed_priv: &[u8],
@@ -676,7 +753,7 @@ impl<T: TpmTransport> TpmProxy<T> {
 
         // Step 1: Load
         let load_cmd = build_load(parent_handle, sealed_priv, sealed_pub);
-        let load_response = self.transport.send_command(&load_cmd)?;
+        let load_response = self.send_with_retry(&load_cmd)?;
 
         let rc = tpm_cmd_rc(&load_response);
         if rc != TPM_RC_SUCCESS {
@@ -688,7 +765,7 @@ impl<T: TpmTransport> TpmProxy<T> {
 
         // Step 2: Unseal
         let unseal_cmd = build_unseal(item_handle);
-        let unseal_response = self.transport.send_command(&unseal_cmd)?;
+        let unseal_response = self.send_with_retry(&unseal_cmd)?;
 
         let rc = tpm_cmd_rc(&unseal_response);
         if rc != TPM_RC_SUCCESS {
