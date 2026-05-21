@@ -14,12 +14,6 @@ arbitrary = { workspace = true, features = ["derive"] }
 libfuzzer-sys.workspace = true
 
 [[bin]]
-name = "acpi"
-path = "fuzz_targets/acpi.rs"
-test = false
-doc = false
-
-[[bin]]
 name = "fs"
 path = "fuzz_targets/fs.rs"
 test = false
