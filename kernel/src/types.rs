@@ -49,11 +49,14 @@ pub const SVSM_CS_ATTRIBUTES: u16 = 0xa09b;
 pub const SVSM_DS_ATTRIBUTES: u16 = 0xc093;
 pub const SVSM_TR_ATTRIBUTES: u16 = 0x89;
 
+/// VMPL level SVSM will be executed at.
+pub const SVSM_VMPL: usize = 0;
 /// VMPL level the guest OS will be executed at.
 /// Keep VMPL 1 for the SVSM and execute the OS at VMPL-2. This leaves VMPL-3
 /// free for the OS to use in the future.
 pub const GUEST_VMPL: usize = 2;
 
+const _: () = assert!(SVSM_VMPL < GUEST_VMPL);
 const _: () = assert!(GUEST_VMPL > 0 && GUEST_VMPL < VMPL_MAX);
 
 pub const MAX_CPUS: usize = 512;
