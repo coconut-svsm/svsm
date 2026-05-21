@@ -36,9 +36,9 @@ pub struct KernelLaunchInfo {
     pub vtom: u64,
     pub kernel_page_table_vaddr: u64,
     pub ap_start_context_addr: u32,
-    pub debug_serial_port: u16,
     pub vmsa_in_kernel_heap: bool,
     pub use_alternate_injection: bool,
+    pub _reserved: [bool; 2],
 }
 
 pub const INITIAL_KERNEL_STACK_WORDS: usize = 3;

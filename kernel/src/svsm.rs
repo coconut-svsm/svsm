@@ -156,6 +156,7 @@ global_asm!(
 /// heap.
 unsafe fn memory_init(
     launch_info: &mut KernelLaunchInfo,
+    boot_params: &BootParams<'_>,
     platform: &dyn SvsmPlatform,
     platform_type: SvsmPlatformType,
 ) {
@@ -163,28 +164,23 @@ unsafe fn memory_init(
 
     // Determine the size of the full kernel region as determined from the
     // boot parameters, including the initial memory map.
-    let heap_adjust_pages: isize = if launch_info.vmsa_in_kernel_heap
-        && (platform_type == SvsmPlatformType::Snp)
-    {
-        // On an SNP system, the VMSA might be located within the kernel heap
-        // area.  If so, it is at the last page within the heap range, so the
-        // heap range must be reduced so there is no attempt to validate the
-        // VMSA page and so that the VMSA page is not reallocated.  If this
-        // VMSA is present, then the heap cannot be dynamically expanded.
-        -1
-    } else {
-        // SAFETY: The launch info block is trusted to hold a valid virtual
-        // address for the boot parameters.
-        let boot_params =
-            unsafe { BootParams::new(VirtAddr::from(launch_info.boot_params_virt_addr)).unwrap() };
-        let kernel_region = boot_params
-            .find_kernel_region()
-            .expect("Failed to find memory region for SVSM kernel");
-        full_kernel_region = Some(kernel_region);
+    let heap_adjust_pages: isize =
+        if launch_info.vmsa_in_kernel_heap && (platform_type == SvsmPlatformType::Snp) {
+            // On an SNP system, the VMSA might be located within the kernel heap
+            // area.  If so, it is at the last page within the heap range, so the
+            // heap range must be reduced so there is no attempt to validate the
+            // VMSA page and so that the VMSA page is not reallocated.  If this
+            // VMSA is present, then the heap cannot be dynamically expanded.
+            -1
+        } else {
+            let kernel_region = boot_params
+                .find_kernel_region()
+                .expect("Failed to find memory region for SVSM kernel");
+            full_kernel_region = Some(kernel_region);
 
-        let region_end = u64::from(kernel_region.end());
-        ((region_end - launch_info.kernel_region_phys_end) as usize / PAGE_SIZE) as isize
-    };
+            let region_end = u64::from(kernel_region.end());
+            ((region_end - launch_info.kernel_region_phys_end) as usize / PAGE_SIZE) as isize
+        };
 
     // Calculate the physical and virtual bounds of the kernel heap, which sits
     // within the direct map.
@@ -315,10 +311,6 @@ unsafe fn svsm_start(
         early_idt_init(&mut idt);
     }
 
-    // Capture the debug serial port before the launch info disappears from
-    // the address space.
-    let debug_serial_port = launch_info.debug_serial_port;
-
     let mut platform_cell = SvsmPlatformCell::new();
     let platform = platform_cell.platform_mut();
 
@@ -338,6 +330,14 @@ unsafe fn svsm_start(
     cr0_init();
     cr4_init();
 
+    // SAFETY: The launch info block is trusted to hold a valid virtual
+    // address for the boot parameters.
+    let boot_params =
+        unsafe { BootParams::new(VirtAddr::from(launch_info.boot_params_virt_addr)).unwrap() };
+
+    // Obtain the debug console port from the boot parameters.
+    let debug_serial_port = boot_params.debug_serial_port();
+
     install_console_logger("SVSM").expect("Console logger already initialized");
     platform
         .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
@@ -356,7 +356,7 @@ unsafe fn svsm_start(
     // SAFETY: THe launch info is assumed to correctly specify the initial
     // state of memory.
     unsafe {
-        memory_init(launch_info.as_mut(), platform, platform_type);
+        memory_init(launch_info.as_mut(), &boot_params, platform, platform_type);
     }
 
     // SAFETY: the current page table was was placed into the kernel heap as

@@ -11,6 +11,7 @@ pub enum BootParamType {
     General,
     MemoryMap,
     Madt,
+    CommandLine,
     GuestContext,
 }
 
@@ -19,6 +20,7 @@ pub struct BootParamLayout {
     general_param_offset: u32,
     memory_map_offset: u32,
     madt_offset: u32,
+    command_line_offset: u32,
     guest_context_offset: u32,
     guest_context_size: u32,
     total_size: u32,
@@ -36,12 +38,14 @@ impl BootParamLayout {
         };
         let general_param_offset = page_size + guest_context_size;
         let madt_offset = general_param_offset + page_size;
-        let memory_map_offset = madt_offset + page_size;
+        let command_line_offset = madt_offset + page_size;
+        let memory_map_offset = command_line_offset + page_size;
         let total_size = memory_map_offset + page_size;
         Self {
             general_param_offset,
             memory_map_offset,
             madt_offset,
+            command_line_offset,
             guest_context_offset,
             guest_context_size,
             total_size,
@@ -58,6 +62,7 @@ impl BootParamLayout {
             BootParamType::MemoryMap => self.memory_map_offset,
             BootParamType::Madt => self.madt_offset,
             BootParamType::GuestContext => self.guest_context_offset,
+            BootParamType::CommandLine => self.command_line_offset,
         }
     }
 

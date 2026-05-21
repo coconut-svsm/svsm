@@ -38,6 +38,7 @@ pub struct BootParams<'a> {
     boot_param_block: &'a BootParamBlock,
     igvm_param_page: &'a IgvmParamPage,
     igvm_memory_map: &'a IgvmMemoryMap,
+    igvm_cmdline: Option<&'a [u8]>,
     igvm_madt: &'a [u8],
     guest_context: Option<&'a InitialGuestContext>,
 }
@@ -58,6 +59,19 @@ impl BootParams<'_> {
         let madt = unsafe {
             slice::from_raw_parts(madt_address.as_ptr::<u8>(), param_block.madt_size as usize)
         };
+        let cmdline = if param_block.command_line_offset != 0 {
+            // SAFETY: the parameter block correctly specifies the address of
+            // the command line, which is limited to a single page.
+            unsafe {
+                let cmdline_address = addr + param_block.command_line_offset as usize;
+                let bytes = slice::from_raw_parts(cmdline_address.as_ptr::<u8>(), PAGE_SIZE);
+                let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+                let (cmdline, _) = bytes.split_at(end);
+                Some(cmdline)
+            }
+        } else {
+            None
+        };
         let guest_context = if param_block.guest_context_offset != 0 {
             let offset = usize::try_from(param_block.guest_context_offset).unwrap();
             Some(Self::try_aligned_ref::<InitialGuestContext>(addr + offset)?)
@@ -70,6 +84,7 @@ impl BootParams<'_> {
             igvm_param_page: param_page,
             igvm_memory_map: memory_map,
             igvm_madt: madt,
+            igvm_cmdline: cmdline,
             guest_context,
         })
     }
@@ -284,8 +299,69 @@ impl BootParams<'_> {
         self.boot_param_block.firmware.size != 0
     }
 
+    fn get_cmdline_parameter(&self, param: &[u8]) -> Option<&[u8]> {
+        self.igvm_cmdline.and_then(|cmdline| {
+            if cmdline.len() <= param.len() {
+                return None;
+            } else {
+                // Scan the command line up through the last point where the
+                // parameter string could be present.
+                let scan_len = cmdline.len() - param.len();
+                for i in 0..scan_len {
+                    // Check to see whether this command line position holds
+                    // the first character of the requested parameter name.  If
+                    // so, loop over every character in the requested parameter
+                    // as long as it matches the string found in the command
+                    // line.
+                    let mut j: usize = 0;
+                    while cmdline[i + j] == param[j] {
+                        j += 1;
+                        if j == param.len() {
+                            // The parameter matches.  Generate a substring
+                            // that contains the entire command line that
+                            // follows the parameter string, and then break it
+                            // at the first space.
+                            let (_, substr) = cmdline.split_at(i + j);
+                            let end = substr
+                                .iter()
+                                .position(|&b| b == b' ')
+                                .unwrap_or(substr.len());
+                            let (val, _) = substr.split_at(end);
+                            return Some(val);
+                        }
+                    }
+                }
+            }
+            None
+        })
+    }
+
+    fn param_as_u32(param: &[u8]) -> Option<u32> {
+        let mut val: u32 = 0;
+        for b in param.iter() {
+            if *b < b'0' {
+                return None;
+            }
+            if *b > b'9' {
+                return None;
+            }
+            // TODO: check for overflow.
+            val = 10 * val + (*b - b'0') as u32;
+        }
+        Some(val)
+    }
+
     pub fn debug_serial_port(&self) -> u16 {
-        self.boot_param_block.debug_serial_port
+        let comport = self
+            .get_cmdline_parameter(b"CONSOLEPORT=")
+            .and_then(Self::param_as_u32);
+        match comport {
+            Some(2) => 0x2f8,
+            Some(3) => 0x3e8,
+            Some(4) => 0x2e8,
+            // All invalid port numbers are treated as COM1.
+            _ => 0x3f8,
+        }
     }
 
     pub fn get_fw_metadata(&self) -> Option<SevFWMetaData> {
