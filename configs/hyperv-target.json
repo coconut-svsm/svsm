@@ -8,7 +8,6 @@
                 "vsm"
             ],
             "policy": "0x30000",
-            "comport": "3",
             "measure": "print"
         }
     },
