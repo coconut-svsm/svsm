@@ -32,10 +32,6 @@ pub struct CmdOptions {
     #[arg(short, long)]
     pub output: String,
 
-    /// COM port to use for the SVSM console. Valid values are 1-4
-    #[arg(short, long, default_value_t = 1, value_parser = clap::value_parser!(i32).range(1..=4))]
-    pub comport: i32,
-
     /// Hypervisor to generate IGVM file for
     #[arg(value_enum)]
     pub hypervisor: Hypervisor,
@@ -79,18 +75,6 @@ pub struct CmdOptions {
     /// Use Alternate Injection if available
     #[arg(long, default_value_t = false)]
     pub alt_injection: bool,
-}
-
-impl CmdOptions {
-    pub fn get_port_address(&self) -> u16 {
-        match self.comport {
-            1 => 0x3f8,
-            2 => 0x2f8,
-            3 => 0x3e8,
-            4 => 0x2e8,
-            _ => 0,
-        }
-    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
