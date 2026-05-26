@@ -1,0 +1,19 @@
+# Exclude all git submodules
+exclude = ["libtcgtpm/deps/openssl/**", "libtcgtpm/deps/tpm-20-ref/**", "packit/**"]
+
+[formatting]
+
+# Use same indentation as Rust code = 4 spaces
+indent_string = "    "
+
+# Alphabetize dependencies.
+# Not enabling, to preserve grouping
+reorder_keys = false
+
+# No space after/before [ / ]
+compact_arrays = true
+
+# Keep arrays in one line if they fit
+array_auto_collapse = true
+
+column_width = 100
