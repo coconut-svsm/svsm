@@ -82,3 +82,24 @@ Fuzzing
 The SVSM project includes a number of fuzzing targets to test parts of the
 code-base. For details on how to run the fuzzers and extend the fuzzing
 functionality, please have a look at [FUZZING.md](FUZZING.md).
+
+TOML Formatting
+---------------
+
+[Taplo](https://taplo.tamasfe.dev/) is used to format all TOML files
+(`Cargo.toml`, `.cargo/config.toml`, etc.). The style is defined in
+`taplo.toml` and overrides default style minimally, forcing an indentation of 4
+spaces, maximum line length of 100, and try keeping arrays on the same line, if
+they fit.
+
+Taplo can be installed directly via cargo:
+
+```bash
+cargo install taplo-cli
+```
+
+To format all `.toml` files in the repository run:
+
+```bash
+taplo fmt
+```
