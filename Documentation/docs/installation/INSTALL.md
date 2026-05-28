@@ -389,7 +389,7 @@ The script supports a number of other options described in the table below
 Debugging using GDB
 -------------------
 
-The SVSM can be debugged by following the instructions in 
+The SVSM can be debugged by following the instructions in
 [DEBUGGING.md](../developer/DEBUGGING.md) document.
 
 Have a lot of fun!
