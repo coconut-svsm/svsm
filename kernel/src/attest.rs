@@ -39,13 +39,13 @@ use zerocopy::{FromBytes, IntoBytes};
 // TODO: Make the IO port configurable/discoverable or drop the support entirely.
 const ATTEST_DEFAULT_SERIAL_IO_ADDR: u16 = 0x3e8; // COM3
 
-enum Transport<'a> {
+enum Transport {
     #[cfg(feature = "vsock")]
     Vsock(VsockStream),
-    Serial(SerialPort<'a>),
+    Serial(SerialPort<'static>),
 }
 
-impl Read for Transport<'_> {
+impl Read for Transport {
     type Err = SvsmError;
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Err> {
@@ -57,7 +57,7 @@ impl Read for Transport<'_> {
     }
 }
 
-impl Write for Transport<'_> {
+impl Write for Transport {
     type Err = SvsmError;
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
@@ -69,7 +69,7 @@ impl Write for Transport<'_> {
     }
 }
 
-impl Transport<'_> {
+impl Transport {
     #[cfg(feature = "vsock")]
     fn new() -> Self {
         match VsockStream::connect(ATTEST_DEFAULT_VSOCK_PORT, VMADDR_CID_HOST) {
@@ -91,7 +91,7 @@ impl Transport<'_> {
     }
 }
 
-fn create_serial_transport<'a>() -> Transport<'a> {
+fn create_serial_transport() -> Transport {
     let sp = SerialPort::new(&DEFAULT_IO_DRIVER, ATTEST_DEFAULT_SERIAL_IO_ADDR);
     sp.init();
     Transport::Serial(sp)
@@ -100,13 +100,13 @@ fn create_serial_transport<'a>() -> Transport<'a> {
 /// The attestation driver that communicates with the proxy via some communication channel (serial
 /// port, virtio-vsock, etc...).
 #[allow(missing_debug_implementations)]
-pub struct AttestationDriver<'a> {
-    transport: Transport<'a>,
+pub struct AttestationDriver {
+    transport: Transport,
     tee: Tee,
     ecc: EccKey,
 }
 
-impl TryFrom<Tee> for AttestationDriver<'_> {
+impl TryFrom<Tee> for AttestationDriver {
     type Error = SvsmError;
 
     fn try_from(tee: Tee) -> Result<Self, Self::Error> {
@@ -127,7 +127,7 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
     }
 }
 
-impl AttestationDriver<'_> {
+impl AttestationDriver {
     /// Attest SVSM's launch state by communicating with the attestation proxy.
     pub fn attest(&mut self) -> Result<SecretSlice, SvsmError> {
         let negotiation = self.negotiation()?;
