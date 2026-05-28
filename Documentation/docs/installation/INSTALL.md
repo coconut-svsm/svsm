@@ -356,19 +356,24 @@ scripts/launch_guest.sh
 ```
 
 The path to QEMU can also be specified either by setting the `QEMU` variable, or
-by passing the path as a parameter:
+by passing the path as a parameter. Both can also include `sudo` to run QEMU
+with elevated privileges:
 
 ```shell
 QEMU=/path/to/qemu-system-x86_64 scripts/launch_guest.sh
 
 scripts/launch_guest.sh --qemu /path/to/qemu-system-x86_64
+
+QEMU="sudo /path/to/qemu-system-x86_64" scripts/launch_guest.sh
+
+scripts/launch_guest.sh --qemu "sudo /path/to/qemu-system-x86_64"
 ```
 
 The script supports a number of other options described in the table below
 
 | Command-line     | Variable | Default               | Description                                                                  |
 | ---------------- | -------- | --------------------- | ---------------------------------------------------------------------------- |
-| `--qemu [path]`  | QEMU     | qemu-system-x86_64    | Path to QEMU binary to use.                                                  |
+| `--qemu [path]`  | QEMU     | qemu-system-x86_64    | Path to QEMU binary to use. Can include `sudo` to run as root.               |
 | `--igvm [path]`  | IGVM     | bin/coconut-qemu.igvm | Path to the IGVM binary to launch.                                           |
 | `--image [path]` | IMAGE    | [None]                | The QEMU disk image to use. If unset then no disk is provided on the guest.  |
 | `--debugserial`  | N/A      | not set               | Define a second serial port that can be used with the COCONUT-SVSM GDB stub. |

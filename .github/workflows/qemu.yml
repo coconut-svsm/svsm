@@ -129,6 +129,9 @@ jobs:
       - name: Install netcat used by test-in-svsm for vsock tests
         run: sudo apt install -y ncat
 
+      - name: Set up KVM permissions
+        run: sudo chmod 666 /dev/kvm
+
       - name: Set up vhost-vsock permissions
         run: sudo chmod 666 /dev/vhost-vsock
 
