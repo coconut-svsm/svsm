@@ -71,9 +71,9 @@ impl Write for Transport {
 
 impl Transport {
     #[cfg(feature = "vsock")]
-    fn new() -> Self {
+    fn new() -> Result<Self, SvsmError> {
         match VsockStream::connect(ATTEST_DEFAULT_VSOCK_PORT, VMADDR_CID_HOST) {
-            Ok(value) => Transport::Vsock(value),
+            Ok(value) => Ok(Transport::Vsock(value)),
             Err(e) => {
                 log::warn!(
                     "Failed to connect to attestation proxy on vsock port \
@@ -86,15 +86,15 @@ impl Transport {
     }
 
     #[cfg(not(feature = "vsock"))]
-    fn new() -> Self {
+    fn new() -> Result<Self, SvsmError> {
         create_serial_transport()
     }
 }
 
-fn create_serial_transport() -> Transport {
+fn create_serial_transport() -> Result<Transport, SvsmError> {
     let sp = SerialPort::new(&DEFAULT_IO_DRIVER, ATTEST_DEFAULT_SERIAL_IO_ADDR);
     sp.init();
-    Transport::Serial(sp)
+    Ok(Transport::Serial(sp))
 }
 
 /// The attestation driver that communicates with the proxy via some communication channel (serial
@@ -118,7 +118,7 @@ impl TryFrom<Tee> for AttestationDriver {
         let curve = Curve::new(TpmEccCurve::NistP521).map_err(AttestationError::Crypto)?;
         let ecc = sc_key_generate(&curve).map_err(AttestationError::Crypto)?;
 
-        let transport = Transport::new();
+        let transport = Transport::new()?;
         Ok(Self {
             transport,
             tee,
