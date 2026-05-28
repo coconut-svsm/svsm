@@ -4,7 +4,6 @@
 //
 // Author: Peter Fang <peter.fang@intel.com>
 
-use crate::cpu::apic::{ApicIcr, IcrDestFmt, IcrMessageType};
 use crate::cpu::msr::{read_msr, write_msr};
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::x86::apic::{
@@ -13,6 +12,9 @@ use crate::cpu::x86::apic::{
 use crate::cpu::x86::x2apic::{MSR_X2APIC_BASE, MSR_X2APIC_SELF_IPI};
 use crate::cpu::x86::{ApicAccess, MSR_APIC_BASE};
 use crate::tdx::tdcall;
+use cpuarch::x86apic::ApicIcr;
+use cpuarch::x86apic::IcrDestFmt;
+use cpuarch::x86apic::IcrMessageType;
 
 #[derive(Debug)]
 pub struct TdxApicAccessor {}
