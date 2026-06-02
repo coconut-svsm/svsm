@@ -17,6 +17,8 @@ use crate::paging::InitPageTableInfo;
 
 pub struct BootLoaderStack {
     bldr_stack: BldrLaunchInfo,
+    stack_start: u64,
+    stack_top: u64,
 }
 
 const _: () = assert!((size_of::<BootLoaderStack>() as u64) <= PAGE_SIZE_4K);
@@ -39,30 +41,38 @@ impl BootLoaderStack {
             page_table_end: gpa_map.init_page_tables.get_end() as u32,
             page_table_root: init_page_table_info.paging_root as u32,
             page_table_map_vaddr: init_page_table_info.map_vaddr,
-            cpuid_addr: gpa_map.cpuid_page.get_start() as u32,
+            cpuid_addr: gpa_map.cpuid_page as u32,
             c_bit_position: 0,
             platform_type: 0,
-            _reserved: Default::default(),
+            ap_start_context_addr: gpa_map.ap_start_context_addr,
         };
-        Self { bldr_stack }
+        Self {
+            bldr_stack,
+            stack_start: gpa_map.bldr_stack.get_start(),
+            stack_top: gpa_map.bldr_stack.get_end(),
+        }
     }
 
     pub fn add_directive(
         &self,
-        gpa: u64,
         compatibility_mask: u32,
         directives: &mut Vec<IgvmDirectiveHeader>,
-    ) {
+    ) -> u64 {
+        let data_addr = self.stack_top - PAGE_SIZE_4K;
+        assert!(data_addr >= self.stack_start);
+
         let stack_data = self.bldr_stack.as_bytes();
         let mut stack_page = vec![0u8; PAGE_SIZE_4K as usize - stack_data.len()];
         stack_page.extend_from_slice(stack_data);
 
         directives.push(IgvmDirectiveHeader::PageData {
-            gpa,
+            gpa: data_addr,
             compatibility_mask,
             flags: IgvmPageDataFlags::new(),
             data_type: IgvmPageDataType::NORMAL,
             data: stack_page,
         });
+
+        data_addr - self.stack_start
     }
 }

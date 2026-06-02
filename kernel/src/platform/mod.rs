@@ -27,11 +27,11 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::cpu::IrqGuard;
 use crate::cpu::percpu::PerCpu;
+use crate::cpu::smp::ApStartContextRef;
 use crate::cpu::tlb::{TlbFlushScope, flush_tlb};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
-use crate::mm::TransitionPageTable;
 use crate::mm::alloc::free_page;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -200,21 +200,6 @@ pub trait SvsmPlatform: Sync {
     /// platform.
     fn get_io_port(&self) -> &'static dyn IOPort;
 
-    /// Revokes validation of page tables stored in low memory and used by
-    /// early boot.
-    fn invalidate_lowmem_page_tables(&self, _paddr: u32, _count: usize) -> Result<(), SvsmError> {
-        // By default, platforms have no work to do here.
-        Ok(())
-    }
-
-    /// Validates low memory below the specified physical address, with the
-    /// exception of addresses reserved for use by the platform object which
-    /// may pre-validated.  Intended only for use during early boot.
-    /// # Safety
-    /// The caller is required to ensure that it is safe to validate low
-    /// memory.
-    unsafe fn validate_low_memory(&self, addr: u64, vaddr_valid: bool) -> Result<(), SvsmError>;
-
     /// Performs a page state change between private and shared states.
     fn page_state_change(
         &self,
@@ -273,7 +258,7 @@ pub trait SvsmPlatform: Sync {
         &self,
         cpu: &PerCpu,
         start_rip: u64,
-        transition_page_table: &TransitionPageTable,
+        ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError>;
 
     /// Indicates whether this platform should invoke the SVSM request loop.

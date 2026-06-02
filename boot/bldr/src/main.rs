@@ -10,6 +10,7 @@
 mod temp_maps;
 
 use crate::temp_maps::TempMappings;
+use bootdefs::kernel_launch::ApStartContext;
 use bootdefs::kernel_launch::BldrLaunchInfo;
 use bootdefs::kernel_launch::KernelLaunchInfo;
 use bootdefs::platform::SvsmPlatformType;
@@ -21,17 +22,61 @@ use core::slice;
 use cpuarch::sev_status::MSR_SEV_STATUS;
 use cpuarch::sev_status::SEVStatusFlags;
 use cpuarch::x86::CR0Flags;
+use cpuarch::x86::CR4Flags;
 use cpuarch::x86::EFERFlags;
 use cpuarch::x86::MSR_EFER;
 
 global_asm!(
     r#"
-        .section .text
+        /* The startup code has a very specific layout which is expected by
+         * other assembly components.
+         * 10000: 16-bit SIPI entry point
+         * 10002: 32-bit BSP entry point
+         * 10004: 32-bit AP entry point
+         */
         .section .startup.text,"ax"
+        .code16gcc
+
+        .globl base_entry
+    base_entry:
+        /* These JMP instructions must be two bytes each to conform to the
+         * layout described above.  Thus they are all short jumps to nearby
+         * labels which will jump to the actual code using larger
+         * instructions. */
+        jmp startup_16
+        jmp startup_32_bsp
+        jmp startup_32_ap
+        nop
+        nop
+
+    gdt_desc:
+        .word	gdt_end - gdt_start - 1
+        .long	gdt_start
+        .align  8
+    gdt_start:
+        .quad	0
+        .quad	0x00cf9b000000ffff // flat 32-bit code segment
+        .quad	0x00cf93000000ffff // flat data segment
+        .quad	0x00af9b000000ffff // 64-bit code segment
+    gdt_end:
+
+    startup_16:
+        movl %cr0, %eax
+        orl ${CR0_PE}, %eax // enable protected mode
+        movl %eax, %cr0
+        lgdtl %cs:0x10000 + gdt_desc - base_entry
+        ljmpl $8, $startup_ap
+
         .code32
 
-        .globl startup_32
-        startup_32:
+    startup_32_bsp:
+        jmp startup_bsp
+
+    startup_32_ap:
+        jmp startup_ap_no_gdt
+
+        .globl startup_bsp
+    startup_bsp:
 
         /* Upon entry, ESI holds the high 32 bits of VTOM. */
 
@@ -41,6 +86,11 @@ global_asm!(
         /* Save the platform type for future use.  The platform type is loaded
          * in EAX upon entry. */
         movl %eax, {PLATFORM}(%ebp)
+
+        /* Capture the address of the AP start context in case it is needed
+         * later. */
+        movl {AP_CTXT_ADDR}(%ebp), %edx
+        movl %edx, ap_ctxt_ptr
 
         /* Check to see whether this is an SNP system.  If not, no page table
          * manipulation is required. */
@@ -110,22 +160,71 @@ global_asm!(
         jz 3f
         wrmsr
     3:
-        /* Enable paging so that long mode can be activated. */
+        /* Save the paging root for AP startup. */
         movl {PT_ROOT}(%ebp), %edx
+        movl %edx, transition_pt_root
+
+        /* Enable paging so that long mode can be activated. */
         movl %edx, %cr3
         movl %cr0, %eax
         bts ${PG_SHIFT}, %eax
         movl %eax, %cr0
 
         /* Establish the correct GDT and jump to the 64-bit entry point. */
-        movl $gdt64_desc, %eax
+        movl $gdt_desc, %eax
         lgdt (%eax)
-        ljmpl $0x8, $startup_64
+        ljmpl $0x18, $startup_64
+
+    startup_ap_no_gdt:
+        movl $gdt_desc, %eax
+        lgdt (%eax)
+        ljmpl $8, $startup_ap
+
+    startup_ap:
+        /* Reload the data segment descriptors. */
+        movw $0x10, %ax
+        movw %ax, %ds
+        movw %ax, %es
+        movw %ax, %fs
+        movw %ax, %gs
+        movw %ax, %ss
+
+        /* Enable long mode. */
+        movl ${MSR_EFER}, %ecx
+        rdmsr
+        movl %eax, %ebx
+
+        /* Include both EFER.LME and EFER.NXE since the page tables will use
+         * the NX bit. */
+        orl $({EFER_LME} | {EFER_NXE}), %eax
+
+        /* Don't write the MSR if it is already correct. */
+        cmpl %eax, %ebx
+        jz 5f
+        wrmsr
+    5:
+        /* Enable paging using the transition page table */
+        movl transition_pt_root, %eax
+        movl %eax, %cr3
+        movl %cr4, %eax
+        orl ${CR4_PAE}, %eax
+        movl %eax, %cr4
+        movl %cr0, %eax
+        bts ${PG_SHIFT}, %eax
+        movl %eax, %cr0
+
+        /* Jump to 64-bit code and then proceed to the entry point. */
+        ljmpl $0x18, $start_ap_64
 
         .code64
+    start_ap_64:
+        /* Capture the address of the AP start context and jump to the entry
+         * point it indicates. */
+        movl ap_ctxt_ptr, %edi
+        jmp *{AP_INITIAL_RIP}(%rdi)
 
     startup_64:
-        /* Reload the data segments with 64bit descriptors. */
+        /* Reload the data segment descriptors. */
         movw $0x10, %ax
         movw %ax, %ds
         movw %ax, %es
@@ -174,21 +273,19 @@ global_asm!(
         ud2
 
         .data
-        .align 16
-    gdt64:
-        .quad 0
-        .quad 0x00af9a000000ffff /* 64 bit code segment */
-        .quad 0x00cf92000000ffff /* 64 bit data segment */
-    gdt64_end:
+    ap_ctxt_ptr:
+        .long 0
 
-    gdt64_desc:
-        .word gdt64_end - gdt64 - 1
-        .quad gdt64
+    transition_pt_root:
+        .long 0
+
         "#,
     MSR_EFER = const MSR_EFER,
     EFER_NXE = const EFERFlags::NXE.bits(),
     EFER_LME = const EFERFlags::LME.bits(),
     PG_SHIFT = const CR0Flags::PG.bits().trailing_zeros(),
+    CR0_PE = const CR0Flags::PE.bits(),
+    CR4_PAE = const CR4Flags::PAE.bits(),
     MSR_SEV_STATUS = const MSR_SEV_STATUS,
     VTOM = const SEVStatusFlags::VTOM.bits(),
     PT_START = const offset_of!(BldrLaunchInfo, page_table_start) as u32,
@@ -197,6 +294,8 @@ global_asm!(
     CPUID_PAGE = const offset_of!(BldrLaunchInfo, cpuid_addr) as u32,
     PLATFORM = const offset_of!(BldrLaunchInfo, platform_type) as u32,
     C_BIT_POS = const offset_of!(BldrLaunchInfo, c_bit_position) as u32,
+    AP_CTXT_ADDR = const offset_of!(BldrLaunchInfo, ap_start_context_addr) as u32,
+    AP_INITIAL_RIP = const offset_of!(ApStartContext, initial_rip) as u32,
     options(att_syntax)
 );
 
@@ -279,9 +378,6 @@ pub extern "C" fn bldr_main(launch_info: &BldrLaunchInfo, vtom: u64) -> ! {
     let kernel_launch_info =
         unsafe { &mut *(launch_info.kernel_launch_info as *mut KernelLaunchInfo) };
 
-    kernel_launch_info.lowmem_page_table_paddr = launch_info.page_table_start;
-    kernel_launch_info.lowmem_page_table_count =
-        (launch_info.page_table_end - launch_info.page_table_start) / 0x1000;
     kernel_launch_info.vtom = vtom;
 
     // If this is an SNP system, copy the CPUID page from the boot loader

@@ -15,6 +15,7 @@ use std::mem::size_of;
 use bootdefs::boot_params::BootParamBlock;
 use bootdefs::boot_params::GuestFwInfoBlock;
 use bootdefs::boot_params::InitialGuestContext;
+use bootdefs::kernel_launch::BldrLaunchInfo;
 use bootimg::BootImageError;
 use bootimg::BootImageParams;
 use bootimg::prepare_boot_image;
@@ -41,7 +42,6 @@ use crate::firmware::{Firmware, parse_firmware};
 use crate::initial_stack::BootLoaderStack;
 use crate::paging::setup_init_page_tables;
 use crate::platform::PlatformMask;
-use crate::sipi::add_sipi_stub;
 
 pub const SNP_COMPATIBILITY_MASK: u32 = 1u32 << 0;
 pub const NATIVE_COMPATIBILITY_MASK: u32 = 1u32 << 1;
@@ -52,8 +52,6 @@ pub const FULL_COMPATIBILITY_MASK: u32 = SNP_COMPATIBILITY_MASK
     | TDP_COMPATIBILITY_MASK
     | VSM_COMPATIBILITY_MASK;
 pub static COMPATIBILITY_MASK: PlatformMask = PlatformMask::new();
-
-pub const ANY_NATIVE_COMPATIBILITY_MASK: u32 = NATIVE_COMPATIBILITY_MASK | VSM_COMPATIBILITY_MASK;
 
 // Parameter area indices
 const IGVM_GENERAL_PARAMS_PA: u32 = 0;
@@ -221,7 +219,7 @@ impl IgvmBuilder {
     fn create_param_block(&self) -> Result<BootParamBlock, Box<dyn Error>> {
         // Populate the firmware metadata.
         let fw_info = if let Some(firmware) = &self.firmware {
-            firmware.get_fw_info()
+            firmware.finalize_fw_info(&self.gpa_map)
         } else {
             GuestFwInfoBlock::default()
         };
@@ -387,7 +385,9 @@ impl IgvmBuilder {
             kernel_fs_end: self.gpa_map.kernel_fs.get_start() + self.gpa_map.kernel_fs.get_size(),
             kernel_region_start: self.gpa_map.kernel.get_start(),
             kernel_region_page_count: self.gpa_map.kernel.get_page_count(),
-            bldr_start: self.gpa_map.base_addr,
+            bldr_start: self.gpa_map.bldr_image.get_start(),
+            bldr_end: self.gpa_map.bldr_end,
+            ap_start_context_addr: self.gpa_map.ap_start_context_addr,
             vtom: self.vtom,
         };
         let boot_image_info = prepare_boot_image(
@@ -421,15 +421,28 @@ impl IgvmBuilder {
             // Populate the boot loader stack.
             let bldr_stack =
                 BootLoaderStack::new(&self.gpa_map, &boot_image_info, &init_page_table_info);
-            bldr_stack.add_directive(
-                self.gpa_map.bldr_stack.get_start(),
-                COMPATIBILITY_MASK.get(),
-                &mut self.directives,
-            );
+
+            // Add the contents of the stack page that includes the launch
+            // information.
+            let empty_stack_pages =
+                bldr_stack.add_directive(COMPATIBILITY_MASK.get(), &mut self.directives);
+
+            // Add any empty pages required for the stack.
+            if empty_stack_pages != 0 {
+                self.add_empty_pages(
+                    self.gpa_map.bldr_stack.get_start(),
+                    empty_stack_pages,
+                    COMPATIBILITY_MASK.get(),
+                    IgvmPageDataType::NORMAL,
+                )?;
+            }
 
             // Construct a native context object to capture the start context.
-            let start_rip = self.gpa_map.bldr_image.get_start();
-            let start_rsp = self.gpa_map.bldr_stack.get_end() - size_of::<BootLoaderStack>() as u64;
+            // The start of the image is the 16-bit SIPI entry point, and
+            // the 32-bit BSP entry point is two bytes after that.  Refer to
+            // the comments in the boot loader entry point for details.
+            let start_rip = self.gpa_map.bldr_image.get_start() + 2;
+            let start_rsp = self.gpa_map.bldr_stack.get_end() - size_of::<BldrLaunchInfo>() as u64;
             let start_context_info = StartContextInfo {
                 start_rip,
                 start_rsp,
@@ -437,7 +450,7 @@ impl IgvmBuilder {
                 long_mode: false,
             };
             let image_layout = ImageLayout {
-                cpuid_addr: self.gpa_map.cpuid_page.get_start(),
+                cpuid_addr: self.gpa_map.cpuid_page,
                 boot_params_gpa: boot_image_info.boot_params_paddr,
                 stage2_boot_params: false,
             };
@@ -652,26 +665,6 @@ impl IgvmBuilder {
                 TDP_COMPATIBILITY_MASK,
                 IgvmPageDataType::NORMAL,
             )?;
-        }
-
-        // Populate the empty region below the boot loader stack page.  This
-        // region is used for the boot loader stack at runtime.
-        let stack_base = self.gpa_map.bldr_stack.get_start();
-        if stack_base > self.gpa_map.base_addr {
-            self.add_empty_pages(
-                self.gpa_map.base_addr,
-                stack_base - self.gpa_map.base_addr,
-                COMPATIBILITY_MASK.get(),
-                IgvmPageDataType::NORMAL,
-            )?;
-        }
-
-        // If the target includes a non-isolated platform, then insert the
-        // SIPI startup stub.  Also include the SIPI stub with TDX since it is
-        // used for AP startup.
-        let sipi_compat_mask = ANY_NATIVE_COMPATIBILITY_MASK | TDP_COMPATIBILITY_MASK;
-        if COMPATIBILITY_MASK.contains(sipi_compat_mask) {
-            add_sipi_stub(sipi_compat_mask, &mut self.directives);
         }
 
         Ok(())

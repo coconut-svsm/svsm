@@ -54,15 +54,8 @@ startup:
         pause
         jnz     1b
 
-        /* Until the SIPI stub is consolidated with the boot loader stages,
-         * retain hard-coded constants in the assembly code.  These will be
-         * replaced once the SIPI stub is overhauled. */
-
-        /* Load the GDT from the SIPI stub. */
-        lgdt    [0xF01A]
-
-        /* Perform a far jump to the SIPI entry point. */
-        ljmpl   $8, $0xF040
+        /* Jump to the correct AP entry point. */
+        jmp     *{AP_ENTRY}(%edx)
 
         .section .resetvector
         jmp     startup
@@ -70,6 +63,7 @@ startup:
     VP_INDEX = const offset_of!(TdpStartContext, vp_index),
     RIP = const offset_of!(TdpStartContext, rip),
     RSP = const offset_of!(TdpStartContext, rsp),
+    AP_ENTRY = const offset_of!(TdpStartContext, ap_entry),
     CR4_PAE = const CR4Flags::PAE.bits(),
     options(att_syntax)
 );

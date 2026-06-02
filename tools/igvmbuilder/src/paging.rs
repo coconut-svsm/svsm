@@ -9,7 +9,7 @@ use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 
 use zerocopy::{Immutable, IntoBytes};
 
-use crate::gpa_map::LOWMEM_PT_COUNT;
+use crate::gpa_map::INIT_PT_COUNT;
 use crate::igvm_builder::COMPATIBILITY_MASK;
 
 #[derive(Clone, Debug, Default)]
@@ -25,7 +25,7 @@ struct PageTablePage {
 
 #[derive(Clone, Copy, Default)]
 struct InitPageTables {
-    pages: [PageTablePage; LOWMEM_PT_COUNT],
+    pages: [PageTablePage; INIT_PT_COUNT],
 }
 
 impl Default for PageTablePage {

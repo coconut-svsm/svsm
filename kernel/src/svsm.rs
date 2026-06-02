@@ -10,7 +10,6 @@
 extern crate alloc;
 
 use bootdefs::kernel_launch::KernelLaunchInfo;
-use bootdefs::kernel_launch::LOWMEM_END;
 use bootdefs::platform::SvsmPlatformType;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
@@ -31,6 +30,7 @@ use svsm::cpu::percpu::{PERCPU_AREAS, PerCpu, cpu_idle_loop, this_cpu, try_this_
 use svsm::cpu::shadow_stack::{
     MODE_64BIT, S_CET, SCetFlags, set_cet_ss_enabled, shadow_stack_info,
 };
+use svsm::cpu::smp::ApStartContextRef;
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
@@ -45,7 +45,6 @@ use svsm::kernel_region::expand_kernel_heap;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::FixedAddressMappingRange;
 use svsm::mm::PageBox;
-use svsm::mm::TransitionPageTable;
 use svsm::mm::alloc::{free_multiple_pages, memory_info, print_memory_info, root_mem_init};
 use svsm::mm::global_memory::init_global_ranges;
 use svsm::mm::init_kernel_mapping_info;
@@ -473,29 +472,6 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     // a remote GDB connection
     //debug_break();
 
-    // Invalidate low-memory page tables if required for consistency.
-    if launch_info.lowmem_page_table_count != 0 {
-        SVSM_PLATFORM
-            .invalidate_lowmem_page_tables(
-                launch_info.lowmem_page_table_paddr,
-                launch_info.lowmem_page_table_count as usize,
-            )
-            .expect("failed to invalidate low-memory page tables");
-    }
-
-    // Validate low memory if the launch info indicates that it has not yet
-    // been validated.
-    if !launch_info.lowmem_validated {
-        // SAFETY: the launch information is trusted to represent the
-        // validation state of memory, thus memory can safely be validated if
-        // the launch info declares that it is necessary.
-        unsafe {
-            SVSM_PLATFORM
-                .validate_low_memory(LOWMEM_END.into(), false)
-                .expect("failed to validate low 640 KB");
-        }
-    }
-
     // Free the BSP stack that was allocated for early initialization.
     free_init_bsp_stack();
 
@@ -537,13 +513,20 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         .load_cpu_info()
         .expect("Failed to load ACPI tables");
 
-    // Create a transition page table for use during CPU startup.
-    let transition_page_table =
-        // SAFETY: the address of the initial kernel page tables supplied in
-        // the launch info is trusted to be correct.
-        unsafe { TransitionPageTable::new() }.expect("Failed to create transition page table");
+    // Map the AP start context area if one has been provided.
+    let ap_start_context_ref = if launch_info.ap_start_context_addr != 0 {
+        // SAFETY: the AP start context pointer specified in the launch context
+        // is trusted to be correct.
+        let context = unsafe { ApStartContextRef::new(launch_info.ap_start_context_addr) }
+            .expect("Failed to map AP start context area");
+        Some(context)
+    } else {
+        None
+    };
 
-    start_secondary_cpus(&**SVSM_PLATFORM, &cpus, &transition_page_table);
+    start_secondary_cpus(&**SVSM_PLATFORM, &cpus, ap_start_context_ref.as_ref());
+
+    drop(ap_start_context_ref);
 
     // Make ro_after_init section read-only
     make_ro_after_init().expect("Failed to make ro_after_init region read-only");

@@ -10,6 +10,7 @@ use bootdefs::boot_params::GuestFwInfoBlock;
 use bootdefs::boot_params::InitialGuestContext;
 use igvm::IgvmDirectiveHeader;
 
+use crate::GpaMap;
 use crate::cmd_options::CmdOptions;
 use crate::igvm_firmware::IgvmFirmware;
 use crate::ovmf_firmware::OvmfFirmware;
@@ -18,7 +19,8 @@ pub trait Firmware {
     fn directives(&self) -> &Vec<IgvmDirectiveHeader>;
     fn get_guest_context(&self) -> Option<InitialGuestContext>;
     fn get_vtom(&self) -> u64;
-    fn get_fw_info(&self) -> GuestFwInfoBlock;
+    fn get_fw_info(&self) -> &GuestFwInfoBlock;
+    fn finalize_fw_info(&self, gpa_map: &GpaMap) -> GuestFwInfoBlock;
 }
 
 pub fn parse_firmware(

@@ -26,6 +26,7 @@ pub struct TdpStartContextLayout {
     pub vp_index: u32,
     pub rip: u32,
     pub rsp: u32,
+    pub ap_entry: u32,
 }
 
 #[repr(C)]
@@ -34,4 +35,5 @@ pub struct TdpStartContext {
     pub vp_index: AtomicU32,
     pub rip: u32,
     pub rsp: u32,
+    pub ap_entry: u32,
 }

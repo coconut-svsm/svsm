@@ -6,6 +6,7 @@
 
 use super::idt::load_static_idt;
 use crate::acpi::tables::ACPICPUInfo;
+use crate::address::PhysAddr;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::ipi::ipi_start_cpu;
 use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu, this_cpu_shared};
@@ -15,28 +16,47 @@ use crate::cpu::tlb::set_tlb_flush_smp;
 use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
 use crate::hyperv;
+use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::STACK_SIZE;
-use crate::mm::TransitionPageTable;
 use crate::platform::{SVSM_PLATFORM, SvsmPlatform};
 use crate::task::schedule_init;
 use crate::utils::MemoryRegion;
-use cpuarch::x86::EFERFlags;
-
 use bootdefs::kernel_launch::ApStartContext;
 use core::arch::global_asm;
-use core::mem;
+use cpuarch::x86::EFERFlags;
 
+#[derive(Debug)]
+pub struct ApStartContextRef {
+    mapping: PerCPUPageMappingGuard,
+}
+
+impl ApStartContextRef {
+    /// # Safety
+    /// The caller is required to specify a correct address for the AP start
+    /// context.
+    pub unsafe fn new(ap_start_context_addr: u32) -> Result<Self, SvsmError> {
+        let paddr = PhysAddr::from(u64::from(ap_start_context_addr));
+        let mapping = PerCPUPageMappingGuard::create_4k(paddr)?;
+        Ok(Self { mapping })
+    }
+
+    pub fn as_mut_ptr(&self) -> *mut ApStartContext {
+        self.mapping.virt_addr().as_mut_ptr::<ApStartContext>()
+    }
+}
+
+/// # Safety
 fn start_cpu(
     platform: &dyn SvsmPlatform,
     percpu_shared: &'static PerCpuShared,
-    transition_page_table: &TransitionPageTable,
+    ap_start_context_ref: Option<&ApStartContextRef>,
 ) -> Result<(), SvsmError> {
     let start_rip: u64 = (start_ap as *const u8) as u64;
     let percpu = PerCpu::alloc(percpu_shared)?;
     let pgtable = this_cpu().get_pgtable().clone_shared()?;
     percpu.setup(platform, pgtable)?;
 
-    platform.start_cpu(percpu, start_rip, transition_page_table)?;
+    platform.start_cpu(percpu, start_rip, ap_start_context_ref)?;
 
     let percpu_shared = percpu.shared();
     while !percpu_shared.is_online() {}
@@ -46,7 +66,7 @@ fn start_cpu(
 pub fn start_secondary_cpus(
     platform: &dyn SvsmPlatform,
     cpus: &[ACPICPUInfo],
-    transition_page_table: &TransitionPageTable,
+    ap_start_context_ref: Option<&ApStartContextRef>,
 ) {
     // Create the shared CPU structures for each application processor
     // while still running single processor.  This ensures that the
@@ -76,7 +96,7 @@ pub fn start_secondary_cpus(
                 cpu_index,
                 percpu_shared.apic_id()
             );
-            start_cpu(platform, percpu_shared, transition_page_table).expect("failed");
+            start_cpu(platform, percpu_shared, ap_start_context_ref).expect("failed");
         }
     }
 }
@@ -153,20 +173,22 @@ global_asm!(
     options(att_syntax)
 );
 
-pub fn create_ap_start_context(
+pub fn set_ap_start_context(
     initial_context: &hyperv::HvInitialVpContext,
-    transition_page_table: &TransitionPageTable,
-) -> ApStartContext {
-    ApStartContext {
-        cr0: initial_context.cr0.try_into().unwrap(),
-        cr3: initial_context.cr3.try_into().unwrap(),
-        cr4: initial_context.cr4.try_into().unwrap(),
-        efer: initial_context.efer.try_into().unwrap(),
-        start_rip: initial_context.rip.try_into().unwrap(),
-        rsp: initial_context.rsp.try_into().unwrap(),
-        transition_cr3: transition_page_table.cr3_value(),
-        initial_rip: start_ap_indirect as *const () as usize,
-        context_size: mem::size_of::<ApStartContext>() as u32,
+    ap_start_context_ref: &ApStartContextRef,
+) {
+    // SAFETY: the safety of the AP start context ref was guaranteed when the
+    // object was created.
+    unsafe {
+        ap_start_context_ref.as_mut_ptr().write(ApStartContext {
+            cr0: initial_context.cr0.try_into().unwrap(),
+            cr3: initial_context.cr3.try_into().unwrap(),
+            cr4: initial_context.cr4.try_into().unwrap(),
+            efer: initial_context.efer.try_into().unwrap(),
+            start_rip: initial_context.rip.try_into().unwrap(),
+            rsp: initial_context.rsp.try_into().unwrap(),
+            initial_rip: start_ap_indirect as *const () as usize,
+        });
     }
 }
 
