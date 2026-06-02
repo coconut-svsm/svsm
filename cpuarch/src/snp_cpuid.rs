@@ -7,7 +7,7 @@
 const SNP_CPUID_MAX_COUNT: usize = 64;
 
 #[derive(Copy, Clone, Default, Debug)]
-#[repr(C, packed)]
+#[repr(C)]
 pub struct SnpCpuidFn {
     pub eax_in: u32,
     pub ecx_in: u32,
@@ -21,7 +21,7 @@ pub struct SnpCpuidFn {
 }
 
 #[derive(Copy, Clone, Debug)]
-#[repr(C, packed)]
+#[repr(C)]
 pub struct SnpCpuidTable {
     pub count: u32,
     pub reserved_1: u32,

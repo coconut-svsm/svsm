@@ -21,13 +21,13 @@ use core::sync::atomic::Ordering;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::ShadowStackInit;
 use crate::cpu::X86ExceptionContext;
-use crate::cpu::features::{Feature, cpu_get_feat, cpu_has_feat};
+use crate::cpu::features::{Feature, cpu_has_feat};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::irqs_enable;
 use crate::cpu::percpu::{PerCpu, current_task};
 use crate::cpu::shadow_stack::init_shadow_stack;
-use crate::cpu::sse::sse_restore_context;
+use crate::cpu::sse::{sse_restore_context, xsave_area_size};
 use crate::error::SvsmError;
 use crate::fs::{Directory, FileHandle, opendir, stdout_open};
 use crate::locking::{RWLock, SpinLock};
@@ -751,7 +751,7 @@ impl Task {
     }
 
     fn allocate_xsave_area() -> PageBox<[u8]> {
-        let len = cpu_get_feat(Feature::XsaveSize) as usize;
+        let len = xsave_area_size() as usize;
         let xsa = PageBox::<[u8]>::try_new_slice(0u8, NonZeroUsize::new(len).unwrap());
         if xsa.is_err() {
             panic!("Error while allocating xsave area");

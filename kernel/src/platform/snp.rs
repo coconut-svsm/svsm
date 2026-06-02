@@ -17,7 +17,7 @@ use super::snp_fw::{
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::console::init_svsm_console;
-use crate::cpu::cpuid::cpuid_table_raw;
+use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::cpuid::init_cpuid_table;
 use crate::cpu::features::{Feature, cpu_get_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
@@ -304,12 +304,7 @@ impl SvsmPlatform for SnpPlatform {
         if (eax >> 28) == 4 {
             current_ghcb().cpuid(eax, ecx).ok()
         } else {
-            let xcr0 = if eax == 0xd && (ecx == 1 || ecx == 0) {
-                1
-            } else {
-                0
-            };
-            cpuid_table_raw(eax, ecx, xcr0, 0)
+            cpuid_table(eax, ecx)
         }
     }
 

@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use super::sse::XSAVE_LEGACY_SIZE;
 use crate::address::VirtAddr;
 use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -19,6 +20,52 @@ pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
     CPUID_PAGE
         .init(table)
         .expect("Could not initialize CPUID page");
+}
+
+/// Remove XSAVE feature bits from leaf 0xD if the corresponding size
+/// subleaf (2-63) is not present in the CPUID page. This prevents
+/// enabling a feature in XCR0/XSS whose XSAVE area size cannot be
+/// determined.
+///
+/// Updates as well ECX in subleaf 0, which reports maximum XSAVE
+/// area size.
+fn filter_xsave_features(table: &mut SnpCpuidTable) {
+    // Legacy x87 + SSE are always present
+    let mut avail = 3u64;
+    let mut max_size = XSAVE_LEGACY_SIZE;
+
+    // Gather available features from ECX={2-63} subleaves
+    for e in table.entries() {
+        // If the size subleaf is present and reports a non-zero size, the feature
+        // can be enabled.
+        if e.eax_in == 0xd && e.ecx_in >= 2 && e.ecx_in < 64 && e.eax_out != 0 {
+            avail |= 1u64 << e.ecx_in;
+            max_size = max_size.max(e.ebx_out + e.eax_out);
+        }
+    }
+
+    // Now remove the available feature bits from ECX={0,1} subleaves
+    for e in table.entries_mut().iter_mut().filter(|e| e.eax_in == 0xd) {
+        let (hi, lo) = match e.ecx_in {
+            // Subleaf 0: EAX/EDX contain XCR0 features
+            0 => (&mut e.edx_out, &mut e.eax_out),
+            // Subleaf 1: ECX/EDX contain XSS features
+            1 => (&mut e.edx_out, &mut e.ecx_out),
+            _ => continue,
+        };
+        *lo &= avail as u32;
+        *hi &= (avail >> 32) as u32;
+    }
+
+    // ECX in subleaf ECX=0 indicates maximum XSAVE area size, update it
+    // as well
+    if let Some(e) = table
+        .entries_mut()
+        .iter_mut()
+        .find(|e| e.eax_in == 0xd && e.ecx_in == 0)
+    {
+        e.ecx_out = max_size;
+    }
 }
 
 /// # Safety
@@ -42,6 +89,7 @@ pub unsafe fn init_cpuid_table(addr: VirtAddr) {
         }
     }
 
+    filter_xsave_features(table);
     register_cpuid_table(table);
 }
 
@@ -91,21 +139,17 @@ impl CpuidLeaf {
     }
 }
 
-pub fn cpuid_table_raw(eax: u32, ecx: u32, xcr0: u64, xss: u64) -> Option<CpuidResult> {
+pub fn cpuid_table(eax: u32, ecx: u32) -> Option<CpuidResult> {
     CPUID_PAGE
         .entries()
         .iter()
-        .find(|f| eax == f.eax_in && ecx == f.ecx_in && xcr0 == f.xcr0_in && xss == f.xss_in)
+        .find(|f| eax == f.eax_in && ecx == f.ecx_in)
         .map(|f| CpuidResult {
             eax: f.eax_out,
             ebx: f.ebx_out,
             ecx: f.ecx_out,
             edx: f.edx_out,
         })
-}
-
-pub fn cpuid_table(eax: u32, ecx: u32) -> Option<CpuidResult> {
-    cpuid_table_raw(eax, ecx, 0, 0)
 }
 
 pub fn dump_cpuid_table() {
