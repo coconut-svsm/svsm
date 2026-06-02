@@ -31,6 +31,7 @@
 extern crate alloc;
 
 use super::tasks::TASK_ACTIVE_OFFSET;
+use super::tasks::TASK_CUR_CPU_OFFSET;
 use super::{
     INITIAL_TASK_ID, KernelThreadStartInfo, Task, TaskListAdapter, TaskPointer, TaskRunListAdapter,
 };
@@ -39,7 +40,12 @@ use crate::cpu::IrqGuard;
 use crate::cpu::ipi::{IpiMessage, IpiTarget, send_multicast_ipi};
 use crate::cpu::irq_state::raw_get_tpr;
 use crate::cpu::msr::write_msr;
-use crate::cpu::percpu::{irq_nesting_count, this_cpu};
+use crate::cpu::percpu::PERCPU_CTXT_SWITCH_STACK_OFFSET;
+use crate::cpu::percpu::PERCPU_PAGING_ROOT_OFFSET;
+use crate::cpu::percpu::PERCPU_SHARED_INDEX_OFFSET;
+use crate::cpu::percpu::PERCPU_SHARED_OFFSET;
+use crate::cpu::percpu::irq_nesting_count;
+use crate::cpu::percpu::this_cpu;
 use crate::cpu::shadow_stack::{IS_CET_ENABLED, PL0_SSP, is_cet_ss_enabled};
 use crate::cpu::sse::{sse_restore_context, sse_save_context};
 use crate::error::SvsmError;
@@ -49,8 +55,9 @@ use crate::mm::SVSM_CONTEXT_SWITCH_SHADOW_STACK;
 use crate::platform::SVSM_PLATFORM;
 use alloc::string::String;
 use alloc::sync::Arc;
-use core::arch::{asm, global_asm};
+use core::arch::global_asm;
 use core::mem::offset_of;
+use core::ptr;
 use core::ptr::null_mut;
 use intrusive_collections::LinkedList;
 
@@ -119,15 +126,17 @@ impl RunQueue {
         }
     }
 
-    /// Initialized the scheduler for this (RunQueue)[RunQueue]. This method is
+    /// Initializes the scheduler for this (RunQueue)[RunQueue]. This method is
     /// called on the very first scheduling event when there is no current task
-    /// yet.
+    /// yet.  For consistency, it will always invoke the idle task using an
+    /// abbreviated task switch flow, and if there is another task that can
+    /// run, a full task switch will then occur.
     ///
     /// # Returns
     ///
     /// [TaskPointer] to the first task to run
     pub fn schedule_init(&mut self) -> TaskPointer {
-        let task = self.get_next_task();
+        let task = self.idle_task.as_ref().unwrap().clone();
         self.current_task = Some(task.clone());
         task
     }
@@ -202,6 +211,15 @@ impl RunQueue {
         TASKLIST.lock().list().push_front(task.clone());
 
         self.idle_task.replace(task);
+    }
+
+    /// Gets a pointer to the idle task
+    ///
+    /// # Panics
+    ///
+    /// Panics if the idle task has not yet been set.
+    pub fn get_idle_task(&self) -> TaskPointer {
+        self.idle_task.as_ref().unwrap().clone()
     }
 
     /// Gets a pointer to the current task
@@ -467,28 +485,15 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
     // the page table and stack information in those tasks are correct and
     // can be used to switch to the correct page table and execution stack.
     unsafe {
-        let cr3 = (*next).page_table.lock().cr3_value().bits() as u64;
-
-        // The location of a cpu-local stack that's mapped into every set of
-        // page tables for use during context switches.
-        //
-        // If an IRQ is raised after switching the page tables but before
-        // switching to the new stack, the CPU will try to access the old stack
-        // in the new page tables. To protect against this, we switch to another
-        // stack that's mapped into both the old and the new set of page tables.
-        // That way we always have a valid stack to handle exceptions on.
-        let tos_cs: u64 = this_cpu().get_top_of_context_switch_stack().unwrap().into();
+        let cr3 = (*next).page_table.lock().cr3_value().bits();
 
         // Switch to new task
-        asm!(
-            r#"
-            call switch_context
-            "#,
-            in("r12") prev as u64,
-            in("r13") next as u64,
-            in("r14") tos_cs,
-            in("r15") cr3,
-            options(att_syntax));
+        switch_context(
+            prev as usize,
+            next as usize,
+            ptr::from_ref(this_cpu()) as usize,
+            cr3,
+        );
     }
 }
 
@@ -531,6 +536,18 @@ fn preemption_checks() {
     assert!(raw_get_tpr() == 0 || !SVSM_PLATFORM.use_interrupts());
 }
 
+/// # Safety
+/// The caller must guarantee that this is only called on a valid task pointer
+/// that is actively scheduled on the current CPU.  Called only from the
+/// task switch code.
+#[unsafe(no_mangle)]
+pub unsafe fn update_task_percpu_page_tables(t: *const Task) {
+    // SAFETY: the caller guarantees the correctness of the task pointer.
+    let task = unsafe { &*t };
+    let mut pt = task.page_table.lock();
+    this_cpu().populate_page_table(&mut pt);
+}
+
 /// Perform a task switch and hand the CPU over to the next task on the
 /// run-list. In case the current task is terminated, it will be destroyed after
 /// the switch to the next task.
@@ -551,16 +568,11 @@ fn select_new_task(reschedule: bool, irq_guard: Option<IrqGuard>) {
 
     let work = this_cpu().schedule_prepare(reschedule);
 
-    // !!! Runqueue lock must be release here !!!
+    // !!! Runqueue lock must be released here !!!
     if let Some((current, next)) = work {
-        // Update per-cpu mappings if needed
-        let cpu_index = this_cpu().get_cpu_index();
-
-        if next.update_cpu(cpu_index) != cpu_index {
-            // Task has changed CPU, update per-cpu mappings
-            let mut pt = next.page_table.lock();
-            this_cpu().populate_page_table(&mut pt);
-        }
+        // Ensure that the current stack bounds of the current CPU are adjusted
+        // to reflect the task being scheduled.
+        this_cpu().set_current_stack(next.stack_bounds());
 
         // SAFETY: ths stack pointer is known to be correct.
         unsafe {
@@ -645,53 +657,51 @@ pub fn schedule_task(task: TaskPointer) {
     schedule();
 }
 
+unsafe extern "C" {
+    fn switch_context(prev: usize, next: usize, this_cpu: usize, cr3: usize);
+}
+
 global_asm!(
     r#"
         .section .text
 
     switch_context:
         // Arguments:
-        // R12: previous task pointer
-        // R13: new task pointer
-        // R14: per-CPU global-scope stack pointer
-        // R15: paging root of the new task
+        // rdi: previous task pointer
+        // rsi: new task pointer
+        // rdx: current per-CPU pointer
+        // rcx: paging root of the new task
         //
-        // Save the current context. The layout must match the TaskContext structure.
-        pushfq
-        pushq   %rax
-        pushq   %rbx
-        pushq   %rcx
-        pushq   %rdx
-        pushq   %rsi
-        pushq   %rdi
+        // Save the current context. The layout must match the TaskContext
+        // structure.  Only callee-save registers need to be pushed here; the
+        // remainder of the TaskContext frame can simply be allocated on the
+        // stack.
         pushq   %rbp
-        pushq   %r8
-        pushq   %r9
-        pushq   %r10
-        pushq   %r11
-        pushq   %r12
-        pushq   %r13
-        pushq   %r14
-        pushq   %r15
-        pushq   %rsp
+        pushq   %rbx
+        subq    $24, %rsp
 
         // If `prev` is not null...
-        testq   %r12, %r12
+        testq   %rdi, %rdi
         // The initial stack is always mapped in the new page table.
         jz      1f
 
         // Save the current stack pointer
-        movq    %rsp, {TASK_RSP_OFFSET}(%r12)
+        movq    %rsp, {TASK_RSP_OFFSET}(%rdi)
 
-        // Switch to a stack pointer that's valid in both the old and new page tables.
-        mov     %r14, %rsp
+        // Switch to a stack pointer that's valid in both the old and new page
+        // tables.
+        mov     {CONTEXT_SWITCH_RSP_OFFSET}(%rdx), %rsp
 
+        // Clear the frame pointer since it is no longer meaningful.
+        xorl    %ebp, %ebp
+
+        // Switch shadow stacks if required.
         cmpb    $0, {IS_CET_ENABLED}(%rip)
         je      4f
         // Save the current shadow stack pointer
         rdssp   %rax
         sub     $8, %rax
-        movq    %rax, {TASK_SSP_OFFSET}(%r12)
+        movq    %rax, {TASK_SSP_OFFSET}(%rdi)
         // Switch to a shadow stack that's valid in both page tables and move
         // the "shadow stack restore token" to the old shadow stack.
         mov     ${CONTEXT_SWITCH_RESTORE_TOKEN}, %rax
@@ -699,17 +709,21 @@ global_asm!(
         saveprevssp
 
     4:
+        // Switch to the current CPU's page table to ensure that the page
+        // table remains correct for the current CPU even if the previous task
+        // is scheduled onto another CPU and has its per-CPU address space
+        // updated.
+        movq    {PERCPU_PGTBL_OFFSET}(%rdx), %rax
+        movq    %rax, %cr3
+
         // Mark the previous task as inactive.  This must be done after
         // switching off of its stack because as soon as it is marked as
         // inactive, another processor is free to immediately switch to that
         // thread's stack.
-        andb    $0, {TASK_STATE_ACTIVE}(%r12)
+        andb    $0, {TASK_STATE_ACTIVE}(%rdi)
 
     1:
-        // Switch to the new task state
-
-        // Switch to the new task page tables
-        mov     %r15, %cr3
+        // Switch to the new task state.
 
         // Wait until the new task is inactive.  It may still be running
         // on another processor so its stack cannot be consumed until its
@@ -717,49 +731,62 @@ global_asm!(
     3:
         pause
         movb    $1, %al
-        lock xchgb {TASK_STATE_ACTIVE}(%r13), %al
+        lock xchgb {TASK_STATE_ACTIVE}(%rsi), %al
         testb   %al, %al
         jnz     3b
+
+        // Check to see whether the task is moving across CPUs.  If so, its
+        // per-CPU page table state must be updated.
+        movq    {PERCPU_SHARED_OFFSET}(%rdx), %r8
+        movq    {PERCPU_SHARED_INDEX_OFFSET}(%r8), %rax
+        cmpq    {TASK_CPU_OFFSET}(%rsi), %rax
+        jz      5f
+        movq    %rax, {TASK_CPU_OFFSET}(%rsi)
+
+        // Save local registers before calling out to do the page table update.
+        pushq   %rsi
+        pushq   %rcx
+
+        movq    %rsi, %rdi
+        call    update_task_percpu_page_tables
+
+        popq    %rcx
+        popq    %rsi
+
+    5:
+        // Switch to the new task page tables
+        movq    %rcx, %cr3
 
         cmpb    $0, {IS_CET_ENABLED}(%rip)
         je      2f
         // Switch to the new task shadow stack and move the "shadow stack
         // restore token" back.
-        mov     {TASK_SSP_OFFSET}(%r13), %rdx
-        rstorssp (%rdx)
+        mov     {TASK_SSP_OFFSET}(%rsi), %rax
+        rstorssp (%rax)
         saveprevssp
+
     2:
-
         // Switch to the new task stack
-        movq    {TASK_RSP_OFFSET}(%r13), %rsp
+        movq    {TASK_RSP_OFFSET}(%rsi), %rsp
 
-        // We've already restored rsp
-        addq    $8, %rsp
-
-        // Restore the task context
-        popq    %r15
-        popq    %r14
-        popq    %r13
-        popq    %r12
-        popq    %r11
-        popq    %r10
-        popq    %r9
-        popq    %r8
-        popq    %rbp
+        // Restore the task state, following the layout of TaskContext.
         popq    %rdi
         popq    %rsi
         popq    %rdx
-        popq    %rcx
         popq    %rbx
-        popq    %rax
-        popfq
+        popq    %rbp
 
         ret
     "#,
     TASK_RSP_OFFSET = const offset_of!(Task, rsp),
     TASK_SSP_OFFSET = const offset_of!(Task, ssp),
     TASK_STATE_ACTIVE = const TASK_ACTIVE_OFFSET,
+    TASK_CPU_OFFSET = const TASK_CUR_CPU_OFFSET,
     IS_CET_ENABLED = sym IS_CET_ENABLED,
+    CONTEXT_SWITCH_RSP_OFFSET = const PERCPU_CTXT_SWITCH_STACK_OFFSET,
+    PERCPU_SHARED_OFFSET = const PERCPU_SHARED_OFFSET,
+    PERCPU_SHARED_INDEX_OFFSET = const PERCPU_SHARED_INDEX_OFFSET,
+    PERCPU_PGTBL_OFFSET = const PERCPU_PAGING_ROOT_OFFSET,
     CONTEXT_SWITCH_RESTORE_TOKEN = const CONTEXT_SWITCH_RESTORE_TOKEN.as_usize(),
     options(att_syntax)
 );

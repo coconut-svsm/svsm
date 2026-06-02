@@ -60,11 +60,16 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use core::cell::UnsafeCell;
+use core::mem::offset_of;
 use core::mem::size_of;
 use core::ops::Deref;
 use core::ptr::{self, NonNull};
 use core::slice::Iter;
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicU32;
+use core::sync::atomic::AtomicU64;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 use cpuarch::vmsa::VMSA;
 
 // PERCPU areas virtual addresses into shared memory
@@ -356,6 +361,12 @@ impl PerCpuShared {
     }
 }
 
+// Expose the offsets of critical per-CPU fields to assembly.
+pub const PERCPU_CTXT_SWITCH_STACK_OFFSET: usize = offset_of!(PerCpu, context_switch_stack);
+pub const PERCPU_PAGING_ROOT_OFFSET: usize = offset_of!(PerCpu, cr3);
+pub const PERCPU_SHARED_OFFSET: usize = offset_of!(PerCpu, shared);
+pub const PERCPU_SHARED_INDEX_OFFSET: usize = offset_of!(PerCpuShared, cpu_index);
+
 const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
 
 /// CPU-local data.
@@ -387,7 +398,8 @@ where
     /// PerCpu IRQ state tracking
     irq_state: IrqState,
 
-    pgtbl: RWLock<Option<&'static mut PageTable>>,
+    pgtbl: AtomicUsize,
+    cr3: AtomicUsize,
     tss: X86Tss,
     isst: RWLock<Isst>,
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
@@ -413,7 +425,7 @@ where
     hv_doorbell: ImmutAfterInitCell<SharedBox<HVDoorbell>>,
 
     init_shadow_stack: ImmutAfterInitCell<VirtAddr>,
-    context_switch_stack: ImmutAfterInitCell<VirtAddr>,
+    context_switch_stack: AtomicUsize,
     ist: IstStacks,
 
     /// Stack boundaries of the currently running task.
@@ -424,7 +436,8 @@ impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
     fn new(shared: &'static PerCpuShared) -> Result<Self, SvsmError> {
         Ok(Self {
-            pgtbl: RWLock::new(None),
+            pgtbl: AtomicUsize::new(0),
+            cr3: AtomicUsize::new(0),
             apic: X86Apic::default(),
             irq_state: IrqState::new(),
             tss: X86Tss::new(),
@@ -447,7 +460,7 @@ impl PerCpu {
             hypercall_pages: RWLock::new(None),
             hv_doorbell: ImmutAfterInitCell::uninit(),
             init_shadow_stack: ImmutAfterInitCell::uninit(),
-            context_switch_stack: ImmutAfterInitCell::uninit(),
+            context_switch_stack: AtomicUsize::new(0),
             ist: IstStacks::new(),
             current_stack: RWLock::new(MemoryRegion::new(VirtAddr::null(), 0)),
         })
@@ -602,7 +615,8 @@ impl PerCpu {
     }
 
     pub fn get_top_of_context_switch_stack(&self) -> Option<VirtAddr> {
-        self.context_switch_stack.try_get_inner().ok().copied()
+        let vaddr = self.context_switch_stack.load(Ordering::Relaxed);
+        if vaddr == 0 { None } else { Some(vaddr.into()) }
     }
 
     pub fn get_top_of_df_stack(&self) -> Option<VirtAddr> {
@@ -645,7 +659,13 @@ impl PerCpu {
     }
 
     pub fn set_pgtable(&self, pgtable: &'static mut PageTable) {
-        *self.pgtbl.write_noblock() = Some(pgtable);
+        let vaddr = VirtAddr::from(ptr::from_ref(pgtable) as usize);
+        self.pgtbl
+            .compare_exchange(0, vaddr.into(), Ordering::Relaxed, Ordering::Relaxed)
+            .unwrap();
+        // Capture the physical address as well for use in task switch.
+        let paddr = virt_to_phys(vaddr);
+        self.cr3.store(paddr.into(), Ordering::Relaxed);
     }
 
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
@@ -678,8 +698,10 @@ impl PerCpu {
     }
 
     fn allocate_context_switch_stack(&self) -> Result<(), SvsmError> {
+        let stack = self.allocate_stack(SVSM_CONTEXT_SWITCH_STACK)?;
         self.context_switch_stack
-            .try_init_from_fn(|| self.allocate_stack(SVSM_CONTEXT_SWITCH_STACK))?;
+            .compare_exchange(0, stack.into(), Ordering::Relaxed, Ordering::Relaxed)
+            .unwrap();
         Ok(())
     }
 
@@ -706,10 +728,15 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn get_pgtable(&self) -> WriteLockGuard<'_, PageTable> {
-        WriteLockGuard::map(self.pgtbl.write_noblock(), |pgtbl| {
-            &mut **pgtbl.as_mut().unwrap()
-        })
+    pub fn get_pgtable(&self) -> &'static mut PageTable {
+        // SAFETY: `self.pgtbl` is a write-once variable that holds the
+        // physical address of this processor's paging root.  It is stored as
+        // an `AtomicUsize` so it can be read from contexts that cannot
+        // acquire locks.
+        unsafe {
+            let mut p = NonNull::new(self.pgtbl.load(Ordering::Relaxed) as *mut PageTable).unwrap();
+            p.as_mut()
+        }
     }
 
     /// Registers an already set up GHCB page for this CPU.
@@ -774,8 +801,8 @@ impl PerCpu {
     }
 
     fn finish_page_table(&self) {
-        let mut pgtable = self.get_pgtable();
-        self.vm_range.populate(&mut pgtable);
+        let pgtable = self.get_pgtable();
+        self.vm_range.populate(pgtable);
     }
 
     pub fn dump_vm_ranges(&self) {
@@ -1154,8 +1181,8 @@ impl PerCpu {
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        let mut pgtable = self.get_pgtable();
-        self.vm_range.handle_page_fault(&mut pgtable, vaddr, write)
+        let pgtable = self.get_pgtable();
+        self.vm_range.handle_page_fault(pgtable, vaddr, write)
     }
 
     pub fn schedule_init(&self) -> TaskPointer {
@@ -1172,11 +1199,7 @@ impl PerCpu {
     }
 
     pub fn schedule_prepare(&self, reschedule: bool) -> Option<(TaskPointer, TaskPointer)> {
-        let ret = self.runqueue_mut().schedule_prepare(reschedule);
-        if let Some((_, ref next)) = ret {
-            self.set_current_stack(next.stack_bounds());
-        };
-        ret
+        self.runqueue_mut().schedule_prepare(reschedule)
     }
 
     pub fn runqueue(&self) -> ReadLockGuardIrqSafe<'_, RunQueue> {
