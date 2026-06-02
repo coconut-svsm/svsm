@@ -371,19 +371,25 @@ scripts/launch_guest.sh --qemu "sudo /path/to/qemu-system-x86_64"
 
 The script supports a number of other options described in the table below
 
-| Command-line     | Variable | Default               | Description                                                                  |
-| ---------------- | -------- | --------------------- | ---------------------------------------------------------------------------- |
-| `--qemu [path]`  | QEMU     | qemu-system-x86_64    | Path to QEMU binary to use. Can include `sudo` to run as root.               |
-| `--igvm [path]`  | IGVM     | bin/coconut-qemu.igvm | Path to the IGVM binary to launch.                                           |
-| `--image [path]` | IMAGE    | [None]                | The QEMU disk image to use. If unset then no disk is provided on the guest.  |
-| `--debugserial`  | N/A      | not set               | Define a second serial port that can be used with the COCONUT-SVSM GDB stub. |
-| `--nocc`         | N/A      | not set               | Launch the guest in native mode without confidential computing support.      |
-| `--no-netdev`    | N/A      | not set               | Do not attach a network device to QEMU.                                      |
+| Command-line           | Variable | Default               | Description                                                                  |
+| ---------------------- | -------- | --------------------- | ---------------------------------------------------------------------------- |
+| `--qemu [path]`        | QEMU     | qemu-system-x86_64    | Path to QEMU binary to use. Can include `sudo` to run as root.               |
+| `--igvm [path]`        | IGVM     | bin/coconut-qemu.igvm | Path to the IGVM binary to launch.                                           |
+| `--image [path]`       | IMAGE    | [None]                | The QEMU disk image to use. If unset then no disk is provided on the guest.  |
+| `--debugserial`        | N/A      | not set               | Define a second serial port that can be used with the COCONUT-SVSM GDB stub. |
+| `--tcg`                | N/A      | not set               | Use TCG emulation instead of KVM.                                            |
+| `--nocc`               | N/A      | not set               | Launch the guest in native mode without confidential computing support.      |
+| `--no-netdev`          | N/A      | not set               | Do not attach a network device to QEMU.                                      |
+| `--state [path]`       | N/A      | not set               | Attach a raw disk image to SVSM using virtio-blk.                            |
+| `--unit-tests [path]`  | N/A      | not set               | Add a QEMU exit device and a serial pipe to communicate with in-SVSM tests.  |
+| `--aproxy [path]`      | N/A      | not set               | Connect COM3 serial to a Unix socket for the attestation proxy.              |
+| `--snapshot [on\|off]` | SNAPSHOT | on                    | Control QEMU disk snapshot mode.                                             |
+| `--vsock [cid]`        | N/A      | not set               | Attach a vhost-vsock device with the given guest CID.                        |
 
 Debugging using GDB
 -------------------
 
-The SVSM can be debugged by following the instructions in 
+The SVSM can be debugged by following the instructions in
 [DEBUGGING.md](../developer/DEBUGGING.md) document.
 
 Have a lot of fun!
