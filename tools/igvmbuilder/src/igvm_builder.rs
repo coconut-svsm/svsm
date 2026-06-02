@@ -19,6 +19,7 @@ use bootimg::BootImageError;
 use bootimg::BootImageParams;
 use bootimg::prepare_boot_image;
 use clap::Parser;
+use igvm::hv_defs::Vtl;
 use igvm::{
     Arch, IgvmDirectiveHeader, IgvmFile, IgvmInitializationHeader, IgvmPlatformHeader, IgvmRevision,
 };
@@ -283,13 +284,17 @@ impl IgvmBuilder {
         })
     }
 
-    fn build_platforms(&mut self) {
+    fn highest_vtl(&self) -> Vtl {
         // Set the highest supported VTL based on whether guest firmware is
         // present.
-        let highest_vtl = match self.firmware {
-            Some(_) => 2,
-            None => 0,
-        };
+        match self.firmware {
+            Some(_) => Vtl::Vtl2,
+            None => Vtl::Vtl0,
+        }
+    }
+
+    fn build_platforms(&mut self) {
+        let highest_vtl = u8::from(self.highest_vtl());
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
             self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
                 IGVM_VHS_SUPPORTED_PLATFORM {
@@ -572,7 +577,7 @@ impl IgvmBuilder {
         if COMPATIBILITY_MASK.contains(VSM_COMPATIBILITY_MASK) {
             // Add the VSM register list.
             self.directives.push(IgvmDirectiveHeader::X64VbsVpContext {
-                vtl: igvm::hv_defs::Vtl::Vtl2,
+                vtl: self.highest_vtl(),
                 registers: start_context.to_vec(),
                 compatibility_mask: VSM_COMPATIBILITY_MASK,
             });
