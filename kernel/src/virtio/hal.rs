@@ -236,3 +236,104 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
         }
     }
 }
+
+/// safe-mmio backend implementation
+struct SvsmMmio;
+
+// SAFETY: Each method performs a single MMIO access of the indicated width
+// via the platform's GHCB-based MMIO helpers.
+unsafe impl safe_mmio::custom_mmio::MmioOps for SvsmMmio {
+    unsafe fn read_u8(src: *const u8) -> u8 {
+        let mut data = MaybeUninit::<u8>::uninit();
+        // SAFETY: src is a valid, aligned MMIO pointer per MmioOps contract.
+        unsafe {
+            SVSM_PLATFORM
+                .mmio_read(
+                    VirtAddr::from(src),
+                    core::slice::from_raw_parts_mut(data.as_mut_ptr().cast(), 1),
+                )
+                .unwrap();
+            data.assume_init()
+        }
+    }
+
+    unsafe fn read_u16(src: *const u16) -> u16 {
+        let mut data = MaybeUninit::<u16>::uninit();
+        // SAFETY: src is a valid, aligned MMIO pointer per MmioOps contract.
+        unsafe {
+            SVSM_PLATFORM
+                .mmio_read(
+                    VirtAddr::from(src),
+                    core::slice::from_raw_parts_mut(data.as_mut_ptr().cast(), 2),
+                )
+                .unwrap();
+            data.assume_init()
+        }
+    }
+
+    unsafe fn read_u32(src: *const u32) -> u32 {
+        let mut data = MaybeUninit::<u32>::uninit();
+        // SAFETY: src is a valid, aligned MMIO pointer per MmioOps contract.
+        unsafe {
+            SVSM_PLATFORM
+                .mmio_read(
+                    VirtAddr::from(src),
+                    core::slice::from_raw_parts_mut(data.as_mut_ptr().cast(), 4),
+                )
+                .unwrap();
+            data.assume_init()
+        }
+    }
+
+    unsafe fn read_u64(src: *const u64) -> u64 {
+        let mut data = MaybeUninit::<u64>::uninit();
+        // SAFETY: src is a valid, aligned MMIO pointer per MmioOps contract.
+        unsafe {
+            SVSM_PLATFORM
+                .mmio_read(
+                    VirtAddr::from(src),
+                    core::slice::from_raw_parts_mut(data.as_mut_ptr().cast(), 8),
+                )
+                .unwrap();
+            data.assume_init()
+        }
+    }
+
+    unsafe fn write_u8(dst: *mut u8, value: u8) {
+        // SAFETY: dst is a valid, aligned MMIO pointer per MmioOps contract.
+        unsafe {
+            SVSM_PLATFORM
+                .mmio_write(VirtAddr::from(dst), value.as_bytes())
+                .unwrap();
+        }
+    }
+
+    unsafe fn write_u16(dst: *mut u16, value: u16) {
+        // SAFETY: dst is a valid, aligned MMIO pointer per MmioOps contract.
+        unsafe {
+            SVSM_PLATFORM
+                .mmio_write(VirtAddr::from(dst), value.as_bytes())
+                .unwrap();
+        }
+    }
+
+    unsafe fn write_u32(dst: *mut u32, value: u32) {
+        // SAFETY: dst is a valid, aligned MMIO pointer per MmioOps contract.
+        unsafe {
+            SVSM_PLATFORM
+                .mmio_write(VirtAddr::from(dst), value.as_bytes())
+                .unwrap();
+        }
+    }
+
+    unsafe fn write_u64(dst: *mut u64, value: u64) {
+        // SAFETY: dst is a valid, aligned MMIO pointer per MmioOps contract.
+        unsafe {
+            SVSM_PLATFORM
+                .mmio_write(VirtAddr::from(dst), value.as_bytes())
+                .unwrap();
+        }
+    }
+}
+
+safe_mmio::set_mmio_ops!(SvsmMmio);
