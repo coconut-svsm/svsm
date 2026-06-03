@@ -124,7 +124,7 @@ fi
 KERNEL_VERSION=$(uname -r)
 
 # Split the QEMU version number so we can specify the correct parameters
-QEMU_VERSION=$($QEMU --version | grep -Po '(?<=version )[^ ]+')
+QEMU_VERSION=$($QEMU --version | sed -n 's/.*version \([^ ]*\).*/\1/p')
 QEMU_MAJOR=${QEMU_VERSION%%.*}
 QEMU_BUILD=${QEMU_VERSION##*.}
 QEMU_MINOR=${QEMU_VERSION##"$QEMU_MAJOR".}
