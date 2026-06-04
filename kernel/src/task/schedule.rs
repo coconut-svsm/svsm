@@ -274,15 +274,18 @@ impl TaskList {
     /// # Safety
     /// The caller must ensure that `task` is already a member of this task
     /// list.
-    unsafe fn terminate(&mut self, task: TaskPointer) {
+    unsafe fn terminate(&mut self, task: TaskPointer) -> Option<TaskPointer> {
         // Set the task state as terminated. If the task being terminated is the
         // current task then the task context will still need to be in scope until
         // the next schedule() has completed. Schedule will keep a reference to this
         // task until some time after the context switch.
-        task.set_task_terminated();
+        let wakeup = task.set_task_terminated();
         // SAFETY: `task` must be a task pointer that is part of this list.
         let mut cursor = unsafe { self.list().cursor_mut_from_ptr(task.as_ref()) };
         cursor.remove();
+
+        // Inform the caller about any task that may need to be woken.
+        wakeup
     }
 }
 
@@ -390,6 +393,22 @@ pub fn is_current_task(id: u32) -> bool {
     }
 }
 
+/// Waits for a task to terminate
+pub fn wait_for_termination(task: TaskPointer) {
+    // Waiting may require a task switch, so ensure that this is safe.
+    preemption_checks();
+
+    // Prepare a wait state based on the current execution state of the target
+    // task.
+    let wait_result = task.wait_for_exit();
+
+    // If a wait is required, then switch to a different task until the wait
+    // can be satisfied.
+    if let Some(guard) = wait_result {
+        select_new_task(false, Some(guard));
+    }
+}
+
 /// Terminates the current task.
 ///
 /// # Panic
@@ -410,7 +429,14 @@ fn current_task_terminated() {
     // SAFETY: the scheduler guarantees that `current_task` always points to a
     // valid task, and every task has its pointer pushed into the global task
     // list during its creation.
-    unsafe { TASKLIST.lock().terminate(task_node.clone()) }
+    let wakeup = unsafe { TASKLIST.lock().terminate(task_node.clone()) };
+    drop(rq);
+
+    // If another thread must be woken as a result of the termination, then
+    // schedule it now.
+    if let Some(wake_task) = wakeup {
+        enqueue_task(wake_task);
+    }
 }
 
 pub fn terminate() -> ! {
@@ -839,17 +865,24 @@ const CONTEXT_SWITCH_RESTORE_TOKEN: VirtAddr = SVSM_CONTEXT_SWITCH_SHADOW_STACK.
 #[cfg(all(test, test_in_svsm))]
 mod test {
     extern crate alloc;
+    use super::KernelThreadStartInfo;
+    use super::set_affinity;
+    use super::start_kernel_task;
+    use super::wait_for_termination;
     use crate::cpu::percpu::{PERCPU_AREAS, this_cpu};
-    use crate::task::KernelThreadStartInfo;
-    use crate::task::set_affinity;
-    use crate::task::start_kernel_task;
     use alloc::string::String;
     use core::sync::atomic::AtomicU32;
     use core::sync::atomic::Ordering;
 
     static EMPTY_TASK_COUNTER: AtomicU32 = AtomicU32::new(0);
 
-    fn empty_task(_parameter: usize) {
+    fn empty_task(parameter: usize) {
+        // Move to a different processor if the caller requested it.
+        if parameter != 0 {
+            let target_cpu = PERCPU_AREAS.len() - 1;
+            set_affinity(target_cpu);
+        }
+
         EMPTY_TASK_COUNTER.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -862,6 +895,33 @@ mod test {
             String::from("test termination task"),
         )
         .expect("Failed to start test termination task");
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_wait_for_termination() {
+        // Reset the task execution counter.
+        EMPTY_TASK_COUNTER.store(0, Ordering::Relaxed);
+
+        // Start a task that will move to a remote processor (if available)
+        // and will then terminate.
+        let task = start_kernel_task(
+            KernelThreadStartInfo::new(empty_task, 1),
+            String::from("test termination task"),
+        )
+        .expect("Failed to start test termination task");
+
+        // Wait for that task to terminate.  This might or might not involve
+        // waiting, depending on how quickly the new task migrates to another
+        // processor.
+        wait_for_termination(task.clone());
+
+        // Verify that the task ran.
+        assert_eq!(EMPTY_TASK_COUNTER.load(Ordering::Relaxed), 1);
+
+        // Wait again for the task to terminate.  This should return
+        // immediately.
+        wait_for_termination(task);
     }
 
     #[test]
