@@ -19,18 +19,24 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 
 use crate::address::{Address, VirtAddr};
+use crate::cpu::IrqGuard;
 use crate::cpu::ShadowStackInit;
 use crate::cpu::X86ExceptionContext;
 use crate::cpu::features::{Feature, cpu_has_feat};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::irqs_enable;
-use crate::cpu::percpu::{PerCpu, current_task};
+use crate::cpu::percpu::PerCpu;
+use crate::cpu::percpu::current_task;
+use crate::cpu::percpu::this_cpu;
 use crate::cpu::shadow_stack::init_shadow_stack;
-use crate::cpu::sse::{sse_restore_context, xsave_area_size};
+use crate::cpu::sse::sse_restore_context;
+use crate::cpu::sse::xsave_area_size;
 use crate::error::SvsmError;
 use crate::fs::{Directory, FileHandle, opendir, stdout_open};
-use crate::locking::{RWLock, SpinLock};
+use crate::locking::RWLock;
+use crate::locking::SpinLock;
+use crate::locking::SpinLockIrqSafe;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
 use crate::mm::{
@@ -43,6 +49,7 @@ use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::{MemoryRegion, is_aligned};
 use intrusive_collections::{LinkedListAtomicLink, intrusive_adapter};
 
+use super::WaitQueue;
 use super::schedule::terminate;
 use super::task_mm::{TaskKernelMapping, TaskMM};
 
@@ -303,6 +310,9 @@ pub struct Task {
 
     /// Objects shared among threads within the same process
     objs: Arc<RWLock<BTreeMap<ObjHandle, Arc<dyn Obj>>>>,
+
+    /// Queue of tasks waiting for completion of this task.
+    wait_queue: SpinLockIrqSafe<WaitQueue>,
 }
 
 // Expose the offsets of critical task fields to assembly.
@@ -471,6 +481,7 @@ impl Task {
             list_link: LinkedListAtomicLink::default(),
             runlist_link: LinkedListAtomicLink::default(),
             objs: objtree,
+            wait_queue: SpinLockIrqSafe::new(WaitQueue::new()),
         }))
     }
 
@@ -565,10 +576,11 @@ impl Task {
         self.sched_state.set_state(TaskState::RUNNING);
     }
 
-    pub fn set_task_terminated(&self) {
+    pub fn set_task_terminated(&self) -> Option<TaskPointer> {
         self.sched_state
             .panic_on_idle("Trying to terminate idle task")
             .set_state(TaskState::TERMINATED);
+        self.wait_queue.lock().wakeup()
     }
 
     pub fn set_task_blocked(&self) {
@@ -756,6 +768,35 @@ impl Task {
             panic!("Error while allocating xsave area");
         }
         xsa.unwrap()
+    }
+
+    pub fn wait_for_exit(&self) -> Option<IrqGuard> {
+        let current_task = this_cpu().current_task();
+
+        // Lock the wait queue before examining the current state.  This must
+        // be done with interrupts disabled, since once the current task has
+        // joined the wait queue and the wait queue is unlocked, the task is
+        // subject to an immediate attempt to wake, and therefore the current
+        // task must be descheduled as quickly as possible to prevent
+        // contention on the waking CPU.
+        let guard = IrqGuard::new();
+
+        // Determine whether this task has already terminated, and only join
+        // the wait queue if the task has not already terminated.  Since a task
+        // is marked terminated before its wait queue is examined, this
+        // sequence guarantees that a task will not block unless it is
+        // guaranteed to be woken.
+        let mut wait_queue = self.wait_queue.lock();
+        if self.is_terminated() {
+            return None;
+        }
+
+        // Join the wait queue of the target task.
+        wait_queue.wait_for_event(current_task);
+        drop(wait_queue);
+
+        // Return the IRQ guard as an indication that the caller must wait.
+        Some(guard)
     }
 
     pub fn mmap_common(

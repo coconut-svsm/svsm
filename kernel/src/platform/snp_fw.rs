@@ -266,12 +266,14 @@ pub unsafe fn copy_tables_to_fw(
     Ok(())
 }
 
+/// Configures FW memory regions to grant guest VMPL permission as required.
+///
 /// # Safety
 ///
 /// The caller must have verified that the firmware physical memory regions in
 /// `boot_params` are private to the CVM and that they do not alias SVSM
 /// memory.
-pub unsafe fn validate_fw(boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
+pub unsafe fn adjust_fw_mem(boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
     let fw_regions = boot_params.get_fw_regions();
 
     for (i, region) in fw_regions.into_iter().enumerate() {

@@ -24,13 +24,10 @@ matches_any() {
 # Check that the body for the given commit is not empty
 nonempty_body() {
 	body=$(git show --no-patch --format="%b" "$1" | sed '/^ *$/d')
-	trailers=$(git show --no-patch --format="%(trailers:only)" "$1")
+	trailers=$(git show --no-patch --format="%(trailers:only)" "$1" | sed '/^ *$/d')
 
-	body_len=$(echo "$body" | wc -l)
-	trailer_len=$(echo "$trailers" | wc -l)
-
-	# If the body is the same length as the trailers it means the body is empty
-	[ "$body_len" = "$trailer_len" ] && return 1
+	# If the body is the same as the trailers it means that the body is empty
+	[ "$body" = "$trailers" ] && return 1
 	return 0
 }
 
@@ -42,6 +39,8 @@ fi
 start=$1
 end=$2
 
+invalid_checks=0
+
 commits=$(git log --no-merges "${start}".."${end}" --format="%H")
 for c in ${commits[@]}; do
 
@@ -50,7 +49,7 @@ for c in ${commits[@]}; do
 	nonempty_body "$c"
 	if [ "$?" != "0" ]; then
 		echo "Message body is empty for commit $c"
-		exit 1
+		invalid_checks=$((invalid_checks + 1))
 	fi
 
 	commit_email=$(git show --no-patch --format="%ae" "$c" || exit 1)
@@ -63,7 +62,7 @@ for c in ${commits[@]}; do
 		echo "Author name mismatch on commit $c"
 		echo "    Commit author name: $commit_name"
 		echo "    Signed-off-by name(s):" $sign_names
-		exit 1
+		invalid_checks=$((invalid_checks + 1))
 	fi
 
 	matches_any "$commit_email" "$sign_emails"
@@ -71,9 +70,15 @@ for c in ${commits[@]}; do
 		echo "Author email mismatch on commit $c"
 		echo "    Commit author email: $commit_email"
 		echo "    Signed-off-by email(s):" $sign_emails
-		exit 1
+		invalid_checks=$((invalid_checks + 1))
 	fi
 
 done
 
+if (($invalid_checks > 0)); then
+	echo "Exiting with $invalid_checks failed checks"
+	exit 1
+fi
+
+echo "All commits have a Signed-off-by and a non-empty body"
 exit 0

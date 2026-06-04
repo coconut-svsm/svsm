@@ -12,7 +12,6 @@ use crate::error::SvsmError;
 use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::utils::{MemoryRegion, page_align_up};
 use bootdefs::kernel_launch::KernelLaunchInfo;
-use bootdefs::kernel_launch::LOWMEM_END;
 
 use alloc::vec::Vec;
 
@@ -45,22 +44,20 @@ pub fn enumerate_early_boot_regions(
 ) -> Vec<MemoryRegion<PhysAddr>> {
     let mut regions = Vec::new();
 
-    // Early boot memory must be invalidated after changing to the SVSM page
-    // page table to avoid invalidating page tables currently in use.  Always
-    // invalidate stage 2 memory, unless firmware is loaded into low memory.
-    // Also invalidate the boot data if required.
-    if !boot_params.fw_in_low_memory() {
-        regions.push(MemoryRegion::from_addresses(
-            PhysAddr::from(0u64),
-            PhysAddr::from(u64::from(LOWMEM_END)),
-        ));
+    // Include boot loader memory if present, but only if firmware is not
+    // located in low memory.
+    if launch_info.bldr_end != 0 && !boot_params.fw_in_low_memory() {
+        let bldr_area_base = PhysAddr::from(launch_info.bldr_start);
+        let bldr_area_end = PhysAddr::from(launch_info.bldr_end);
+        regions.push(MemoryRegion::from_addresses(bldr_area_base, bldr_area_end));
     }
 
-    // All boot loader memory is contiguous, and is bounded by the boot loader
-    // image at the base and the filesystem at the end.
-    let bldr_area_base = PhysAddr::from(launch_info.bldr_start);
-    let bldr_area_end = PhysAddr::new(launch_info.kernel_fs_end.try_into().unwrap());
-    regions.push(MemoryRegion::from_addresses(bldr_area_base, bldr_area_end));
+    // Include the initial filesystem if present.
+    if launch_info.kernel_fs_end > launch_info.kernel_fs_start {
+        let fs_base = PhysAddr::from(launch_info.kernel_fs_start);
+        let fs_end = PhysAddr::from(launch_info.kernel_fs_end);
+        regions.push(MemoryRegion::from_addresses(fs_base, fs_end));
+    }
 
     regions
 }

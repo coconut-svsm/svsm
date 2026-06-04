@@ -11,9 +11,12 @@ use super::PageValidateOp;
 use super::PlatformPageType;
 use super::SvsmPlatform;
 use super::capabilities::Caps;
-use super::snp_fw::{
-    copy_tables_to_fw, launch_fw, prepare_fw_launch, print_fw_meta, validate_fw, validate_fw_memory,
-};
+use super::snp_fw::adjust_fw_mem;
+use super::snp_fw::copy_tables_to_fw;
+use super::snp_fw::launch_fw;
+use super::snp_fw::prepare_fw_launch;
+use super::snp_fw::print_fw_meta;
+use super::snp_fw::validate_fw_memory;
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::console::init_svsm_console;
@@ -22,6 +25,7 @@ use crate::cpu::cpuid::init_cpuid_table;
 use crate::cpu::features::{Feature, cpu_get_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::{PerCpu, current_ghcb, this_cpu};
+use crate::cpu::smp::ApStartContextRef;
 use crate::cpu::tlb::TlbFlushScope;
 use crate::cpu::x86::{apic_enable, apic_initialize, apic_sw_enable};
 use crate::error::ApicError::Registration;
@@ -32,7 +36,6 @@ use crate::io::IOPort;
 use crate::mm::PAGE_SIZE;
 use crate::mm::PAGE_SIZE_2M;
 use crate::mm::PerCPUPageMappingGuard;
-use crate::mm::TransitionPageTable;
 use crate::mm::memory::write_guest_memory_map;
 use crate::platform::IrqGuard;
 use crate::sev::ghcb::GHCBIOSize;
@@ -49,14 +52,13 @@ use crate::sev::{
 };
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
-use syscall::GlobalFeatureFlags;
-
 #[cfg(test)]
 use bootdefs::platform::SvsmPlatformType;
 use core::arch::x86_64::CpuidResult;
 use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
+use syscall::GlobalFeatureFlags;
 
 static GHCB_IO_DRIVER: GHCBIOPort = GHCBIOPort::new();
 
@@ -209,7 +211,7 @@ impl SvsmPlatform for SnpPlatform {
             // is not being aliased.
             unsafe {
                 copy_tables_to_fw(fw_meta, &kernel_region)?;
-                validate_fw(boot_params)?;
+                adjust_fw_mem(boot_params)?;
             }
             prepare_fw_launch(fw_meta)?;
         }
@@ -316,32 +318,6 @@ impl SvsmPlatform for SnpPlatform {
 
     fn get_io_port(&self) -> &'static dyn IOPort {
         &GHCB_IO_DRIVER
-    }
-
-    fn invalidate_lowmem_page_tables(&self, paddr: u32, count: usize) -> Result<(), SvsmError> {
-        let region = MemoryRegion::new(PhysAddr::from(paddr as usize), count * PAGE_SIZE);
-        // SAFETY: invalidation is always safe.
-        unsafe { self.validate_physical_page_range(region, PageValidateOp::Invalidate) }
-    }
-
-    /// The caller is required to ensure that it is safe to validate low
-    /// memory.
-    unsafe fn validate_low_memory(&self, addr: u64, vaddr_valid: bool) -> Result<(), SvsmError> {
-        // SAFETY: the caller takes responsibility for the safety of the
-        // validation operation.
-        unsafe {
-            if vaddr_valid {
-                self.validate_virtual_page_range(
-                    MemoryRegion::new(VirtAddr::from(0u64), addr as usize),
-                    PageValidateOp::Validate,
-                )
-            } else {
-                self.validate_physical_page_range(
-                    MemoryRegion::new(PhysAddr::from(0u64), addr as usize),
-                    PageValidateOp::Validate,
-                )
-            }
-        }
     }
 
     /// Performs a page state change between private and shared states.
@@ -452,7 +428,7 @@ impl SvsmPlatform for SnpPlatform {
         &self,
         cpu: &PerCpu,
         start_rip: u64,
-        _transition_page_table: &TransitionPageTable,
+        _ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError> {
         let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, start_rip)?;
 

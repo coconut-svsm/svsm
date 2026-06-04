@@ -18,6 +18,7 @@ use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 use uuid::Uuid;
 use zerocopy::{FromBytes, KnownLayout};
 
+use crate::GpaMap;
 use crate::firmware::Firmware;
 use crate::igvm_builder::{NATIVE_COMPATIBILITY_MASK, SNP_COMPATIBILITY_MASK};
 
@@ -468,7 +469,11 @@ impl Firmware for OvmfFirmware {
         0
     }
 
-    fn get_fw_info(&self) -> GuestFwInfoBlock {
+    fn get_fw_info(&self) -> &GuestFwInfoBlock {
+        &self.fw_info
+    }
+
+    fn finalize_fw_info(&self, _gpa_map: &GpaMap) -> GuestFwInfoBlock {
         self.fw_info
     }
 }
