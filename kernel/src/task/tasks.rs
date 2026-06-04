@@ -50,7 +50,6 @@ use crate::utils::{MemoryRegion, is_aligned};
 use intrusive_collections::{LinkedListAtomicLink, intrusive_adapter};
 
 use super::WaitQueue;
-use super::schedule::after_task_switch;
 use super::schedule::terminate;
 use super::task_mm::{TaskKernelMapping, TaskMM};
 
@@ -1015,9 +1014,6 @@ unsafe fn setup_new_task_common(xsa_addr: u64) {
     // is dropped, re-enabling IRQs.
 
     irqs_enable();
-
-    // Perform housekeeping actions following a task switch.
-    after_task_switch();
 
     // SAFETY: The caller takes responsibility for the correctness of the save
     // area address.
