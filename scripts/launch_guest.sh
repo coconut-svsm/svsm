@@ -29,6 +29,7 @@ CPU=EPYC-v4
 ACCEL=kvm
 IGVM_OBJ=""
 SNAPSHOT="on"
+MEMORY_SIZE="8G"
 
 STATE_DEVICE=""
 VSOCK_DEVICE=""
@@ -123,7 +124,7 @@ fi
 KERNEL_VERSION=$(uname -r)
 
 # Split the QEMU version number so we can specify the correct parameters
-QEMU_VERSION=$($QEMU --version | grep -Po '(?<=version )[^ ]+')
+QEMU_VERSION=$($QEMU --version | sed -n 's/.*version \([^ ]*\).*/\1/p')
 QEMU_MAJOR=${QEMU_VERSION%%.*}
 QEMU_BUILD=${QEMU_VERSION##*.}
 QEMU_MINOR=${QEMU_VERSION##"$QEMU_MAJOR".}
@@ -138,6 +139,7 @@ case "$CGS" in
   nocc)
     SNP_GUEST=""
     CPU=max,smep=on
+    MEMORY=memory-backend-ram,size=$MEMORY_SIZE,id=mem0,prealloc=false
     if (( QEMU_MAJOR < 11 )); then
       ACCEL=tcg
       SNP_GUEST="-object nocc,id=cgs0"
@@ -145,6 +147,7 @@ case "$CGS" in
     ;;
   sev)
     SNP_GUEST="-object sev-snp-guest,id=cgs0,cbitpos=$C_BIT_POS,reduced-phys-bits=$REDUCED_PHYS_BITS"
+    MEMORY=memory-backend-memfd,size=$MEMORY_SIZE,id=mem0,share=true,prealloc=false,reserve=false
     ;;
   *)
     echo "Error: Unexpected CGS value '$CGS'"
@@ -154,7 +157,6 @@ MACHINE=q35,memory-backend=mem0,igvm-cfg=igvm0,accel=$ACCEL
 [ -n "$SNP_GUEST" ] && MACHINE+=",confidential-guest-support=cgs0"
 [ -n "$VIRTIO_ENABLE" ] && MACHINE+=",${VIRTIO_ENABLE}"
 
-MEMORY=memory-backend-memfd,size=8G,id=mem0,share=true,prealloc=false,reserve=false
 IGVM_OBJ="-object igvm-cfg,id=igvm0,file=$IGVM"
 
 # Setup a disk if an image has been specified
