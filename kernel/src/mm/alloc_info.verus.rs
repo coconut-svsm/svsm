@@ -12,7 +12,7 @@
 // shared status.
 use verify_proof::frac_ptr::tracked_map_merge_right_shares;
 use verify_proof::frac_ptr::tracked_map_shares;
-use verify_proof::set::{lemma_set_usize_range, set_usize_range};
+use verify_proof::set::{group_set_usize, lemma_set_usize_range, set_usize_range};
 use vstd::raw_ptr::PtrData;
 
 verus! {
@@ -182,7 +182,7 @@ impl PageInfoDb {
         let end = unit_start + (1usize << order);
         &&& end <= usize::MAX + 1
         &&& !reserved.dom().is_empty()
-        &&& reserved.dom() =~= Set::new(|k| unit_start <= k < end)
+        &&& reserved.dom() =~= set_usize_range(unit_start, end)
         &&& item.is_head()
     }
 
@@ -678,10 +678,19 @@ impl PageInfoDb {
     {
         reveal(PageInfoDb::restrict);
         self.lemma_restrict(i);
-        lemma_set_usize_range(i, i + self@[i].size());
-        broadcast use lemma_set_usize_range;
+        broadcast use group_set_usize;
 
+        lemma_set_usize_range(i, i + self@[i].size());
         self.lemma_remove(i);
+        let removed = self.remove(i);
+        assert forall|idx: usize| #![trigger removed@[idx]] removed@.dom().contains(idx) implies {
+            &&& removed@[idx] == self@[idx]
+            &&& removed@[idx].is_head() ==> removed.restrict(idx).wf_unit()
+        } by {
+            if removed@[idx].is_head() {
+                self.lemma_remove_restrict(i, idx);
+            }
+        }
     }
 
     #[verifier(spinoff_prover)]
@@ -743,7 +752,7 @@ impl PageInfoDb {
         requires
             order < MAX_ORDER,
             unit_start + (1usize << order) <= usize::MAX + 1,
-            reserved.dom() =~= Set::new(|k| unit_start <= k < unit_start + (1usize << order)),
+            reserved.dom() =~= set_usize_range(unit_start, unit_start + (1usize << order)),
             reserved[unit_start].is_head(),
             reserved[unit_start].order() == order,
             PageInfoDb::new_unit_requires(reserved, id, unit_start, order),
@@ -852,7 +861,7 @@ impl PageInfoDb {
         requires
             order < MAX_ORDER,
             unit_start + (1usize << order) <= usize::MAX + 1,
-            reserved.dom() =~= Set::new(|k| unit_start <= k < unit_start + (1usize << order)),
+            reserved.dom() =~= set_usize_range(unit_start, unit_start + (1usize << order)),
             reserved[unit_start].is_head(),
             reserved[unit_start].order() == order,
             PageInfoDb::new_unit_requires(reserved, id, unit_start, order),

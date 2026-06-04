@@ -35,8 +35,7 @@ mod alloc_spec { include!("alloc_inner.verus.rs");  }
 use alloc_spec::*;
 
 broadcast group set_len_group {
-    verify_proof::set::lemma_len_filter,
-    verify_proof::set::lemma_len_subset,
+    verify_proof::set::group_set_usize,
 }
 
 broadcast group alloc_broadcast_group {
@@ -101,7 +100,7 @@ impl HeapMemoryRegion {
             0 <= order < MAX_ORDER ==> info.nr_page(order) == (
             #[trigger] self.nr_pages[order as int])
         &&& self@.free.nr_free() =~= self.free_pages@
-        &&& info.dom() =~= Set::new(|idx| 0 <= idx < self.page_count)
+        &&& info.dom() =~= Set::range(0, self.page_count)
         &&& self.page_count == self@.npages()
     }
 
@@ -640,7 +639,7 @@ macro_rules! lemma_split_pre {
             use_type_invariant(&$perm.info);
             grant_info_write!($mr, $perm => $mem, $reserved2, $id);
 
-            let tracked mut $reserved = $reserved2.tracked_remove_keys(Set::new(|i: usize| $pfn1 <= i < $pfn2));
+            let tracked mut $reserved = $reserved2.tracked_remove_keys(Set::range($pfn1, $pfn2));
 
             // Prove the next page is valid.
             $mr.perms.borrow().free.tracked_next($new_order);

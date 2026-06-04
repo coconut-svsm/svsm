@@ -298,11 +298,11 @@ impl SpecVAddrImpl for VirtAddr {
     #[verifier(opaque)]
     open spec fn region_to_dom(&self, size: nat) -> Set<int> {
         if self.is_canonical() {
-            Set::new(
+            Set::<int>::range(0, usize::MAX + 1).filter(
                 |v: int|
                     exists|addr: VirtAddr|
-                        addr@ == v && v <= usize::MAX && addr.is_canonical() && self.offset()
-                            <= addr.offset() < self.offset() + size,
+                        addr@ == v && addr.is_canonical() && self.offset() <= addr.offset()
+                            < self.offset() + size,
             )
         } else {
             Set::empty()

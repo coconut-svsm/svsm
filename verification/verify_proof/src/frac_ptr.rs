@@ -20,10 +20,10 @@ use vstd::multiset::Multiset;
 
 tokenized_state_machine!(addr_unique {
     fields {
-        #[sharding(map)]
-        pub addr_to: Map<int, Option<InstanceId>>,
-        #[sharding(map)]
-        pub to_addr: Map<InstanceId, Option<int>>,
+        #[sharding(imap)]
+        pub addr_to: IMap<int, Option<InstanceId>>,
+        #[sharding(imap)]
+        pub to_addr: IMap<InstanceId, Option<int>>,
 
         #[sharding(multiset)]
         pub ptr_readers: Multiset<(int, InstanceId)>,
@@ -37,8 +37,8 @@ tokenized_state_machine!(addr_unique {
 
     #[invariant]
     pub fn dom_cover_all(&self) -> bool {
-        self.addr_to.dom() =~= Set::full() &&
-        self.to_addr.dom() =~= Set::full()
+        self.addr_to.dom() =~= ISet::full() &&
+        self.to_addr.dom() =~= ISet::full()
     }
 
     #[invariant]
@@ -70,15 +70,15 @@ tokenized_state_machine!(addr_unique {
 
     init!{
         empty() {
-            init addr_to = Map::new(|addr| true, |addr|None);
-            init to_addr = Map::new(|id| true, |addr|None);
+            init addr_to = IMap::new(|addr| true, |addr|None);
+            init to_addr = IMap::new(|id| true, |addr|None);
             init ptr_readers = Multiset::empty();
         }
     }
 
     #[inductive(empty)]
     fn empty_inductive(post: Self) {
-        assert(post.addr_to =~= Map::new(|addr| true, |addr|None));
+        assert(post.addr_to =~= IMap::new(|addr| true, |addr|None));
     }
 
     transition!{
@@ -433,7 +433,6 @@ pub proof fn tracked_map_shares<Idx, T>(
     shares: nat,
 ) -> (tracked ret: Map<Idx, FracTypedPerm<T>>)
     requires
-        old(m).dom().finite(),
         shares > 0,
         forall|i|
             old(m).dom().contains(i) ==> shares < (#[trigger] old(m)[i]).shares() && old(
@@ -466,7 +465,6 @@ pub proof fn _tracked_map_shares<Idx, T>(
         forall|i| #[trigger] s.contains(i) ==> old(m).contains_key(i),
         forall|i| s.contains(i) ==> (#[trigger] old(m)[i]).valid(),
         forall|i| s.contains(i) ==> shares < (#[trigger] old(m)[i]).shares(),
-        s.finite(),
     ensures
         forall|i: Idx|
             #![trigger final(m)[i]]
@@ -503,7 +501,6 @@ pub proof fn tracked_map_merge_right_shares<Idx, T>(
 )
     requires
         right.dom().subset_of(old(m).dom()),
-        right.dom().finite(),
         forall|i|
             right.contains_key(i) ==> (#[trigger] old(m)[i]).valid() && old(m)[i].ptr()
                 == right[i].ptr(),
