@@ -8,9 +8,10 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 
+use virtio_drivers::transport::mmio::VirtIOHeader;
 use virtio_drivers::transport::{DeviceType, Transport, mmio::MmioTransport};
 
-use crate::address::PhysAddr;
+use crate::address::{Address, PhysAddr};
 use crate::boot_params::BootParams;
 use crate::fw_cfg::FwCfg;
 use crate::mm::{GlobalRangeGuard, map_global_range_4k_shared, pagetable::PTEntryFlags};
@@ -64,16 +65,32 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
 
     for addr in dev {
         let phys_addr = PhysAddr::from(addr);
+        let page_base = phys_addr.page_align();
+        let page_offset = phys_addr.page_offset();
 
-        let Ok(mem) = map_global_range_4k_shared(phys_addr, PAGE_SIZE, PTEntryFlags::data()) else {
+        if !phys_addr.is_aligned_to::<VirtIOHeader>() {
+            log::warn!("MmioSlots: MMIO device at {phys_addr:x} is not properly aligned");
+            continue;
+        }
+
+        if phys_addr.crosses_page(core::mem::size_of::<VirtIOHeader>()) {
+            log::warn!("MmioSlots: MMIO device header at {phys_addr:x} crosses a page boundary");
+            continue;
+        }
+
+        // If multiple devices reside in the same page, each gets its own
+        // mapping, which is slightly wasteful but avoids shared-ownership
+        // complexity.
+        let Ok(mem) = map_global_range_4k_shared(page_base, PAGE_SIZE, PTEntryFlags::data()) else {
             log::warn!("MmioSlots: Failed to map MMIO region at {addr:x}");
             continue;
         };
 
         // Not expected to fail, because mem exists.
-        let header = NonNull::new(mem.addr().as_mut_ptr()).unwrap();
+        let header = NonNull::new((mem.addr() + page_offset).as_mut_ptr()).unwrap();
 
-        // SAFETY: `map_global_range_4k_shared` guarantees us proper address alignment.
+        // SAFETY: The address is valid, mapped by `map_global_range_4k_shared`, and verified
+        // to be VirtIOHeader-aligned by the guard above.
         // The memory region has the same lifetime of the MmioSlot structure which will be consumed by the driver.
         let Ok(transport) = (unsafe { MmioTransport::<SvsmHal>::new(header) }) else {
             // Currently QEMU advertises _all_ slots, regardless they are empty or not.
