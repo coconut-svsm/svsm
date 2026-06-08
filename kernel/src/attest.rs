@@ -128,6 +128,19 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
 }
 
 impl AttestationDriver<'_> {
+    /// Extracts the public key coordinates as a TPM ECC point from the internal `EccKey`.
+    fn get_tpm_pub_key(&self) -> Result<TpmsEccPoint<'static>, AttestationError> {
+        let curve =
+            Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
+
+        let curve_ops = curve.curve_ops().map_err(AttestationError::Crypto)?;
+
+        self.ecc
+            .pub_key()
+            .to_tpms_ecc_point(&curve_ops)
+            .map_err(AttestationError::Crypto)
+    }
+
     /// Attest SVSM's launch state by communicating with the attestation proxy.
     pub fn attest(&mut self) -> Result<SecretSlice, SvsmError> {
         let negotiation = self.negotiation()?;
@@ -139,9 +152,12 @@ impl AttestationDriver<'_> {
     /// that should be included in attestation evidence (e.g. through SEV-SNP's REPORT_DATA
     /// mechanism).
     fn negotiation(&mut self) -> Result<NegotiationResponse, AttestationError> {
+        let pub_key = self.get_tpm_pub_key()?;
+
         let request = NegotiationRequest {
             version: (0, 1, 0), // Only version supported at present.
             tee: self.tee,
+            key: (self.ecc.pub_key().get_curve_id(), &pub_key).into(),
         };
 
         self.write(request)?;
@@ -154,14 +170,7 @@ impl AttestationDriver<'_> {
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
     fn attestation(&mut self, n: NegotiationResponse) -> Result<SecretSlice, AttestationError> {
-        let curve =
-            Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
-
-        let pub_key = self
-            .ecc
-            .pub_key()
-            .to_tpms_ecc_point(&curve.curve_ops().map_err(AttestationError::Crypto)?)
-            .map_err(AttestationError::Crypto)?;
+        let pub_key = self.get_tpm_pub_key()?;
 
         let evidence = evidence(&self.tee, hash(&n, &pub_key)?)?;
 

@@ -18,6 +18,7 @@ pub struct NegotiationRequest {
     /// Version of the attestation protocol, represented as semver (MAJOR.MINOR.PATCH).
     pub version: (u32, u32, u32),
     pub tee: kbs_types::Tee,
+    pub key: EcP256PublicKey,
 }
 
 /// A parameter that must be hashed into the negotiation hash.
