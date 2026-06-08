@@ -2348,6 +2348,7 @@ dependencies = [
 [[package]]
 name = "virtio-drivers"
 version = "0.7.5"
+source = "git+https://github.com/coconut-svsm/virtio-drivers.git?rev=dcbdbc8cefc0c985322382acdeb633a63a3a4cc1#dcbdbc8cefc0c985322382acdeb633a63a3a4cc1"
 dependencies = [
  "bitflags",
  "embedded-io",

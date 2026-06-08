@@ -32,8 +32,6 @@ members = [
     "user/init",
     # Release version identifier
     "release",
-    # Virtio Drivers (MMIO)
-    "virtio-drivers",
     # crate for verification stubs
     "verification/verus_stub",
     # Library defining common types between SVSM and attestation proxy
@@ -67,7 +65,7 @@ packit = { path = "packit" }
 userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
 release = { path = "release" }
-virtio-drivers = { path = "virtio-drivers" }
+virtio-drivers = { git = "https://github.com/coconut-svsm/virtio-drivers.git", rev = "dcbdbc8cefc0c985322382acdeb633a63a3a4cc1" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
