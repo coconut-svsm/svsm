@@ -16,7 +16,7 @@ use core::panic::PanicInfo;
 use core::ptr::NonNull;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 #[cfg(feature = "attest")]
-use svsm::attest::AttestationDriver;
+use svsm::attest::{AttestationDriver, SecretRequest};
 use svsm::boot_params::BootParamBox;
 use svsm::boot_params::BootParams;
 use svsm::console::install_console_logger;
@@ -77,6 +77,7 @@ use svsm::virtio::probe_mmio_slots;
 use svsm::vtpm::vtpm_init;
 
 use alloc::string::String;
+use alloc::vec::Vec;
 use release::COCONUT_VERSION;
 
 #[cfg(feature = "attest")]
@@ -466,6 +467,133 @@ fn free_init_bsp_stack() {
     free_multiple_pages(stack_base, stack_pages);
 }
 
+fn load_vtpm_wrapped_key() -> Option<Vec<u8>> {
+    use alloc::vec;
+    use svsm::block::BLOCK_DEVICE;
+    use virtio_drivers::device::blk::SECTOR_SIZE;
+
+    let blk_guard = BLOCK_DEVICE.try_get_inner().ok()?;
+    log::info!("SVSM: Loading wrapped KEK from block device");
+
+    let disk_size = blk_guard.size();
+    if disk_size < SECTOR_SIZE {
+        return None;
+    }
+
+    let mut header_buf = vec![0u8; SECTOR_SIZE];
+    if let Err(e) = blk_guard.read_blocks(0, &mut header_buf) {
+        log::error!("Failed to read header block for wrapped key: {e:?}");
+        return None;
+    }
+
+    if &header_buf[0..8] != b"SVSMvTPM" {
+        log::info!("SVSM: block device does not contain a valid SVSMvTPM header");
+        return None;
+    }
+
+    // Read the wrapped key from sector 0
+    let wrapped_key_offset = 64;
+    let wrapped_key_len = 256;
+    let wrapped_key = header_buf[wrapped_key_offset..wrapped_key_offset + wrapped_key_len].to_vec();
+
+    log::info!(
+        "SVSM: Successfully loaded wrapped KEK from block device (len={})",
+        wrapped_key.len()
+    );
+    Some(wrapped_key)
+}
+
+fn load_vtpm_state_poc(kbs_key: &[u8]) -> Option<Vec<u8>> {
+    use aes_gcm::{AeadInPlace, Aes256Gcm, KeyInit, Nonce, aead::generic_array::GenericArray};
+    use alloc::vec;
+    use svsm::block::BLOCK_DEVICE;
+    use virtio_drivers::device::blk::SECTOR_SIZE;
+
+    let blk_guard = BLOCK_DEVICE.try_get_inner().ok()?;
+    log::info!("Loading encrypted vTPM state from block device...");
+    let disk_size = blk_guard.size();
+    if disk_size < SECTOR_SIZE {
+        return None;
+    }
+
+    let mut header_buf = vec![0u8; SECTOR_SIZE];
+    if let Err(e) = blk_guard.read_blocks(0, &mut header_buf) {
+        log::error!("Failed to read header block: {e:?}");
+        return None;
+    }
+
+    if &header_buf[0..8] != b"SVSMvTPM" {
+        log::info!("Block device does not contain a valid SVSMvTPM header");
+        return None;
+    }
+
+    let version = u16::from_le_bytes(header_buf[8..10].try_into().unwrap());
+    let cipher_id = u16::from_le_bytes(header_buf[10..12].try_into().unwrap());
+    let payload_size = u32::from_le_bytes(header_buf[12..16].try_into().unwrap()) as usize;
+
+    let mut iv = [0u8; 12];
+    iv.copy_from_slice(&header_buf[16..28]);
+
+    let mut tag = [0u8; 16];
+    tag.copy_from_slice(&header_buf[28..44]);
+
+    log::info!(
+        "Found vTPM header: v{}, cipher={}, size={}, secretlen={}",
+        version,
+        cipher_id,
+        payload_size,
+        kbs_key.len()
+    );
+
+    if cipher_id != 1 || kbs_key.len() != 32 {
+        log::error!(
+            "Unsupported cipher ID ({}) or invalid kbs key length (expected 32, got {})",
+            cipher_id,
+            kbs_key.len()
+        );
+    }
+
+    let payload_offset = 320; // After 64 header + 256 wrapped key
+    let total_bytes_to_read = payload_offset + payload_size;
+
+    if disk_size < total_bytes_to_read {
+        log::error!("Disk size smaller than declared payload");
+    }
+
+    // Read the entire payload (rounding up to sector size)
+    let total_sectors = total_bytes_to_read.div_ceil(SECTOR_SIZE);
+    let mut disk_buf = vec![0u8; total_sectors * SECTOR_SIZE];
+
+    for pos in 0..total_sectors {
+        let start = pos * SECTOR_SIZE;
+        let end = start + SECTOR_SIZE;
+        if let Err(e) = blk_guard.read_blocks(pos, &mut disk_buf[start..end]) {
+            log::error!("Failed to read payload block {pos}: {e:?}");
+            return None;
+        }
+    }
+
+    let ciphertext = &mut disk_buf[payload_offset..payload_offset + payload_size];
+    let cipher = Aes256Gcm::new(GenericArray::from_slice(kbs_key));
+    match cipher.decrypt_in_place_detached(
+        Nonce::from_slice(&iv),
+        b"",
+        ciphertext,
+        GenericArray::from_slice(&tag),
+    ) {
+        Ok(_) => {
+            log::info!("Successfully decrypted vTPM state");
+            let mut final_state = vec![0u8; payload_size];
+            final_state.copy_from_slice(ciphertext);
+            Some(final_state)
+        }
+        Err(e) => {
+            log::error!("Failed to decrypt vTPM state: {e:?}");
+            None
+        }
+    }
+}
+
 fn svsm_init(launch_info: &KernelLaunchInfo) {
     // If required, the GDB stub can be started earlier, just after the console
     // is initialised in svsm_start() above.
@@ -547,16 +675,38 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     initialize_virtio_mmio(&boot_params).expect("Failed to initialize virtio-mmio drivers");
 
     #[cfg(feature = "attest")]
-    {
-        let mut proxy = AttestationDriver::try_from(Tee::Snp).unwrap();
-        let _data = proxy.attest().unwrap();
+    let kbs_secret = {
+        let wrapped_key = load_vtpm_wrapped_key().expect(
+            "SVSM: Cryptographic header or wrapped key is missing from block device! Boot aborted",
+        );
 
-        // Nothing to do with data at the moment, simply print a success message.
-        log::info!("attestation successful");
-    }
+        let mut proxy =
+            AttestationDriver::try_from(Tee::Snp).expect("Failed to initialize Attestation Driver");
+
+        log::info!("SVSM: Initiating HSM wrap-key attestation");
+        let secret_request = SecretRequest::Pkcs11Unwrap { wrapped_key };
+        let decryption_key = proxy
+            .attest(Some(secret_request))
+            .expect("Attestation failed: could not retrieve key from KBS HSM");
+
+        Some(decryption_key)
+    };
+
+    #[cfg(not(feature = "attest"))]
+    let kbs_secret: Option<Vec<u8>> = None;
 
     #[cfg(all(feature = "vtpm", not(test)))]
-    vtpm_init(None, None).expect("vTPM failed to initialize");
+    {
+        let mut vtpm_state: Option<Vec<u8>> = None;
+
+        #[cfg(all(feature = "attest", feature = "block"))]
+        {
+            if let Some(secret) = &kbs_secret {
+                vtpm_state = load_vtpm_state_poc(secret);
+            }
+        }
+        vtpm_init(vtpm_state, kbs_secret.as_deref()).expect("vTPM failed to initialize");
+    }
 
     #[cfg(all(feature = "uefivars", not(test)))]
     uefi_mm_protocol_init().expect("uefi mm protocol failed to initialize");

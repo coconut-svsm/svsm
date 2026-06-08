@@ -31,6 +31,7 @@ use cocoon_tpm_utils_common::{
     io_slices::{self, IoSlicesIterCommon as _},
 };
 use kbs_types::Tee;
+pub use libaproxy::SecretRequest;
 use libaproxy::*;
 use serde::Serialize;
 use zerocopy::{FromBytes, IntoBytes};
@@ -141,10 +142,13 @@ impl AttestationDriver<'_> {
     }
 
     /// Attest SVSM's launch state by communicating with the attestation proxy.
-    pub fn attest(&mut self) -> Result<SecretSlice, SvsmError> {
+    pub fn attest(
+        &mut self,
+        secret_request: Option<SecretRequest>,
+    ) -> Result<SecretSlice, SvsmError> {
         let negotiation = self.negotiation()?;
 
-        Ok(self.attestation(negotiation)?)
+        Ok(self.attestation(negotiation, secret_request)?)
     }
 
     /// Send a negotiation request to the proxy. Proxy should reply with Negotiation parameters
@@ -168,7 +172,11 @@ impl AttestationDriver<'_> {
     /// Send an attestation request to the proxy. Proxy should reply with attestation response
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
-    fn attestation(&mut self, n: NegotiationResponse) -> Result<SecretSlice, AttestationError> {
+    fn attestation(
+        &mut self,
+        n: NegotiationResponse,
+        secret_request: Option<SecretRequest>,
+    ) -> Result<SecretSlice, AttestationError> {
         let pub_key = self.get_tpm_pub_key()?;
 
         let evidence = evidence(&self.tee, prepare_report_data(&n)?)?;
@@ -178,7 +186,7 @@ impl AttestationDriver<'_> {
             evidence,
             challenge: n.challenge.clone(),
             key: (self.ecc.pub_key().get_curve_id(), &pub_key).into(),
-            secret_request: None,
+            secret_request,
         };
 
         self.write(req)?;
