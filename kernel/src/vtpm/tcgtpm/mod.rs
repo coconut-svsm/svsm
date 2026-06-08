@@ -88,6 +88,7 @@ impl VtpmProtocolInterface for TcgTpm {
 pub const TPM_BUFFER_MAX_SIZE: usize = PAGE_SIZE;
 
 impl TcgTpmSimulatorInterface for TcgTpm {
+    #[inline] // R1: avoid sret aggregate-return on Vec<u8>
     fn send_tpm_command(&self, command: &[u8], locality: u8) -> Result<Vec<u8>, SvsmReqError> {
         if !self.is_powered_on {
             return Err(SvsmReqError::invalid_request());
@@ -133,6 +134,24 @@ impl TcgTpmSimulatorInterface for TcgTpm {
             response_ffi.set_len(response_ffi_size as usize);
         }
 
+        // A3 — runtime re-seal hook.
+        //
+        // The vTPM persistence cycle seals at Provision/Recover time but never
+        // commits guest-runtime NV writes (e.g. `tpm2_nvwrite` between boots).
+        // Sniff TPM2_Shutdown(SU_STATE) as a natural re-seal trigger: TCG
+        // semantics say the OS is about to lose volatile state, which is exactly
+        // the moment we need to persist g* + s_NV into a fresh SealedBlob.
+        //
+        // The hook is a no-op when:
+        //   - the command is not TPM2_Shutdown (cmdCode != 0x00000145), or
+        //   - Shutdown itself returned non-success (avoid re-sealing inconsistent state).
+        //
+        // The hook never propagates failure — re-seal errors are logged; the
+        // guest still sees its real Shutdown rc. fail-closed is enforced on the
+        // next cold boot's unseal path (NV-counter check + AES-GCM tag verify).
+        #[cfg(feature = "vtpm-persist")]
+        crate::vtpm::reseal::trigger_if_shutdown(command, &response_ffi);
+
         Ok(response_ffi)
     }
 
@@ -175,6 +194,7 @@ impl TcgTpmSimulatorInterface for TcgTpm {
 }
 
 impl VtpmInterface for TcgTpm {
+    #[inline] // R1: avoid sret aggregate-return on Vec<u8>
     fn get_ekpub(&mut self) -> Result<Vec<u8>, SvsmReqError> {
         if self.ekpub.is_none() {
             self.ekpub = Some(tss::create_ek(self, &DEFAULT_PUBLIC_AREA[..])?);
@@ -225,6 +245,30 @@ impl VtpmInterface for TcgTpm {
         self.signal_nvon()?;
 
         log::info!("VTPM: TPM 2.0 Reference Implementation initialized");
+
+        Ok(())
+    }
+
+    fn recover_init(&mut self) -> Result<(), SvsmReqError> {
+        // Recover path: bring the platform layer up but DO NOT manufacture.
+        // Manufacturing would re-seed EPS/SPS/PPS, destroying the
+        // correspondence between the in-memory hierarchies and the keys
+        // sealed in the SealedBlob. We need NVEnable so the simulator's
+        // NV region is mapped, signal_poweron(false) so PowerOn+Reset
+        // bring the globals up into a "needs TPM2_Startup" state, and
+        // signal_nvon so NV-backed operations work.
+
+        // SAFETY: FFI call. Parameters and return values are checked.
+        let rc = unsafe { _plat__NVEnable(VirtAddr::null().as_mut_ptr::<c_void>(), 0) };
+        if rc != 0 {
+            log::error!("_plat__NVEnable (recover) failed rc={rc}");
+            return Err(SvsmReqError::incomplete());
+        }
+
+        self.signal_poweron(false)?;
+        self.signal_nvon()?;
+
+        log::info!("VTPM: TPM 2.0 Reference Implementation initialized (Recover)");
 
         Ok(())
     }

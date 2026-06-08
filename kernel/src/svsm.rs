@@ -71,10 +71,20 @@ use svsm::utils::ScopedMut;
 use svsm::utils::round_to_pages;
 #[cfg(all(feature = "virtio-drivers", any(feature = "block", feature = "vsock")))]
 use svsm::virtio::probe_mmio_slots;
-#[cfg(all(feature = "vtpm", not(test)))]
+#[cfg(all(feature = "vtpm-persist", not(feature = "vsock"), not(test)))]
+use svsm::vtpm::MockTransport;
+#[cfg(all(feature = "vtpm-persist", feature = "vsock", not(test)))]
+use svsm::vtpm::VsockTransport;
+#[cfg(all(feature = "vtpm", not(feature = "vtpm-persist"), not(test)))]
 use svsm::vtpm::vtpm_init;
+#[cfg(all(feature = "vtpm-persist", not(test)))]
+use svsm::vtpm::{SealedBlobStore, VsockHostStore, VtpmBootMode, vtpm_init_sealed};
+#[cfg(all(feature = "vtpm-persist", feature = "vsock", not(test)))]
+use svsm::vtpm::{VSOCK_HOST_CID, VSOCK_TPM_PORT};
 
 use alloc::string::String;
+#[cfg(all(feature = "vtpm-persist", not(test)))]
+use alloc::vec::Vec;
 use release::COCONUT_VERSION;
 
 #[cfg(feature = "attest")]
@@ -553,8 +563,64 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         log::info!("attestation successful");
     }
 
-    #[cfg(all(feature = "vtpm", not(test)))]
-    vtpm_init().expect("vTPM failed to initialize");
+    // Mainline COCONUT-SVSM behaviour: ephemeral vTPM, no external
+    // dependencies, fresh seeds on every cold boot. This is the path
+    // upstream consumers get and the one preserved across the
+    // `vtpm-persist` feature being off.
+    #[cfg(all(feature = "vtpm", not(feature = "vtpm-persist"), not(test)))]
+    {
+        vtpm_init().expect("vtpm_init failed");
+        log::info!("VTPM: ephemeral init complete");
+    }
+
+    // Persistent vTPM path — opt-in via the `vtpm-persist` feature.
+    // Drives the Provision/Recover seal cycle against an off-CVM TPM
+    // endpoint (transport) and host-side blob store, both currently
+    // reached over VSOCK. The host helper must be reachable: a
+    // missing/unreachable endpoint is a hard error, NOT a silent
+    // fallback to ephemeral — silently downgrading would void the
+    // security model the seal cycle promises, which treats the
+    // physical TPM as a separate root of trust (an attacker who can
+    // break the VSOCK channel would otherwise harvest a fresh vTPM
+    // identity by triggering the fallback).
+    #[cfg(all(feature = "vtpm-persist", not(test)))]
+    {
+        let store = VsockHostStore::new(
+            VSOCK_HOST_CID,
+            VsockHostStore::DEFAULT_LOAD_PORT,
+            VsockHostStore::DEFAULT_SAVE_PORT,
+        );
+
+        let blob_opt = store
+            .load()
+            .expect("VTPM: sealed-store load failed (host helper unreachable?)");
+        let (boot_mode, blob_slice) = match blob_opt.as_deref() {
+            Some(b) => (VtpmBootMode::Recover, Some(b)),
+            None => (VtpmBootMode::Provision, None),
+        };
+
+        let vm_id: [u8; 16] = [0u8; 16]; // TODO: derive from IGVM guest_context
+
+        let transport = VsockTransport::new(VSOCK_HOST_CID, VSOCK_TPM_PORT);
+
+        // R1: vtpm_init_sealed now uses an out-param for the Vec<u8>; its
+        // return type is the register-passable `Result<(), SvsmReqError>`.
+        let mut maybe_blob: Option<Vec<u8>> = None;
+        vtpm_init_sealed(transport, boot_mode, vm_id, blob_slice, &mut maybe_blob)
+            .expect("VTPM: sealed init failed (host TPM endpoint unreachable?)");
+
+        if let Some(blob_bytes) = maybe_blob {
+            store
+                .save(&blob_bytes)
+                .expect("VTPM: sealed-store save failed");
+            log::info!(
+                "VTPM: SealedBlob ({} bytes) stored for next boot",
+                blob_bytes.len()
+            );
+        }
+
+        log::info!("VTPM: sealed init complete (mode={boot_mode:?})");
+    }
 
     virt_log_usage();
 

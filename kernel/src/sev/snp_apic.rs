@@ -65,15 +65,18 @@ impl ApicAccess for GHCBApicAccessor {
     }
 
     fn icr_write(&self, icr: u64) -> Result<(), SvsmError> {
-        // The #HV IPI can only be used if restricted injection is supported.
-        // Otherwise, the IPI must be sent via an X2APIC ICR write.
-        if self.use_restr_inj() {
-            current_ghcb().hv_ipi(icr)?;
-        } else {
-            self.apic_write(APIC_OFFSET_ICR, icr);
+        // HV_IPI (GHCB exit 0x0015) is a base SEV-ES protocol feature and
+        // does not require restricted injection. KVM rejects direct WRMSR to
+        // the x2APIC ICR MSR (0x830) via the GHCB MSR protocol (error 2),
+        // so HV_IPI is the only reliable path.
+        match current_ghcb().hv_ipi(icr) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                // Fallback: try direct MSR write if HV_IPI is unsupported
+                self.apic_write(APIC_OFFSET_ICR, icr);
+                Ok(())
+            }
         }
-
-        Ok(())
     }
 
     fn eoi(&self) {

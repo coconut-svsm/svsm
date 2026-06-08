@@ -8,7 +8,7 @@ pub mod apic;
 pub mod attest;
 pub mod core;
 pub mod errors;
-#[cfg(all(feature = "vtpm", not(test)))]
+#[cfg(feature = "vtpm")]
 pub mod vtpm;
 
 extern crate alloc;
