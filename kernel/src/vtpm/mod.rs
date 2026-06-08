@@ -99,11 +99,13 @@ static VTPM: SpinLock<Vtpm> = SpinLock::new(Vtpm::new());
 
 /// Initialize the TPM by calling the init() implementation of the
 /// [`VtpmInterface`]
-pub fn vtpm_init() -> Result<(), SvsmReqError> {
+pub fn vtpm_init(state: Option<Vec<u8>>, key: Option<&[u8]>) -> Result<(), SvsmReqError> {
     let mut vtpm = VTPM.lock();
     if vtpm.is_powered_on() {
         return Ok(());
     }
+    vtpm.set_key(key);
+    vtpm.set_state(state);
     vtpm.init()?;
     Ok(())
 }

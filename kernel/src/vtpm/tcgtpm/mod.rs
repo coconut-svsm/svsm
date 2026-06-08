@@ -38,6 +38,8 @@ use crate::{
 pub struct TcgTpm {
     is_powered_on: bool,
     ekpub: Option<Vec<u8>>,
+    key: Option<Vec<u8>>,   // This is the kbs secret used to encrypt the state.
+    state: Option<Vec<u8>>, // Persistent state buffer.
 }
 
 impl TcgTpm {
@@ -45,6 +47,8 @@ impl TcgTpm {
         TcgTpm {
             is_powered_on: false,
             ekpub: None,
+            key: None,
+            state: None,
         }
     }
 
@@ -74,6 +78,20 @@ impl TcgTpm {
                 Err(SvsmReqError::incomplete())
             }
         }
+    }
+
+    pub fn set_key(&mut self, key: Option<&[u8]>) {
+        self.key = key.map(|k| k.to_vec());
+
+        if self.key.is_some() {
+            log::info!("vTPM: Attestation key has been set and stored.");
+        } else {
+            log::info!("vTPM: Attestation key is not available");
+        }
+    }
+
+    pub fn set_state(&mut self, state: Option<Vec<u8>>) {
+        self.state = state;
     }
 }
 
@@ -196,14 +214,28 @@ impl VtpmInterface for TcgTpm {
         // 5. Power it on indicating it requires startup. By default, OVMF will start
         //    and selftest it.
 
+        let (ptr, size) = match &mut self.state {
+            Some(buf) => (buf.as_mut_ptr() as *mut c_void, buf.len() as u32),
+            None => (VirtAddr::null().as_mut_ptr::<c_void>(), 0),
+        };
+
         // SAFETY: FFI call. Parameters and return values are checked.
-        let mut rc = unsafe { _plat__NVEnable(VirtAddr::null().as_mut_ptr::<c_void>(), 0) };
+        let mut rc = unsafe { _plat__NVEnable(ptr, size as usize) };
         if rc != 0 {
             log::error!("_plat__NVEnable failed rc={rc}");
             return Err(SvsmReqError::incomplete());
         }
 
         rc = self.manufacture(1)?;
+        if rc == 1 {
+            self.signal_poweron(false)?;
+            self.signal_nvon()?;
+            log::info!(
+                "VTPM: TPM 2.0 Reference Implementation successfully restored from persistent state"
+            );
+            return Ok(());
+        }
+
         if rc != 0 {
             // SAFETY: FFI call. Parameter checked, no return value.
             unsafe { _plat__NVDisable(core::ptr::without_provenance_mut::<c_void>(1), 0) };

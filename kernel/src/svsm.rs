@@ -556,7 +556,7 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     }
 
     #[cfg(all(feature = "vtpm", not(test)))]
-    vtpm_init().expect("vTPM failed to initialize");
+    vtpm_init(None, None).expect("vTPM failed to initialize");
 
     #[cfg(all(feature = "uefivars", not(test)))]
     uefi_mm_protocol_init().expect("uefi mm protocol failed to initialize");
