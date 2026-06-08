@@ -21,15 +21,6 @@ pub struct NegotiationRequest {
     pub key: EcP256PublicKey,
 }
 
-/// A parameter that must be hashed into the negotiation hash.
-#[derive(Serialize, Deserialize, Debug)]
-pub enum NegotiationParam {
-    /// Hash the challenge returned from attestation server.
-    Challenge,
-    /// Hash the EC public key's `Elliptic-Curve-Point-to-Octet-String` encoding.
-    EcPublicKeyBytes,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NegotiationResponse {
     /// Challenge returned from the attestation server to verify freshness of attestation evidence.
@@ -38,6 +29,4 @@ pub struct NegotiationResponse {
         deserialize_with = "deserialize_base64"
     )]
     pub challenge: Vec<u8>,
-    /// Parameters to be hashed in the specific order defined by the array
-    pub params: Vec<NegotiationParam>,
 }

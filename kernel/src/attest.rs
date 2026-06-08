@@ -33,7 +33,6 @@ use cocoon_tpm_utils_common::{
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
-use sha2::{Digest, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
 // TODO: Make the IO port configurable/discoverable or drop the support entirely.
@@ -172,7 +171,7 @@ impl AttestationDriver<'_> {
     fn attestation(&mut self, n: NegotiationResponse) -> Result<SecretSlice, AttestationError> {
         let pub_key = self.get_tpm_pub_key()?;
 
-        let evidence = evidence(&self.tee, hash(&n, &pub_key)?)?;
+        let evidence = evidence(&self.tee, prepare_report_data(&n)?)?;
 
         let req = AttestationRequest {
             tee: self.tee,
@@ -406,26 +405,9 @@ fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<AttestationEvidence, Attestation
     Ok(evidence)
 }
 
-/// Hash the negotiation parameters from the attestation server for inclusion in the
-/// attestation evidence.
-fn hash(
-    n: &NegotiationResponse,
-    pub_key: &TpmsEccPoint<'static>,
-) -> Result<Vec<u8>, AttestationError> {
-    let mut sha = Sha512::new();
-
-    for p in &n.params {
-        match p {
-            NegotiationParam::Challenge => {
-                sha.update(&n.challenge);
-            }
-            #[allow(irrefutable_let_patterns)]
-            NegotiationParam::EcPublicKeyBytes => {
-                sha.update(&*pub_key.x.buffer);
-                sha.update(&*pub_key.y.buffer);
-            }
-        }
-    }
-
-    try_to_vec(&sha.finalize()).or(Err(AttestationError::VecAlloc))
+/// Take 48 byte negotiation challenge nonce from aproxy into 64 byte array required for the TEE attestation evidence report
+fn prepare_report_data(n: &NegotiationResponse) -> Result<Vec<u8>, AttestationError> {
+    let mut report_data = [0u8; 64];
+    report_data[..48].copy_from_slice(&n.challenge);
+    Ok(report_data.to_vec())
 }

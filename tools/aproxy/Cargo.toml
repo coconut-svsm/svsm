@@ -16,6 +16,8 @@ libaproxy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 vsock = "0.5.1"
+sha2 = { workspace = true }
+sev = { version = "8.0.0", features = ["snp", "serde"] }
 
 [lints]
 workspace = true

@@ -8,10 +8,11 @@
 mod kbs;
 
 use crate::ArgsBackend;
-use anyhow::{Context, anyhow};
+use anyhow::Context;
 use kbs::KbsProtocol;
 use libaproxy::*;
 use reqwest::{blocking::Client, cookie::Jar};
+use std::mem;
 use std::sync::Arc;
 
 /// HTTP client and protocol identifier.
@@ -35,20 +36,26 @@ impl HttpClient {
     pub fn negotiation(&mut self, req: NegotiationRequest) -> anyhow::Result<NegotiationResponse> {
         // Depending on the underlying protocol of the attestation server, gather negotiation
         // parameters accordingly.
-        match self.protocol {
-            Protocol::Kbs(mut kbs) => kbs.negotiation(self, req),
-        }
+        let mut protocol = mem::replace(&mut self.protocol, Protocol::Kbs(KbsProtocol::default()));
+        let result = match &mut protocol {
+            Protocol::Kbs(kbs) => kbs.negotiation(self, req),
+        };
+        self.protocol = protocol;
+        result
     }
 
     pub fn attestation(&mut self, req: AttestationRequest) -> anyhow::Result<AttestationResponse> {
-        match self.protocol {
-            Protocol::Kbs(mut kbs) => kbs.attestation(self, req),
-        }
+        let mut protocol = mem::replace(&mut self.protocol, Protocol::Kbs(KbsProtocol::default()));
+        let result = match &mut protocol {
+            Protocol::Kbs(kbs) => kbs.attestation(self, req),
+        };
+        self.protocol = protocol;
+        result
     }
 }
 
 /// Attestation Protocol identifier.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum Protocol {
     Kbs(KbsProtocol),
 }
@@ -56,7 +63,7 @@ pub enum Protocol {
 impl From<ArgsBackend> for Protocol {
     fn from(value: ArgsBackend) -> Self {
         match value {
-            ArgsBackend::Kbs => Self::Kbs(KbsProtocol),
+            ArgsBackend::Kbs => Self::Kbs(KbsProtocol::default()),
         }
     }
 }
