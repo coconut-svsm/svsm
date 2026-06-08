@@ -74,7 +74,7 @@ aes-gcm = { version = "0.10.3", default-features = false }
 aes-kw = { version = "0.3.1", default-features = false }
 arbitrary = "1.3.0"
 base64 = { version = "0.22.1", default-features = false }
-bindgen = {version = "0.71.0", default-features = false }
+bindgen = { version = "0.71.0", default-features = false }
 bitfield-struct = "0.6.2"
 bitflags = "2.6"
 clap = { version = "4.4.14", default-features = false }
@@ -108,13 +108,18 @@ zeroize = { version = "1.8.2", default-features = false }
 
 # Verus repos
 verus_builtin = { version = "=0.0.0-2026-04-12-0118", default-features = false }
-verus_builtin_macros = { version = "=0.0.0-2026-04-12-0118", features = ["vpanic"], default-features = false }
+verus_builtin_macros = { version = "=0.0.0-2026-04-12-0118", features = [
+    "vpanic",
+], default-features = false }
 verus_state_machines_macros = { version = "=0.0.0-2026-04-05-0114", default-features = false }
-vstd = { version = "=0.0.0-2026-04-12-0118", features = ["alloc", "allow_panic"], default-features = false }
+vstd = { version = "=0.0.0-2026-04-12-0118", features = [
+    "alloc",
+    "allow_panic",
+], default-features = false }
 
 # Verification libs
-verify_proof = { path = "verification/verify_proof", default-features = false  }
-verify_external = { path = "verification/verify_external", default-features = false  }
+verify_proof = { path = "verification/verify_proof", default-features = false }
+verify_external = { path = "verification/verify_external", default-features = false }
 
 [patch.crates-io]
 # Force all dependencies to use the same version of safe-mmio, which has

@@ -2,16 +2,18 @@
 
 [target.x86_64-unknown-none]
 rustflags = [
-	"-C", "force-frame-pointers",
-	"--cfg", "aes_force_soft",
-	"--cfg", 'aes_backend="soft"',
-	"--cfg", "polyval_force_soft",
+    "-C",
+    "force-frame-pointers",
+    "--cfg",
+    "aes_force_soft",
+    "--cfg",
+    'aes_backend="soft"',
+    "--cfg",
+    "polyval_force_soft",
 ]
 
 [target.x86_64-unknown-linux-gnu]
-rustflags = [
-       "-C", "code-model=kernel",
-]
+rustflags = ["-C", "code-model=kernel"]
 
 [alias]
 verify = "verus focus --features verus"
