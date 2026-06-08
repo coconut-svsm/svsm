@@ -44,7 +44,6 @@ use crate::mm::{
     PageBox, SVSM_PERTASK_BASE, SVSM_PERTASK_END, USER_MEM_END, USER_MEM_START, VMMappingGuard,
     mappings::create_anon_mapping, mappings::create_file_mapping,
 };
-use crate::platform::SVSM_PLATFORM;
 use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::{MemoryRegion, is_aligned};
@@ -767,13 +766,7 @@ impl Task {
         xsa_addr: usize,
     ) -> Result<(Mapping, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;
-        // Do not run user-mode with IRQs enabled on platforms which are not
-        // ready for it.
-        let iret_rflags: usize = if SVSM_PLATFORM.use_interrupts() {
-            2 | EFLAGS_IF
-        } else {
-            2
-        };
+        let iret_rflags: usize = 2 | EFLAGS_IF;
 
         let percpu_mapping = cpu.new_mapping(mapping.clone())?;
 

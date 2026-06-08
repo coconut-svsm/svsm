@@ -14,6 +14,9 @@ use super::msr::write_msr;
 use super::shadow_stack::{ISST_ADDR, init_shadow_stack, is_cet_ss_enabled};
 use super::tss::{IST_DF, X86Tss};
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::cpu::IrqState;
+use crate::cpu::LocalApic;
+use crate::cpu::ShadowStackInit;
 use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
@@ -21,7 +24,6 @@ use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
 use crate::cpu::x86::{ApicAccess, X86Apic};
-use crate::cpu::{IrqGuard, IrqState, LocalApic, ShadowStackInit};
 use crate::error::{ApicError, SvsmError};
 use crate::hyperv::HypercallPagesGuard;
 use crate::hyperv::{self, HypercallPage};
@@ -1205,12 +1207,6 @@ impl PerCpu {
         let task = self.runqueue_mut().schedule_init();
         self.set_current_stack(task.stack_bounds());
         task
-    }
-
-    pub fn disable_interrupt_use(&self) {
-        let guard = IrqGuard::new();
-        self.irq_state.set_restore_state(false);
-        drop(guard);
     }
 
     pub fn schedule_prepare(&self, reschedule: bool) -> Option<(TaskPointer, TaskPointer)> {

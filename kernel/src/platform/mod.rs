@@ -246,9 +246,6 @@ pub trait SvsmPlatform: Sync {
     /// Queries the state of APIC registration on this system.
     fn query_apic_registration_state(&self) -> bool;
 
-    /// Determines whether the platform supports interrupts to the SVSM.
-    fn use_interrupts(&self) -> bool;
-
     /// Determines whether a given interrupt vector was invoked as an external
     /// interrupt.
     fn is_external_interrupt(&self, vector: usize) -> bool;
@@ -300,17 +297,11 @@ pub enum SvsmPlatformCell {
 }
 
 impl SvsmPlatformCell {
-    pub fn new(suppress_svsm_interrupts: bool) -> Self {
+    pub fn new() -> Self {
         match *SVSM_PLATFORM_TYPE {
-            SvsmPlatformType::Native => {
-                SvsmPlatformCell::Native(NativePlatform::new(suppress_svsm_interrupts))
-            }
-            SvsmPlatformType::Snp => {
-                SvsmPlatformCell::Snp(SnpPlatform::new(suppress_svsm_interrupts))
-            }
-            SvsmPlatformType::Tdp => {
-                SvsmPlatformCell::Tdp(TdpPlatform::new(suppress_svsm_interrupts))
-            }
+            SvsmPlatformType::Native => SvsmPlatformCell::Native(NativePlatform::new()),
+            SvsmPlatformType::Snp => SvsmPlatformCell::Snp(SnpPlatform::new()),
+            SvsmPlatformType::Tdp => SvsmPlatformCell::Tdp(TdpPlatform::new()),
         }
     }
 
@@ -345,6 +336,12 @@ impl SvsmPlatformCell {
             SvsmPlatformCell::Snp(_) => SvsmPlatformType::Snp,
             SvsmPlatformCell::Tdp(_) => SvsmPlatformType::Tdp,
         }
+    }
+}
+
+impl Default for SvsmPlatformCell {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

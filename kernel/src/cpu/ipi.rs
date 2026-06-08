@@ -10,7 +10,6 @@ use super::idt::common::IPI_VECTOR;
 use super::percpu::{PERCPU_AREAS, PerCpuShared, this_cpu};
 use super::x86::apic_post_irq;
 use crate::error::SvsmError;
-use crate::platform::SVSM_PLATFORM;
 use crate::types::{TPR_IPI, TPR_SYNCH};
 use crate::utils::{ScopedMut, ScopedRef};
 
@@ -18,7 +17,8 @@ use core::cell::{Cell, UnsafeCell};
 use core::mem;
 use core::mem::MaybeUninit;
 use core::ptr;
-use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 use cpuarch::x86apic::ApicIcr;
 use cpuarch::x86apic::IcrDestFmt;
 
@@ -326,8 +326,6 @@ impl Default for IpiBoard {
 // is consumed as a dynamic dispatch trait to avoid explosion due to multiple
 // generic message implementations.
 fn send_ipi(target_set: IpiTarget<'_>, ipi_helper: &mut dyn IpiHelper) {
-    assert!(ipi_available());
-
     let sender_cpu_index = this_cpu().get_cpu_index();
 
     // Raise TPR to synch level to prevent reentrant attempts to send an IPI.
@@ -619,45 +617,9 @@ pub fn send_unicast_ipi<M: IpiMessageMut>(cpu_index: usize, ipi_message: &mut M)
     send_ipi(IpiTarget::Single(cpu_index), &mut ipi_helper);
 }
 
-/// The count of CPUs that have not yet requested blocking of IPI usage.  This
-/// is initially set to 1 to count the BSP, and each AP that starts will
-/// increment the count.
-static IPI_AVAILABLE_CPU_COUNT: AtomicU32 = AtomicU32::new(1);
-
-/// Indicates whether use of IPIs is currently available.
-pub fn ipi_available() -> bool {
-    IPI_AVAILABLE_CPU_COUNT.load(Ordering::Acquire) != 0
-}
-
-/// Request IPI blocking on the current CPU and wait until all other CPUs have
-/// done the same.
-pub fn wait_for_ipi_block() {
-    // Mark this CPU as wanting to block IPIs and wait until all other CPUs
-    // have done the same.  Note that while waiting, additional IPIs may still
-    // be received, which is necessary because other CPUs may not have yet
-    // gotten to the point that they are willing to stop using IPIs.
-    IPI_AVAILABLE_CPU_COUNT.fetch_sub(1, Ordering::Release);
-    while ipi_available() {
-        core::hint::spin_loop();
-    }
-
-    // If this platform cannot make use of interrupts generally, then block
-    // interrupts from this point now that all CPUs have agreed to stop using
-    // IPIs.
-    if !SVSM_PLATFORM.use_interrupts() {
-        this_cpu().disable_interrupt_use();
-    }
-}
-
-/// Count the startup of another AP for IPI blocking purposes.
-pub fn ipi_start_cpu() {
-    IPI_AVAILABLE_CPU_COUNT.fetch_add(1, Ordering::Release);
-}
-
 #[cfg(test)]
 mod tests {
     use crate::cpu::ipi::*;
-    use crate::platform::SVSM_PLATFORM;
 
     #[derive(Debug)]
     struct TestIpi<'a> {
@@ -711,34 +673,26 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_ipi() {
-        // IPI testing is only possible on platforms that support SVSM
-        // interrupts.
-        if ipi_available() {
-            let mut drop_count: usize = 0;
-            let message = TestIpi::new(4, &mut drop_count);
-            send_multicast_ipi(IpiTarget::All, &message);
-            drop(message);
-            // Verify that `drop()` was called exactly once on thie IPI
-            // message.
-            assert_eq!(drop_count, 1);
-        }
+        let mut drop_count: usize = 0;
+        let message = TestIpi::new(4, &mut drop_count);
+        send_multicast_ipi(IpiTarget::All, &message);
+        drop(message);
+        // Verify that `drop()` was called exactly once on thie IPI
+        // message.
+        assert_eq!(drop_count, 1);
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_mut_ipi() {
-        // IPI testing is only possible on platforms that support SVSM
-        // interrupts.
-        if ipi_available() {
-            let mut drop_count: usize = 0;
-            let mut message = TestIpi::new(4, &mut drop_count);
-            send_unicast_ipi(0, &mut message);
-            assert_eq!(message.value, 5);
-            drop(message);
-            // Verify that `drop()` was called exactly once on thie IPI
-            // message.
-            assert_eq!(drop_count, 1);
-        }
+        let mut drop_count: usize = 0;
+        let mut message = TestIpi::new(4, &mut drop_count);
+        send_unicast_ipi(0, &mut message);
+        assert_eq!(message.value, 5);
+        drop(message);
+        // Verify that `drop()` was called exactly once on thie IPI
+        // message.
+        assert_eq!(drop_count, 1);
     }
 
     struct AtomicIpi {
@@ -762,22 +716,18 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_atomic_ipi() {
-        // IPI testing is only possible on platforms that support SVSM
-        // interrupts.
-        if SVSM_PLATFORM.use_interrupts() {
-            let all_message = AtomicIpi {
-                cpu_count: AtomicUsize::new(0),
-            };
-            send_multicast_ipi(IpiTarget::All, &all_message);
-            let all_count = all_message.cpu_count.load(Ordering::Relaxed);
-            assert!(all_count > 0);
+        let all_message = AtomicIpi {
+            cpu_count: AtomicUsize::new(0),
+        };
+        send_multicast_ipi(IpiTarget::All, &all_message);
+        let all_count = all_message.cpu_count.load(Ordering::Relaxed);
+        assert!(all_count > 0);
 
-            let abs_message = AtomicIpi {
-                cpu_count: AtomicUsize::new(0),
-            };
-            send_multicast_ipi(IpiTarget::AllButSelf, &abs_message);
-            let abs_count = abs_message.cpu_count.load(Ordering::Relaxed);
-            assert_eq!(abs_count + 1, all_count);
-        }
+        let abs_message = AtomicIpi {
+            cpu_count: AtomicUsize::new(0),
+        };
+        send_multicast_ipi(IpiTarget::AllButSelf, &abs_message);
+        let abs_count = abs_message.cpu_count.load(Ordering::Relaxed);
+        assert_eq!(abs_count + 1, all_count);
     }
 }
