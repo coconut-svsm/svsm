@@ -7,12 +7,8 @@
 extern crate alloc;
 use crate::{locking::SpinLock, platform::SVSM_PLATFORM};
 use alloc::vec::Vec;
-use core::{
-    cell::OnceCell,
-    mem::{MaybeUninit, size_of},
-    ptr::{NonNull, addr_of},
-};
-use zerocopy::{FromBytes, Immutable, IntoBytes};
+use core::{cell::OnceCell, mem::MaybeUninit, ptr::NonNull};
+use zerocopy::IntoBytes;
 
 use crate::{
     address::{PhysAddr, VirtAddr},
@@ -63,6 +59,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     fn dma_alloc(
         pages: usize,
         _direction: virtio_drivers::BufferDirection,
+        _access_platform: bool,
     ) -> (virtio_drivers::PhysAddr, NonNull<u8>) {
         // TODO: allow more than one page.
         //       This currently works, because in "modern" virtio mode the crate only allocates
@@ -91,6 +88,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
         paddr: virtio_drivers::PhysAddr,
         _vaddr: NonNull<u8>,
         pages: usize,
+        _access_platform: bool,
     ) -> i32 {
         //TODO: allow more than one page
         assert!(pages == 1);
@@ -123,6 +121,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     unsafe fn share(
         buffer: NonNull<[u8]>,
         direction: virtio_drivers::BufferDirection,
+        _access_platform: bool,
     ) -> virtio_drivers::PhysAddr {
         // TODO: allow more than one page
         assert!(buffer.len() <= PAGE_SIZE);
@@ -161,6 +160,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
         paddr: virtio_drivers::PhysAddr,
         buffer: NonNull<[u8]>,
         direction: virtio_drivers::BufferDirection,
+        _access_platform: bool,
     ) {
         assert!(buffer.len() <= PAGE_SIZE);
 
@@ -188,52 +188,6 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
             }
         }
         // implicit drop of share_page here.
-    }
-
-    /// Performs memory mapped read from location of `src`. `src` itself is not modified,
-    /// the value is returned instead.
-    ///
-    /// The default implementation performs a regular volatile_read. This method is intended
-    /// to be overwritten in case MMIO memory needs to be accessed in a special way (for example AMD SEV-SNP).
-    ///
-    /// # Safety
-    ///
-    /// `src` must be properly aligned and reside at a readable memory address.
-    unsafe fn mmio_read<T: FromBytes + Immutable>(src: &T) -> T {
-        let mut b = MaybeUninit::<T>::uninit();
-        // SAFETY: We are trusting the caller (the virtio driver) to ensure `src` is a valid MMIO
-        // address and that it is aligned properly. If SVSM_PLATFORM.mmio_read() doesn't fail
-        // we can assume that all the bytes are read from the device.
-        unsafe {
-            // MaybeUninit::as_bytes_mut() can avoid this, but it's still
-            // unstable. When it will be stabilized, we can simply use
-            // `b.as_bytes_mut()` instead of creating `b_slice`.
-            let b_slice = core::slice::from_raw_parts_mut(
-                b.as_mut_ptr().cast::<MaybeUninit<u8>>(),
-                size_of::<T>(),
-            );
-            SVSM_PLATFORM
-                .mmio_read(VirtAddr::from(addr_of!(*src)), b_slice)
-                .unwrap();
-            b.assume_init()
-        }
-    }
-
-    /// Performs memory mapped write of `value` to the location of `dst`.
-    ///
-    /// The default implementation performs a regular volatile_write. This method is intended
-    /// to be overwritten in case MMIO memory needs to be accessed in a special way (for example AMD SEV-SNP).
-    ///
-    /// # Safety
-    ///
-    /// `dst` must be properly aligned and reside at a writable memory address.
-    unsafe fn mmio_write<T: IntoBytes + Immutable>(dst: &mut T, v: T) {
-        // SAFETY: We are trusting the caller (the virtio driver) to ensure validity of `paddr` and alignment of data.
-        unsafe {
-            SVSM_PLATFORM
-                .mmio_write(VirtAddr::from(addr_of!(*dst)), v.as_bytes())
-                .unwrap();
-        }
     }
 }
 

@@ -17,11 +17,11 @@ use crate::fw_cfg::FwCfg;
 use crate::mm::{GlobalRangeGuard, map_global_range_4k_shared, pagetable::PTEntryFlags};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::PAGE_SIZE;
-use crate::virtio::hal::{SvsmHal, virtio_init};
+use crate::virtio::hal::virtio_init;
 
 #[derive(Debug)]
 pub struct MmioSlot {
-    pub transport: MmioTransport<SvsmHal>,
+    pub transport: MmioTransport<'static>,
     // Fields are ordered so that `mmio_range` is dropped last.
     // The MmioTransport destructor resets the device via MMIO writes, and
     // dropping `mmio_range` destroys the mapping, so `mmio_range` must be
@@ -102,7 +102,8 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
         // SAFETY: The address is valid, mapped by `map_global_range_4k_shared`, and verified
         // to be VirtIOHeader-aligned by the guard above.
         // The memory region has the same lifetime of the MmioSlot structure which will be consumed by the driver.
-        let Ok(transport) = (unsafe { MmioTransport::<SvsmHal>::new(header) }) else {
+        // Note: QEMU places each MMIO slot on its own page for us, thus mmio_size = PAGE_SIZE.
+        let Ok(transport) = (unsafe { MmioTransport::new(header, PAGE_SIZE) }) else {
             // Currently QEMU advertises _all_ slots, regardless they are empty or not.
             log::debug!("MmioSlots: {addr:x} empty");
             continue;

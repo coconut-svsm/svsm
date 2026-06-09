@@ -22,7 +22,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 
 pub struct VirtIOBlkDriver {
-    device: SpinLock<VirtIOBlk<SvsmHal, MmioTransport<SvsmHal>>>,
+    device: SpinLock<VirtIOBlk<SvsmHal, MmioTransport<'static>>>,
     _mmio_space: GlobalRangeGuard,
 }
 

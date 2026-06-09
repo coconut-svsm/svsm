@@ -25,7 +25,7 @@ use virtio_drivers::transport::DeviceType::Socket;
 use virtio_drivers::transport::mmio::MmioTransport;
 
 pub struct VirtIOVsockDriver {
-    device: SpinLock<VsockConnectionManager<SvsmHal, MmioTransport<SvsmHal>>>,
+    device: SpinLock<VsockConnectionManager<SvsmHal, MmioTransport<'static>>>,
     _mmio_space: GlobalRangeGuard,
 }
 
