@@ -204,6 +204,8 @@ Building the SVSM itself requires:
   [https://rustup.rs/](https://rustup.rs/) on how to get this environment installed.
 * `x86_64-unknown-none` target toolchain installed (`rustup target add x86_64-unknown-none`)
 * `binutils` >= 2.39
+* (optional) for the vtpm feature gcc is needed.  For cross-compiling
+  a cross-gcc is needed (/usr/bin/x86_64-linux-gnu-gcc, gcc-x86_64-linux-gnu.rpm).
 
 You may also need to install the TPM 2.0 Reference Implementation build
 dependencies. On OpenSUSE you can do this by:
