@@ -7,5 +7,6 @@
 //! Observability and Management Protocol (OMP) implementation.
 
 pub mod requests;
+pub mod source;
 
 pub use requests::omp_protocol_request;
