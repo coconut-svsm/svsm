@@ -8,6 +8,7 @@ pub mod apic;
 pub mod attest;
 pub mod core;
 pub mod errors;
+pub mod ocp;
 #[cfg(feature = "uefivars")]
 pub mod uefivars;
 #[cfg(feature = "vtpm")]
