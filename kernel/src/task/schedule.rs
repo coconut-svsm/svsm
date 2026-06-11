@@ -77,9 +77,6 @@ pub struct RunQueue {
     /// Idle task - runs when there is no other runnable task
     idle_task: Option<TaskPointer>,
 
-    /// Temporary storage for tasks which are about to be terminated
-    terminated_task: Option<TaskPointer>,
-
     /// Pointer to a task that should be woken when returning from idle
     wake_from_idle: Option<TaskPointer>,
 }
@@ -93,7 +90,6 @@ impl RunQueue {
             run_list: LinkedList::new(TaskRunListAdapter::new()),
             current_task: None,
             idle_task: None,
-            terminated_task: None,
             wake_from_idle: None,
         }
     }
@@ -416,10 +412,6 @@ fn current_task_terminated() {
     let cpu = this_cpu();
     let mut rq = cpu.runqueue_mut();
 
-    // Capture a reference to the current task so that it remains referenced
-    // until the next scheduling operation completes.
-    rq.terminated_task = rq.current_task.clone();
-
     let task_node = rq
         .current_task
         .as_mut()
@@ -499,19 +491,26 @@ pub fn set_affinity(cpu_index: usize) {
     }
 }
 
-// SAFETY: This function returns a raw pointer to a task. It is safe
-// because this function is only used in the task switch code, which also only
-// takes a single reference to the next and previous tasks. Also, this
-// function works on an Arc, which ensures that only a single mutable reference
-// can exist.
-fn task_pointer(taskptr: TaskPointer) -> *const Task {
-    Arc::as_ptr(&taskptr)
-}
-
-// SAFETY: The caller is required to provide correct pointers for the previous
-// and current tasks.
+// SAFETY: the caller is required to guarantee that the incoming task is
+// referenced somewhere (at least the current CPU's run queue current task
+// pointer) or else it will be destroyed before it is entered.
 #[inline(always)]
-unsafe fn switch_to(prev: *const Task, next: *const Task) {
+unsafe fn switch_to(prev_task: Option<TaskPointer>, next_task: TaskPointer) -> Option<TaskPointer> {
+    // Capture a pointer to the new task and consume its `Arc`.  The caller
+    // guarantees that the task will still exist.
+    let next = Arc::as_ptr(&next_task);
+    drop(next_task);
+
+    // Consume the `Arc` describing the currently executing task without
+    // adjusting the reference count.  This will ensure that the current task
+    // is not fully dereferenced while it is still executing.  The reference
+    // will be rebalanced after the task switch.
+    let prev = if let Some(task) = prev_task {
+        Arc::into_raw(task)
+    } else {
+        null_mut()
+    };
+
     // SAFETY: Assuming the caller has provided the correct task pointers,
     // the page table and stack information in those tasks are correct and
     // can be used to switch to the correct page table and execution stack.
@@ -519,12 +518,29 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
         let cr3 = (*next).page_table.lock().cr3_value().bits();
 
         // Switch to new task
-        switch_context(
+        let new_prev = switch_context(
             prev as usize,
             next as usize,
             ptr::from_ref(this_cpu()) as usize,
             cr3,
         );
+        complete_task_switch(new_prev)
+    }
+}
+
+/// # Safety
+/// The caller must guarantee that the task pointer argument is the one that
+/// was returned from the context switcher.
+pub unsafe fn complete_task_switch(prev: usize) -> Option<TaskPointer> {
+    // If there was a previous task, then create a new `Arc` that describes
+    // the previous task.  This will balance the reference count that was
+    // not decremented when the `Arc` was consumed prior to the task
+    // switch.
+    if prev != 0 {
+        // SAFETY: the caller guarantees that the task pointer is valid.
+        unsafe { Some(Arc::from_raw(prev as *const Task)) }
+    } else {
+        None
     }
 }
 
@@ -542,11 +558,13 @@ pub unsafe fn schedule_init() {
     // SAFETY: The caller guarantees that there is no current task, and the
     // pointer obtained for the next task will always be correct, thus
     // providing a guarantee that the task switch will be safe.
-    unsafe {
-        let next = task_pointer(this_cpu().schedule_init());
-        switch_to(null_mut(), next);
-    }
+    let prev_task = unsafe { switch_to(None, this_cpu().schedule_init()) };
+
+    // Drop the interrupt guard before allowing the previous task reference to
+    // go out of scope.  This ensures that the task destructor will run with
+    // interrupts enabled.
     drop(guard);
+    drop(prev_task);
 }
 
 /// Enters an idle state if there is no task that can run.
@@ -600,7 +618,7 @@ fn select_new_task(reschedule: bool, irq_guard: Option<IrqGuard>) {
     let work = this_cpu().schedule_prepare(reschedule);
 
     // !!! Runqueue lock must be released here !!!
-    if let Some((current, next)) = work {
+    let prev_task = if let Some((current, next)) = work {
         // Ensure that the current stack bounds of the current CPU are adjusted
         // to reflect the task being scheduled.
         this_cpu().set_current_stack(next.stack_bounds());
@@ -617,30 +635,41 @@ fn select_new_task(reschedule: bool, irq_guard: Option<IrqGuard>) {
             }
         }
 
-        // Get task-pointers, consuming the Arcs and release their reference
+        // Get task-pointers.
         //
         // SAFETY: the scheduler guarantees that both `current` and `next`
         // always point to valid tasks. The XSAVE area in each task must be
         // valid and not aliased.
         unsafe {
-            let a = task_pointer(current);
-            let b = task_pointer(next);
-            sse_save_context(u64::from((*a).xsa.vaddr()));
+            // Capture a pointer to the current task.  This pointer can be
+            // decoupled from the lifetime of the `Arc` because it is valid
+            // as long as the task continues to execute.
+            let current_ptr = Arc::as_ptr(&current);
+            sse_save_context(u64::from((*current_ptr).xsa.vaddr()));
 
-            // Switch tasks
-            switch_to(a, b);
+            // Switch tasks.  This call must consume the `Arc` references to
+            // both tasks because this call might never return (if the current
+            // task is being terminated) and therefore no references can live
+            // beyond this call.  This call will return an `Arc` reference to
+            // the task that ran most recently, which may be the final
+            // reference to the task if the task was terminated.
+            let prev_task = switch_to(Some(current), next);
 
-            // We're now in the context of task pointed to by 'a'
-            // which was previously scheduled out.
-            sse_restore_context(u64::from((*a).xsa.vaddr()));
+            // The previously captured task pointer is known to be valid
+            // because the task is still executing.
+            sse_restore_context(u64::from((*current_ptr).xsa.vaddr()));
+
+            prev_task
         }
-    }
+    } else {
+        None
+    };
 
+    // Drop the interrupt guard before allowing the previous task reference to
+    // go out of scope.  This ensures that the task destructor will run with
+    // interrupts enabled.
     drop(guard);
-
-    // If the previous task had terminated then we can release
-    // it's reference here.
-    let _ = this_cpu().runqueue_mut().terminated_task.take();
+    drop(prev_task);
 }
 
 fn enqueue_task(task: TaskPointer) {
@@ -654,7 +683,7 @@ pub fn schedule_task(task: TaskPointer) {
 }
 
 unsafe extern "C" {
-    fn switch_context(prev: usize, next: usize, this_cpu: usize, cr3: usize);
+    fn switch_context(prev: usize, next: usize, this_cpu: usize, cr3: usize) -> usize;
 }
 
 global_asm!(
@@ -740,13 +769,20 @@ global_asm!(
         movq    %rax, {TASK_CPU_OFFSET}(%rsi)
 
         // Save local registers before calling out to do the page table update.
+        // Save only the registers that will be needed following the update,
+        // and ensure that a multiple of 16 bytes is pushed to maintain
+        // compliance with the stack ABI requirement.
         pushq   %rsi
+        pushq   %rdi
         pushq   %rcx
+        subq    $8, %rsp
 
         movq    %rsi, %rdi
         call    update_task_percpu_page_tables
 
+        addq    $8, %rsp
         popq    %rcx
+        popq    %rdi
         popq    %rsi
 
     5:
@@ -765,10 +801,16 @@ global_asm!(
         // Switch to the new task stack
         movq    {TASK_RSP_OFFSET}(%rsi), %rsp
 
+        // Pass the previous task pointer (if any) back to the caller.  This
+        // is done both as a return value (if this function was called from
+        // the task switcher) and as the first parameter (if this routine
+        // will return to the task entry point.
+        movq    %rdi, %rax
+
         // Restore the task state, following the layout of TaskContext.
-        popq    %rdi
         popq    %rsi
         popq    %rdx
+        popq    %rcx
         popq    %rbx
         popq    %rbp
 
