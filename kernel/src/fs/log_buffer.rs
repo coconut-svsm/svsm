@@ -85,3 +85,47 @@ pub fn stdout_open(taskname: String) -> (Arc<dyn Obj>, Arc<dyn Obj>) {
         Arc::new(FsObj::new_file(FileHandle::new(&log_file, false, true))),
     )
 }
+
+#[cfg(all(test, test_in_svsm))]
+mod tests {
+    use super::*;
+    use crate::task::{KernelThreadStartInfo, start_kernel_task};
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_log_buffer_basic() {
+        let _ = log_reset();
+        log::info!("hello world");
+        let mut buf1 = [0u8; 29];
+        let _ = log_read(&mut buf1);
+        assert_eq!(
+            str::from_utf8(&buf1).unwrap(),
+            "[SVSM test task] hello world\n"
+        );
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_log_buffer_multiple_tasks() {
+        let _ = log_reset();
+        log::info!("in test task");
+        start_kernel_task(KernelThreadStartInfo::new(task1, 1), String::from("task1"))
+            .expect("Failed to launch request processing task");
+        start_kernel_task(KernelThreadStartInfo::new(task2, 2), String::from("task2"))
+            .expect("Failed to launch request processing task");
+        let expected = "[SVSM test task] in test task\n[task1] in task1\n[task2] in task2\n";
+        let mut buf1 = [0u8; 64];
+        let _ = log_read(&mut buf1);
+        assert_eq!(str::from_utf8(&buf1).unwrap(), expected);
+    }
+
+    fn task1(start_parameter: usize) {
+        assert_eq!(start_parameter, 1);
+        log::info!("in task1");
+    }
+
+    fn task2(start_parameter: usize) {
+        assert_eq!(start_parameter, 2);
+        log::info!("in task2");
+    }
+}
