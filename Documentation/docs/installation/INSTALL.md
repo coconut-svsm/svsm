@@ -162,16 +162,16 @@ build -p OvmfPkg/OvmfPkgX64.dsc -a X64 \
       -b DEBUG -t GCC \
       -D DEBUG_ON_SERIAL_PORT \
       -D DEBUG_VERBOSE \
-      -D TPM2_ENABLE \
-      --pcd PcdUninstallMemAttrProtocol=TRUE
+      -D TPM2_ENABLE
 ```
 
 This will build the OVMF binary that will be packaged into the IGVM file to use
 with QEMU.
 
-The switch `--pcd PcdUninstallMemAttrProtocol=TRUE` is required for booting
-guest images of distros that still ship shim/GRUB without proper support
-for the `EFI_MEMORY_ATTRIBUTE_PROTOCOL`.
+Older linux distributions ship versions of grub.efi or shim.efi which
+are not compatible with the `EFI_MEMORY_ATTRIBUTE_PROTOCOL` supported
+by recent edk2 versions.  Distributions released in the second half of
+2025 or later should work fine.
 
 You can copy the firmware file to a known location after the build is complete:
 
