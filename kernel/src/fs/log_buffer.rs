@@ -30,12 +30,6 @@ pub fn log_read(buf: &mut [u8]) -> Result<usize, SvsmError> {
     handle.read(buf).map_err(|_| SvsmError::LogError)
 }
 
-#[cfg(all(test, test_in_svsm))]
-pub fn log_reset() -> Result<usize, SvsmError> {
-    let handle = open_write("Log/logfile").map_err(|_| SvsmError::LogError)?;
-    handle.truncate(0).map_err(|_| SvsmError::LogError)
-}
-
 #[derive(Debug)]
 struct LogFile {
     lb: SpinLock<LineBuffer>,
@@ -90,6 +84,11 @@ pub fn stdout_open(taskname: String) -> (Arc<dyn Obj>, Arc<dyn Obj>) {
 mod tests {
     use super::*;
     use crate::task::{KernelThreadStartInfo, start_kernel_task};
+
+    fn log_reset() -> Result<usize, SvsmError> {
+        let handle = open_write("Log/logfile").map_err(|_| SvsmError::LogError)?;
+        handle.truncate(0).map_err(|_| SvsmError::LogError)
+    }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
