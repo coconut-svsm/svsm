@@ -12,7 +12,7 @@ Patch Format
 
 Each patch must start with a subject line that contains the component
 the patch changes and a short description of the change, separated by a
-colon. The text after the colon needs to start with a capital letter.
+colon.
 For example:
 
 ```
