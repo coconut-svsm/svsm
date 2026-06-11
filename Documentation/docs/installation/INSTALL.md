@@ -149,8 +149,25 @@ sudo zypper si -d qemu-ovmf-x86_64
 ```
 
 Then go back to the EDK2 source directory and follow the steps below to
-build the firmware. `-D TPM2_ENABLE` is required only if you want to use
-the SVSM vTPM.
+build the firmware.
+
+Edk2 build options:
+
+ * `-D TPM2_ENABLE` enables TPM support and is required if you want
+   use the SVSM vTPM.
+
+ * `-D QEMU_PV_VARS` enables support for externally managed UEFI
+   variables, which can be done by either qemu or SVSM (feature
+   `uefivars`).  Requires edk2 containing commit 4bfc280b5797, will be
+   in edk2-stable202608 & newer.  Note that SVSM does not yet support
+   persistent UEFI variables and will start with an empty variable store
+   on each boot.
+
+ * `-D SECURE_BOOT` enables support for secure boot.  Should be used
+   with `-D QEMU_PV_VARS` to make sure the guest can't do unauthorized
+   changes to the secure boot configuration.  The 'secureboot' SVSM
+   feature will enroll the standard microsoft certificates to the UEFI
+   variable store at boot.
 
 ```shell
 export PYTHON3_ENABLE=TRUE
