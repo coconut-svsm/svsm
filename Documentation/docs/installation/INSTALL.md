@@ -128,16 +128,15 @@ SVSM embedded in an IGVM file.
 Building the guest firmware
 ---------------------------
 
-A special OVMF build is required to launch a guest on top of the
-COCONUT-SVSM. The changes also build on the EDK2 patches from AMD for
-linux-svsm. But these changes were re-based and enhanced to support the
-COCONUT-SVSM code base. To build the OVMF binary for the guest, checkout
-this repository:
+To build the OVMF binary for the guest, clone the upstream tianocore
+repository.  Checkout the most recent stable tag if you prefer
+building a release instead of the latest master branch.  edk2 release
+tags use `edk2-stable${year}${month}` as naming scheme.
 
 ```shell
-git clone https://github.com/coconut-svsm/edk2.git
+git clone https://github.com/tianocore/edk2.git
 cd edk2/
-git checkout svsm
+git checkout edk2-stable202605  # optional
 git submodule init
 git submodule update
 ```
