@@ -129,12 +129,33 @@ unsafe fn make_page_range_shared(vaddr: VirtAddr, len: usize) -> Result<(), Svsm
     Ok(())
 }
 
+/// A trait to abstract away retrieving the size of some type
+/// from a pointer to it.
+///
+/// This is needed because `size_of::<T>()` does not work for
+/// unsized types, and `core::mem::size_of_val_raw` is not stable.
+pub trait SharedSize {
+    fn size(ptr: NonNull<Self>) -> usize;
+}
+
+impl<T> SharedSize for T {
+    fn size(_: NonNull<Self>) -> usize {
+        size_of::<T>()
+    }
+}
+
+impl<T> SharedSize for [T] {
+    fn size(ptr: NonNull<Self>) -> usize {
+        size_of::<T>() * ptr.len()
+    }
+}
+
 /// SharedBox is a safe wrapper around memory pages shared with the host.
-pub struct SharedBox<T> {
+pub struct SharedBox<T: ?Sized + SharedSize> {
     ptr: NonNull<T>,
 }
 
-impl<T: FromZeros> SharedBox<T> {
+impl<T: SharedSize + FromZeros> SharedBox<T> {
     /// Allocate some memory and share it with the host.
     pub fn try_new_zeroed() -> Result<Self, SvsmError> {
         let page_box = PageBox::<T>::try_new_zeroed()?;
@@ -154,12 +175,14 @@ impl<T: FromZeros> SharedBox<T> {
     }
 }
 
-impl<T> SharedBox<T> {
+impl<T: ?Sized + SharedSize> SharedBox<T> {
     /// Returns the virtual address of the memory.
     pub fn addr(&self) -> VirtAddr {
-        VirtAddr::from(self.ptr.as_ptr())
+        VirtAddr::from(self.ptr.as_ptr().expose_provenance())
     }
+}
 
+impl<T: SharedSize> SharedBox<T> {
     /// Read the currently stored value into `out`.
     pub fn read_into(&self, out: &mut T)
     where
@@ -253,15 +276,15 @@ impl<T: FromBytes + Sync> AsRef<T> for SharedBox<T> {
 
 // SAFETY: SharedBox can be Send when T is Send because the Sharedbox
 // implementation does not implement any !Send behavior around type T.
-unsafe impl<T> Send for SharedBox<T> where T: Send {}
+unsafe impl<T: ?Sized + SharedSize> Send for SharedBox<T> where T: Send {}
 // SAFETY: SharedBox can be Sync when T is Sync because the implementation
 // does not have any !Sync behavior around T.
-unsafe impl<T> Sync for SharedBox<T> where T: Sync {}
+unsafe impl<T: ?Sized + SharedSize> Sync for SharedBox<T> where T: Sync {}
 
-impl<T> Drop for SharedBox<T> {
+impl<T: ?Sized + SharedSize> Drop for SharedBox<T> {
     fn drop(&mut self) {
         // Re-encrypt the pages.
-        let res = (0..size_of::<T>())
+        let res = (0..T::size(self.ptr))
             .step_by(PAGE_SIZE)
             // SAFETY: This makes the owned pages private again. Since this is
             // the drop() method, there are no users left.
@@ -271,7 +294,7 @@ impl<T> Drop for SharedBox<T> {
         if res.is_ok() {
             // SAFETY: The ptr was previously allocated via a PageBox and is
             // therefore valid.
-            drop(unsafe { PageBox::from_raw(self.ptr.cast::<MaybeUninit<T>>()) });
+            drop(unsafe { PageBox::from_raw(self.ptr) });
         } else {
             log::error!("failed to set pages to encrypted. Memory leak!");
         }
