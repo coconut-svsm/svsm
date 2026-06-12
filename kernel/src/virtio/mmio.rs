@@ -16,7 +16,7 @@ use crate::fw_cfg::FwCfg;
 use crate::mm::{GlobalRangeGuard, map_global_range_4k_shared, pagetable::PTEntryFlags};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::PAGE_SIZE;
-use crate::virtio::hal::{SvsmHal, virtio_init};
+use crate::virtio::hal::SvsmHal;
 
 #[derive(Debug)]
 pub struct MmioSlot {
@@ -52,8 +52,6 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
     if !boot_params.has_fw_cfg_port() {
         return MmioSlots::default();
     }
-
-    virtio_init();
 
     let cfg = FwCfg::new(SVSM_PLATFORM.get_io_port());
     let Ok(dev) = cfg.get_virtio_mmio_addresses() else {
