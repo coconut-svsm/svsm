@@ -104,6 +104,32 @@ pub unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
     Ok(())
 }
 
+/// Makes a virtual range shared by revoking its validation, updating the
+/// page state, and modifying the page tables accordingly.
+///
+/// # Safety
+///
+/// `vaddr` must be page-aligned. See safety considerations for
+/// [`make_page_private()`].
+unsafe fn make_page_range_shared(vaddr: VirtAddr, len: usize) -> Result<(), SvsmError> {
+    for offset in (0..len).step_by(PAGE_SIZE) {
+        // SAFETY: delegated to the caller. We make sure to restore state
+        // before returning.
+        let r1 = unsafe { make_page_shared(vaddr + offset) };
+        if let Err(e1) = r1 {
+            for off in (0..offset).step_by(PAGE_SIZE) {
+                // SAFETY: we previously marked this page as shared in this same function
+                let r2 = unsafe { make_page_private(vaddr + off) };
+                if let Err(e2) = r2 {
+                    panic!("Failed to restore page visibility ({e2:?}) after allocation failure");
+                }
+            }
+            return Err(e1);
+        }
+    }
+    Ok(())
+}
+
 /// SharedBox is a safe wrapper around memory pages shared with the host.
 pub struct SharedBox<T> {
     ptr: NonNull<T>,
@@ -115,30 +141,17 @@ impl<T: FromZeros> SharedBox<T> {
         let page_box = PageBox::<MaybeUninit<T>>::try_new_zeroed()?;
         let vaddr = page_box.vaddr();
 
+        // SAFETY: The memory marked shared was just allocated, so there is
+        // no type and no other user associated with it. The memory is also
+        // marked private again when the SharedBox is dropped.
+        // `make_page_range_shared()` only returns with an error after
+        // restoring the pages back into a private state, so it is safe for
+        // the `PageBox` to be dropped.
+        unsafe { make_page_range_shared(vaddr, size_of::<T>()) }?;
+
+        // Now leak the memory so that we may take ownership. Casting into
+        // `T` is safe because it implements `FromZeros`.
         let ptr = NonNull::from(PageBox::leak(page_box)).cast::<T>();
-
-        for offset in (0..core::mem::size_of::<T>()).step_by(PAGE_SIZE) {
-            // SAFETY: The memory marked shared was just allocated, so there is
-            // no type and no other user associated with it. The memory is also
-            // marked private again in the error path or when the SharedBox is
-            // dropped.
-            let r1 = unsafe { make_page_shared(vaddr + offset) };
-            if let Err(e1) = r1 {
-                for off in (0..offset).step_by(PAGE_SIZE) {
-                    // SAFETY: we previously marked this page as shared in this same function.
-                    let r2 = unsafe { make_page_private(vaddr + off) };
-                    if let Err(e2) = r2 {
-                        panic!(
-                            "Failed to restore page visibility ({e2:?}) after allocation failure"
-                        );
-                    }
-                }
-                // SAFETY: we previously allocated these pages in this same function
-                let _ = unsafe { PageBox::from_raw(ptr) };
-                return Err(e1);
-            }
-        }
-
         Ok(Self { ptr })
     }
 }
