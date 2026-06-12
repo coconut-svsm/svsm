@@ -309,11 +309,11 @@ impl SpecVAddrImpl for VirtAddr {
         }
     }
 
-    #[verus_verify(spinoff_prover)]
+    #[verifier(spinoff_prover)]
     proof fn lemma_unique(v1: &Self, v2: &Self) {
     }
 
-    #[verus_verify(spinoff_prover)]
+    #[verifier(spinoff_prover)]
     proof fn lemma_vaddr_region_len(&self, size: nat)
         ensures
             self.is_canonical() ==> self.region_to_dom(size).len() > 0,
@@ -329,14 +329,14 @@ impl SpecVAddrImpl for VirtAddr {
         vstd::set_lib::lemma_len_subset(self.region_to_dom(1), self.region_to_dom(size));
     }
 
-    #[verus_verify(spinoff_prover)]
+    #[verifier(spinoff_prover)]
     proof fn lemma_valid_small_size(&self, size1: nat, size2: nat) {
         reveal(<VirtAddr as SpecVAddrImpl>::region_to_dom);
     }
 }
 
 impl VirtAddr {
-    #[verus_verify(spinoff_prover)]
+    #[verifier(spinoff_prover)]
     pub proof fn lemma_region_to_dom_merge(self, size1: nat, vaddr2: VirtAddr, size2: nat)
         requires
             self.is_canonical() && vaddr2.is_canonical(),

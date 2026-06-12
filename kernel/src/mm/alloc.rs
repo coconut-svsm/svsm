@@ -538,12 +538,12 @@ struct HeapMemoryRegion {
 #[verus_verify]
 impl HeapMemoryRegion {
     /// Creates a new [`HeapMemoryRegion`] with default values.
+    #[verus_verify(external_body)]
     #[verus_spec(ret =>
         ensures
             ret.wf_next_pages(),
             ret.page_count == 0,
     )]
-    #[verus_verify(external_body)]
     const fn new() -> Self {
         Self {
             start_phys: PhysAddr::null(),
@@ -650,11 +650,11 @@ impl HeapMemoryRegion {
     /// # Panics
     ///
     /// Panics if the page frame number is invalid.
+    #[verus_verify(spinoff_prover)]
     #[verus_spec(
         ensures pfn < self.page_count
         no_unwind when pfn < self.page_count
     )]
-    #[verus_verify(spinoff_prover)]
     fn check_pfn(&self, pfn: usize) {
         if pfn >= self.page_count {
             panic!("Invalid Page Number {}", pfn);
@@ -687,6 +687,7 @@ impl HeapMemoryRegion {
     }
 
     /// Reads page information for a given page frame number.
+    #[verus_verify(spinoff_prover)]
     #[verus_spec(ret =>
         requires
             self.req_read_any_info(),
@@ -694,7 +695,6 @@ impl HeapMemoryRegion {
         ensures
             self.ens_read_page_info(pfn, ret),
     )]
-    #[verus_verify(spinoff_prover)]
     fn read_page_info(&self, pfn: usize) -> PageInfo {
         self.check_pfn(pfn);
 
@@ -761,6 +761,7 @@ impl HeapMemoryRegion {
     }
 
     /// Gets the next available page frame number for a given order.
+    #[verus_verify(spinoff_prover)]
     #[verus_spec(ret =>
         with Tracked(perm): Tracked<&mut PgUnitPerm<DeallocUnit>>
         requires
@@ -769,7 +770,6 @@ impl HeapMemoryRegion {
         ensures
             old(self).ens_get_next_page(&*final(self), order, ret, *final(perm)),
     )]
-    #[verus_verify(spinoff_prover)]
     fn get_next_page(&mut self, order: usize) -> Result<usize, AllocError> {
         let pfn = self.next_page[order];
 
@@ -804,6 +804,7 @@ impl HeapMemoryRegion {
     }
 
     /// Marks a compound page and updates page information for neighboring pages.
+    #[verus_verify(spinoff_prover)]
     #[verus_spec(
         with Tracked(perms): Tracked<&mut Map<usize, PInfoPerm>>
         requires
@@ -811,7 +812,6 @@ impl HeapMemoryRegion {
         ensures
             old(self).ens_mark_compound_page(*final(self), pfn, order, *old(perms), *final(perms)),
     )]
-    #[verus_verify(spinoff_prover)]
     fn mark_compound_page(&mut self, pfn: usize, order: usize) {
         let nr_pages: usize = 1 << order;
         let compound = PageInfo::Compound(CompoundInfo { order });
@@ -862,6 +862,7 @@ impl HeapMemoryRegion {
     }
 
     /// Splits a page into two pages of the next lower order.
+    #[verus_verify(spinoff_prover, rlimit(3))]
     #[verus_spec(ret =>
         with Tracked(perm): Tracked<PgUnitPerm<DeallocUnit>>
         requires
@@ -870,7 +871,6 @@ impl HeapMemoryRegion {
             old(self).ens_split_page_ok(&*final(self), pfn, order),
             ret.is_ok(),
     )]
-    #[verus_verify(spinoff_prover, rlimit(3))]
     fn split_page(&mut self, pfn: usize, order: usize) -> Result<(), AllocError> {
         if !(1..MAX_ORDER).contains(&order) {
             proof! {assert(false);} // unreachable
@@ -1099,13 +1099,13 @@ impl HeapMemoryRegion {
     }
 
     /// Finds the neighboring page frame number for a compound page.
+    #[verus_verify(spinoff_prover)]
     #[verus_spec(ret =>
         requires
             self.valid_pfn_order(pfn, order),
         ensures
             self.ens_compound_neighbor(pfn, order, ret),
     )]
-    #[verus_verify(spinoff_prover)]
     fn compound_neighbor(&self, pfn: usize, order: usize) -> Result<usize, AllocError> {
         proof! {
             // replace assert_eq! with a proof.
@@ -1127,6 +1127,7 @@ impl HeapMemoryRegion {
     }
 
     /// Merges two pages of the same order into a new compound page.
+    #[verus_verify(spinoff_prover, rlimit(2))]
     #[verus_spec(ret =>
         with Tracked(perm): Tracked<&mut PgUnitPerm<DeallocUnit>>, Tracked(p2): Tracked<PgUnitPerm<DeallocUnit>>
         requires
@@ -1134,7 +1135,6 @@ impl HeapMemoryRegion {
         ensures
             old(self).ens_merge_pages(&*final(self), pfn1, pfn2, order, ret, *final(perm)),
     )]
-    #[verus_verify(spinoff_prover, rlimit(2))]
     fn merge_pages(&mut self, pfn1: usize, pfn2: usize, order: usize) -> Result<usize, AllocError> {
         if order >= MAX_ORDER - 1 {
             return Err(AllocError::InvalidPageOrder(order));
@@ -1201,6 +1201,7 @@ impl HeapMemoryRegion {
     /// # Panics
     ///
     /// Panics if `order` is greater than [`MAX_ORDER`].
+    #[verus_verify(spinoff_prover, rlimit(2))]
     #[verus_spec(ret =>
         with Tracked(perm): Tracked<&mut PgUnitPerm<DeallocUnit>>
         requires
@@ -1209,7 +1210,6 @@ impl HeapMemoryRegion {
             ret.is_ok() ==> old(self).ens_allocate_pfn(&*final(self), pfn, order, *final(perm)),
             !ret.is_ok() ==> *old(self) === *final(self),
     )]
-    #[verus_verify(spinoff_prover, rlimit(2))]
     fn allocate_pfn(&mut self, pfn: usize, order: usize) -> Result<(), AllocError> {
         proof_decl! {
             let ghost mut idx_ = self@.free.next_lists()[order as int].len() - 1;
@@ -1307,6 +1307,7 @@ impl HeapMemoryRegion {
     /// # Panics
     ///
     /// Panics if `order` is greater than [`MAX_ORDER`].
+    #[verus_verify(spinoff_prover, rlimit(2))]
     #[verus_spec(
         with Tracked(perm): Tracked<PgUnitPerm<DeallocUnit>>
         requires
@@ -1314,7 +1315,6 @@ impl HeapMemoryRegion {
         ensures
             old(self).ens_free_page_raw(&*final(self), pfn, order),
     )]
-    #[verus_verify(spinoff_prover, rlimit(2))]
     fn free_page_raw(&mut self, pfn: usize, order: usize) {
         let old_next = self.next_page[order];
         proof_decl! {
@@ -1340,6 +1340,7 @@ impl HeapMemoryRegion {
     /// Attempts to merge a given page with its neighboring page.
     /// If successful, returns the new page frame number after merging.
     /// If unsuccessful, the page remains unmerged, and an error is returned.
+    #[verus_verify(spinoff_prover, rlimit(2))]
     #[verus_spec(ret =>
         with Tracked(perm): Tracked<&mut PgUnitPerm<DeallocUnit>>
         requires
@@ -1347,7 +1348,6 @@ impl HeapMemoryRegion {
         ensures
             old(self).ens_try_to_merge_page(&*final(self), pfn, order, ret,  *old(perm), *final(perm)),
     )]
-    #[verus_verify(spinoff_prover, rlimit(2))]
     fn try_to_merge_page(&mut self, pfn: usize, order: usize) -> Result<usize, AllocError> {
         let neighbor_pfn = self.compound_neighbor(pfn, order)?;
         let neighbor_page = self.read_page_info(neighbor_pfn);
@@ -1376,6 +1376,7 @@ impl HeapMemoryRegion {
     /// Frees a page of a specific order. If merging is successful, it
     /// continues merging until merging is no longer possible. If merging
     /// fails, the page is marked as a free page.
+    #[verus_verify(external_body)]
     #[verus_spec(
         with Tracked(perm): Tracked<PgUnitPerm<DeallocUnit>>
         requires
@@ -1385,7 +1386,6 @@ impl HeapMemoryRegion {
         decreases
             MAX_ORDER - order,
     )]
-    #[verus_verify(external_body)]
     fn free_page_order(&mut self, mut pfn: usize, mut order: usize) {
         proof_decl! {
             let tracked mut perm = perm;
