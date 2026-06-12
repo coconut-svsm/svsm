@@ -4,7 +4,6 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
-use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::ptr::NonNull;
 
@@ -138,7 +137,7 @@ pub struct SharedBox<T> {
 impl<T: FromZeros> SharedBox<T> {
     /// Allocate some memory and share it with the host.
     pub fn try_new_zeroed() -> Result<Self, SvsmError> {
-        let page_box = PageBox::<MaybeUninit<T>>::try_new_zeroed()?;
+        let page_box = PageBox::<T>::try_new_zeroed()?;
         let vaddr = page_box.vaddr();
 
         // SAFETY: The memory marked shared was just allocated, so there is
@@ -149,9 +148,8 @@ impl<T: FromZeros> SharedBox<T> {
         // the `PageBox` to be dropped.
         unsafe { make_page_range_shared(vaddr, size_of::<T>()) }?;
 
-        // Now leak the memory so that we may take ownership. Casting into
-        // `T` is safe because it implements `FromZeros`.
-        let ptr = NonNull::from(PageBox::leak(page_box)).cast::<T>();
+        // Now leak the memory so that we may take ownership.
+        let ptr = NonNull::from(PageBox::leak(page_box));
         Ok(Self { ptr })
     }
 }
