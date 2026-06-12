@@ -128,16 +128,15 @@ SVSM embedded in an IGVM file.
 Building the guest firmware
 ---------------------------
 
-A special OVMF build is required to launch a guest on top of the
-COCONUT-SVSM. The changes also build on the EDK2 patches from AMD for
-linux-svsm. But these changes were re-based and enhanced to support the
-COCONUT-SVSM code base. To build the OVMF binary for the guest, checkout
-this repository:
+To build the OVMF binary for the guest, clone the upstream tianocore
+repository.  Checkout the most recent stable tag if you prefer
+building a release instead of the latest master branch.  edk2 release
+tags use `edk2-stable${year}${month}` as naming scheme.
 
 ```shell
-git clone https://github.com/coconut-svsm/edk2.git
+git clone https://github.com/tianocore/edk2.git
 cd edk2/
-git checkout svsm
+git checkout edk2-stable202605  # optional
 git submodule init
 git submodule update
 ```
@@ -150,8 +149,25 @@ sudo zypper si -d qemu-ovmf-x86_64
 ```
 
 Then go back to the EDK2 source directory and follow the steps below to
-build the firmware. `-D TPM2_ENABLE` is required only if you want to use
-the SVSM vTPM.
+build the firmware.
+
+Edk2 build options:
+
+ * `-D TPM2_ENABLE` enables TPM support and is required if you want
+   use the SVSM vTPM.
+
+ * `-D QEMU_PV_VARS` enables support for externally managed UEFI
+   variables, which can be done by either qemu or SVSM (feature
+   `uefivars`).  Requires edk2 containing commit 4bfc280b5797, will be
+   in edk2-stable202608 & newer.  Note that SVSM does not yet support
+   persistent UEFI variables and will start with an empty variable store
+   on each boot.
+
+ * `-D SECURE_BOOT` enables support for secure boot.  Should be used
+   with `-D QEMU_PV_VARS` to make sure the guest can't do unauthorized
+   changes to the secure boot configuration.  The 'secureboot' SVSM
+   feature will enroll the standard microsoft certificates to the UEFI
+   variable store at boot.
 
 ```shell
 export PYTHON3_ENABLE=TRUE
@@ -162,16 +178,16 @@ build -p OvmfPkg/OvmfPkgX64.dsc -a X64 \
       -b DEBUG -t GCC \
       -D DEBUG_ON_SERIAL_PORT \
       -D DEBUG_VERBOSE \
-      -D TPM2_ENABLE \
-      --pcd PcdUninstallMemAttrProtocol=TRUE
+      -D TPM2_ENABLE
 ```
 
 This will build the OVMF binary that will be packaged into the IGVM file to use
 with QEMU.
 
-The switch `--pcd PcdUninstallMemAttrProtocol=TRUE` is required for booting
-guest images of distros that still ship shim/GRUB without proper support
-for the `EFI_MEMORY_ATTRIBUTE_PROTOCOL`.
+Older linux distributions ship versions of grub.efi or shim.efi which
+are not compatible with the `EFI_MEMORY_ATTRIBUTE_PROTOCOL` supported
+by recent edk2 versions.  Distributions released in the second half of
+2025 or later should work fine.
 
 You can copy the firmware file to a known location after the build is complete:
 
