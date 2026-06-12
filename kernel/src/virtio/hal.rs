@@ -7,7 +7,7 @@
 extern crate alloc;
 use crate::{locking::SpinLock, platform::SVSM_PLATFORM};
 use alloc::vec::Vec;
-use core::{cell::OnceCell, mem::MaybeUninit, ptr::NonNull};
+use core::{mem::MaybeUninit, ptr::NonNull};
 use zerocopy::IntoBytes;
 
 use crate::{
@@ -20,7 +20,7 @@ struct PageStore {
 }
 
 impl PageStore {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         PageStore { pages: Vec::new() }
     }
 
@@ -37,11 +37,7 @@ impl PageStore {
     }
 }
 
-static SHARED_MEM: SpinLock<OnceCell<PageStore>> = SpinLock::new(OnceCell::new());
-
-pub fn virtio_init() {
-    SHARED_MEM.lock().get_or_init(PageStore::new);
-}
+static SHARED_MEM: SpinLock<PageStore> = SpinLock::new(PageStore::new());
 
 #[derive(Debug)]
 pub struct SvsmHal;
@@ -70,7 +66,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
         let pa = virt_to_phys(shared_page.addr());
         let p = NonNull::<u8>::new(shared_page.addr().as_mut_ptr()).unwrap();
 
-        SHARED_MEM.lock().get_mut().unwrap().push(pa, shared_page);
+        SHARED_MEM.lock().push(pa, shared_page);
 
         (pa.into(), p)
     }
@@ -93,12 +89,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
         //TODO: allow more than one page
         assert!(pages == 1);
 
-        SHARED_MEM
-            .lock()
-            .get_mut()
-            .unwrap()
-            .pop(paddr.into())
-            .unwrap();
+        SHARED_MEM.lock().pop(paddr.into()).unwrap();
 
         0
     }
@@ -140,7 +131,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
         }
 
         let pa = virt_to_phys(shared_page.addr());
-        SHARED_MEM.lock().get_mut().unwrap().push(pa, shared_page);
+        SHARED_MEM.lock().push(pa, shared_page);
 
         // return pa of shared page
         pa.into()
@@ -164,7 +155,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     ) {
         assert!(buffer.len() <= PAGE_SIZE);
 
-        match SHARED_MEM.lock().get_mut().unwrap().pop(paddr.into()) {
+        match SHARED_MEM.lock().pop(paddr.into()) {
             Some(shared_page) => {
                 let vaddr = phys_to_virt(paddr.into());
                 let va_from_shared = shared_page.addr();
