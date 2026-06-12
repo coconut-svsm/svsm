@@ -83,7 +83,7 @@ pub fn stdout_open(taskname: String) -> (Arc<dyn Obj>, Arc<dyn Obj>) {
 #[cfg(all(test, test_in_svsm))]
 mod tests {
     use super::*;
-    use crate::task::{KernelThreadStartInfo, start_kernel_task};
+    use crate::task::{KernelThreadStartInfo, start_kernel_task, wait_for_termination};
 
     fn log_reset() -> Result<usize, SvsmError> {
         let handle = open_write("Log/logfile").map_err(|_| SvsmError::LogError)?;
@@ -108,10 +108,12 @@ mod tests {
     fn test_log_buffer_multiple_tasks() {
         let _ = log_reset();
         log::info!("in test task");
-        start_kernel_task(KernelThreadStartInfo::new(task1, 1), String::from("task1"))
+        let task1 = start_kernel_task(KernelThreadStartInfo::new(task1, 1), String::from("task1"))
             .expect("Failed to launch request processing task");
-        start_kernel_task(KernelThreadStartInfo::new(task2, 2), String::from("task2"))
+        wait_for_termination(task1);
+        let task2 = start_kernel_task(KernelThreadStartInfo::new(task2, 2), String::from("task2"))
             .expect("Failed to launch request processing task");
+        wait_for_termination(task2);
         let expected = "[SVSM test task] in test task\n[task1] in task1\n[task2] in task2\n";
         let mut buf1 = [0u8; 64];
         let _ = log_read(&mut buf1);
