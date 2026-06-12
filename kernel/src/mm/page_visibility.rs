@@ -4,6 +4,7 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
+use core::num::NonZeroUsize;
 use core::ops::Deref;
 use core::ptr::NonNull;
 
@@ -15,7 +16,7 @@ use crate::error::SvsmError;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
 };
-use crate::mm::{PageBox, virt_to_phys};
+use crate::mm::{PageBox, alloc::AllocError, virt_to_phys};
 use crate::platform::{PageStateChangeOp, PageValidateOp, SVSM_PLATFORM};
 use crate::types::{PAGE_SIZE, PageSize};
 use crate::utils::MemoryRegion;
@@ -172,6 +173,47 @@ impl<T: SharedSize + FromZeros> SharedBox<T> {
         // Now leak the memory so that we may take ownership.
         let ptr = NonNull::from(PageBox::leak(page_box));
         Ok(Self { ptr })
+    }
+}
+
+impl<T: Clone> SharedBox<[T]> {
+    /// Allocates a dynamically-sized slice of `len` items of type `T`, populates
+    /// it with the given value, and shares it with the host. The slice cannot be
+    // resized.
+    pub fn try_new_slice(val: T, len: NonZeroUsize) -> Result<Self, SvsmError> {
+        let page_box = PageBox::try_new_slice(val, len)?;
+        let vaddr = page_box.vaddr();
+
+        let size = len
+            .get()
+            .checked_mul(size_of::<T>())
+            .ok_or(AllocError::OutOfMemory)?;
+
+        // SAFETY: The memory marked shared was just allocated, so there is
+        // no type and no other user associated with it. The memory is also
+        // marked private again when the SharedBox is dropped.
+        // `make_page_range_shared()` only returns with an error after
+        // restoring the pages back into a private state, so it is safe for
+        // the `PageBox` to be dropped.
+        unsafe { make_page_range_shared(vaddr, size) }?;
+
+        // Now leak the memory so that we may take ownership.
+        let ptr = NonNull::from(PageBox::leak(page_box));
+        Ok(Self { ptr })
+    }
+}
+
+impl<T> SharedBox<[T]> {
+    /// Returns the number of items in the slice.
+    pub fn len(&self) -> usize {
+        self.ptr.len()
+    }
+
+    /// Returns `true` if the slice is empty
+    pub fn is_empty(&self) -> bool {
+        // clippy does not like us having a `len()` method without
+        // an `is_empty()` method.
+        self.len() != 0
     }
 }
 
