@@ -55,6 +55,8 @@ release.workspace = true
 sha2 = { workspace = true, features = ["force-soft"] }
 uuid.workspace = true
 virtio-drivers = { workspace = true, optional = true }
+virtfw-libefi = { workspace = true, optional = true }
+virtfw-varstore = { workspace = true, optional = true }
 
 verus_builtin = { workspace = true, optional = true }
 verus_builtin_macros = { workspace = true, optional = true }
@@ -80,6 +82,8 @@ noverify = []
 virtio-drivers = ["dep:virtio-drivers"]
 block = []
 vsock = []
+uefivars = ["dep:virtfw-varstore", "dep:virtfw-libefi"]
+secureboot = ["uefivars"]
 
 [dev-dependencies]
 sha2 = { workspace = true, features = ["force-soft"] }

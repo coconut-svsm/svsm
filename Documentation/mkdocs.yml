@@ -32,4 +32,6 @@ nav:
     - Formal Verification: 'developer/VERIFICATION.md'
     - Attestation: 'developer/ATTESTATION.md'
     - GitHub Workflows: 'developer/GH_WORKFLOWS.md'
+  - SVSM Protocols:
+    - UEFI MM Protocol: 'protocols/uefivars.md'
   - 'COCONUT-SVSM Rustdoc': 'rustdoc/svsm'
