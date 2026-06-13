@@ -62,7 +62,7 @@ pub fn svsm_test_io() -> LockGuard<'static, Option<SerialPort<'static>>> {
     sp
 }
 
-pub fn svsm_test_runner(test_cases: &[&test::TestDescAndFn]) {
+pub fn svsm_kernel_test_runner(test_cases: &[&test::TestDescAndFn]) {
     info!("running {} tests", test_cases.len());
     for mut test_case in test_cases.iter().copied().copied() {
         if test_case.desc.should_panic == ShouldPanic::Yes {

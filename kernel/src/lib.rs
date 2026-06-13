@@ -9,8 +9,8 @@
     all(test, test_in_svsm),
     no_main,
     feature(custom_test_frameworks),
-    test_runner(crate::testing::svsm_test_runner),
-    reexport_test_harness_main = "test_main"
+    test_runner(crate::testing::svsm_kernel_test_runner),
+    reexport_test_harness_main = "kernel_tests_in_svsm"
 )]
 #![cfg_attr(verus_keep_ghost, feature(proc_macro_hygiene))]
 
