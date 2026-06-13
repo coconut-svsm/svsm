@@ -86,9 +86,7 @@ pub fn svsm_kernel_test_runner(test_cases: &[&test::TestDescAndFn]) {
         (test_case.testfn.0)();
     }
 
-    info!("All tests passed!");
-
-    exit(QEMUExitValue::Success);
+    info!("Kernel tests in svsm passed!");
 }
 
 /// Exits the in-SVSM test session with the given exit value.
