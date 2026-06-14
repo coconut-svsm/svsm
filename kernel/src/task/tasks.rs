@@ -1072,7 +1072,7 @@ fn task_exit() {
 #[cfg(all(test, test_in_svsm))]
 mod tests {
     extern crate alloc;
-    use crate::task::{KernelThreadStartInfo, start_kernel_task};
+    use crate::task::{KernelThreadStartInfo, start_kernel_task, wait_for_termination};
     use alloc::string::String;
     use core::arch::asm;
     use core::arch::global_asm;
@@ -1164,8 +1164,10 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_fpu_context_switch() {
-        start_kernel_task(KernelThreadStartInfo::new(task1, 1), String::from("task1"))
+        let task1 = start_kernel_task(KernelThreadStartInfo::new(task1, 1), String::from("task1"))
             .expect("Failed to launch request processing task");
+
+        wait_for_termination(task1);
     }
 
     fn task1(start_parameter: usize) {
@@ -1176,8 +1178,10 @@ mod tests {
             asm!("call test_fpu", options(att_syntax));
         }
 
-        start_kernel_task(KernelThreadStartInfo::new(task2, 2), String::from("task2"))
+        let task2 = start_kernel_task(KernelThreadStartInfo::new(task2, 2), String::from("task2"))
             .expect("Failed to launch request processing task");
+
+        wait_for_termination(task2);
 
         unsafe {
             asm!("call check_fpu", out("rax") ret, options(att_syntax));
