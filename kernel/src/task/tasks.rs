@@ -1094,14 +1094,14 @@ mod tests {
     test_fpu:
         movq $0x3ff, %rax
         shl $52, %rax
-        // rax contains 1 in Double Precison FP representation
-        movd %rax, %xmm1
+        // rax contains 1.0 in Double Precision FP representation
+        movq %rax, %xmm1
         movapd %xmm1, %xmm3
 
         movq $0x400, %rax
         shl $52, %rax
-        // rax contains 2 in Double Precison FP representation
-        movd %rax, %xmm2
+        // rax contains 2.0 in Double Precision FP representation
+        movq %rax, %xmm2
 
         divsd %xmm2, %xmm3
         movq $0, %rax
@@ -1117,16 +1117,16 @@ mod tests {
         movq $1, %rax
         movq $0x3ff, %rbx
         shl $52, %rbx
-        // rbx contains 1 in Double Precison FP representation
-        movd %rbx, %xmm4
+        // rbx contains 1.0 in Double Precision FP representation
+        movq %rbx, %xmm4
         movapd %xmm4, %xmm6
         comisd %xmm4, %xmm1
         jnz 1f
 
         movq $0x400, %rbx
         shl $52, %rbx
-        // rbx contains 2 in Double Precison FP representation
-        movd %rbx, %xmm5
+        // rbx contains 2.0 in Double Precision FP representation
+        movq %rbx, %xmm5
         comisd %xmm5, %xmm2
         jnz 1f
 
@@ -1146,14 +1146,14 @@ mod tests {
     alter_fpu:
         movq $0x400, %rax
         shl $52, %rax
-        // rax contains 2 in Double Precison FP representation
-        movd %rax, %xmm1
+        // rax contains 2.0 in Double Precision FP representation
+        movq %rax, %xmm1
         movapd %xmm1, %xmm3
 
         movq $0x3ff, %rax
         shl $52, %rax
-        // rax contains 1 in Double Precison FP representation
-        movd %rax, %xmm2
+        // rax contains 1.0 in Double Precision FP representation
+        movq %rax, %xmm2
         divsd %xmm3, %xmm2
         movq $0, %rax
         ret
