@@ -73,6 +73,8 @@ generate and open the documentation, simply execute the following command:
 $ make doc
 ```
 
+Additionally, [`AGENTS.md`](AGENTS.md) contains context for AI tool consumption.
+
 Acknowledgments
 ---------------
 
