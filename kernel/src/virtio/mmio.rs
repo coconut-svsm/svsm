@@ -21,8 +21,18 @@ use crate::virtio::hal::{SvsmHal, virtio_init};
 
 #[derive(Debug)]
 pub struct MmioSlot {
-    pub mmio_range: GlobalRangeGuard,
     pub transport: MmioTransport<SvsmHal>,
+    // Fields are ordered so that `mmio_range` is dropped last.
+    // The MmioTransport destructor resets the device via MMIO writes, and
+    // dropping `mmio_range` destroys the mapping, so `mmio_range` must be
+    // dropped last.
+    // This drop-order behavior is stable.
+    // See https://doc.rust-lang.org/reference/destructors.html
+    //
+    // TODO: The destruction order should be expressed via code rather than
+    // relying on field ordering. This should be addressed when moving to
+    // the upstream virtio-drivers crate.
+    pub mmio_range: GlobalRangeGuard,
 }
 
 #[derive(Debug, Default)]
@@ -101,8 +111,8 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
         log::info!("MmioSlots: Found {:?} at {addr:x}", transport.device_type());
 
         let slot_type = MmioSlot {
-            mmio_range: mem,
             transport,
+            mmio_range: mem,
         };
 
         slots.push(slot_type);
