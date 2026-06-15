@@ -130,20 +130,19 @@ QEMU_BUILD=${QEMU_VERSION##*.}
 QEMU_MINOR=${QEMU_VERSION##"$QEMU_MAJOR".}
 QEMU_MINOR=${QEMU_MINOR%%."$QEMU_BUILD"}
 
-if (( QEMU_MAJOR < 10 || (QEMU_MAJOR == 10 && QEMU_MINOR < 1) )); then
-  echo "Error: SVSM requires QEMU 10.1 or newer (with patches)." >&2
+if (( QEMU_MAJOR < 11 )); then
+  echo "Error: SVSM requires QEMU 11.0 or newer (with patches)." >&2
   exit 1
 fi
+
+# Check for support for device-plane property
+QEMU_PLANES=$($QEMU -h | grep -o "device-plane=" || true)
 
 case "$CGS" in
   nocc)
     SNP_GUEST=""
     CPU=max,smep=on
     MEMORY=memory-backend-ram,size=$MEMORY_SIZE,id=mem0,prealloc=false
-    if (( QEMU_MAJOR < 11 )); then
-      ACCEL=tcg
-      SNP_GUEST="-object nocc,id=cgs0"
-    fi
     ;;
   sev)
     SNP_GUEST="-object sev-snp-guest,id=cgs0,cbitpos=$C_BIT_POS,reduced-phys-bits=$REDUCED_PHYS_BITS"
@@ -155,6 +154,7 @@ case "$CGS" in
 esac
 MACHINE=q35,memory-backend=mem0,igvm-cfg=igvm0,accel=$ACCEL
 [ -n "$SNP_GUEST" ] && MACHINE+=",confidential-guest-support=cgs0"
+[ -n "$SNP_GUEST" ] && [ -n "$QEMU_PLANES" ] && MACHINE+=",kernel-irqchip=split,device-plane=2"
 [ -n "$VIRTIO_ENABLE" ] && MACHINE+=",${VIRTIO_ENABLE}"
 
 IGVM_OBJ="-object igvm-cfg,id=igvm0,file=$IGVM"
