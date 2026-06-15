@@ -210,6 +210,10 @@ pub struct X86TaskSwitchRegs {
     pub rcx: usize,
 
     // Callee-save registers come next.
+    pub r12: usize,
+    pub r13: usize,
+    pub r14: usize,
+    pub r15: usize,
     pub rbx: usize,
     pub rbp: usize,
 }
