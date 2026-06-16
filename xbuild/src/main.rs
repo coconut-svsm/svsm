@@ -18,6 +18,7 @@ use clap::Parser;
 use serde::Deserialize;
 use std::borrow::{Borrow, BorrowMut};
 use std::boxed::Box;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -153,6 +154,9 @@ struct ComponentConfig {
     /// Disallowed for non-test builds.
     #[serde(default)]
     toolchain: Option<String>,
+    /// Extra environment variables passed to the build command.
+    #[serde(default)]
+    env: HashMap<String, String>,
 }
 
 impl ComponentConfig {
@@ -234,6 +238,9 @@ impl ComponentConfig {
         }
         if args.verbose {
             cmd.arg("-vv");
+        }
+        for (k, v) in self.env.iter() {
+            cmd.env(k, v);
         }
         run_cmd_checked(cmd, args)?;
 
