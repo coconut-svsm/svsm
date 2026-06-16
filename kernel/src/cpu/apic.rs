@@ -593,6 +593,9 @@ impl LocalApic {
                 Ok(())
             }
             APIC_REGISTER_EOI => {
+                if value != 0 {
+                    return Err(SvsmError::Apic(Emulation));
+                }
                 self.perform_eoi();
                 Ok(())
             }
