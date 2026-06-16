@@ -149,13 +149,6 @@ bin/svsm-kernel.elf: bin
 	cargo build --package svsm --bin svsm ${CARGO_ARGS} ${SVSM_ARGS} --target=x86_64-unknown-none
 	objcopy -O elf64-x86-64 ${OBJCOPY_ELF_ARGS} ${SVSM_KERNEL_ELF} $@
 
-bin/test-kernel.elf: bin
-# RUSTDOC=true removes doctests, which is necessary as they do not work with
-# custom test runners. See https://github.com/coconut-svsm/svsm/issues/705.
-	RUSTDOC=true LINK_TEST=1 cargo +nightly test --package svsm ${CARGO_ARGS} ${SVSM_ARGS_TEST} \
-		--target=x86_64-unknown-none \
-		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../$@"]'
-
 ${FS_BIN}: bin
 ifneq ($(FS_FILE), none)
 	cp -f $(FS_FILE) ${FS_BIN}
@@ -178,4 +171,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test miri clean clippy bin/bldr.bin bin/svsm-kernel.elf bin/test-kernel.elf distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
+.PHONY: test miri clean clippy bin/bldr.bin bin/svsm-kernel.elf distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
