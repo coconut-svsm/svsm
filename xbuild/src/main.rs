@@ -149,6 +149,10 @@ struct ComponentConfig {
     #[serde(default)]
     objcopy: Objcopy,
     path: Option<PathBuf>,
+    /// Toolchain override passed to cargo as `+<toolchain>` (e.g. "nightly").
+    /// Disallowed for non-test builds.
+    #[serde(default)]
+    toolchain: Option<String>,
 }
 
 impl ComponentConfig {
@@ -201,6 +205,11 @@ impl ComponentConfig {
         let mut bin = PathBuf::from("target");
 
         let mut cmd = Command::new("cargo");
+        if let Some(tc) = self.toolchain.as_deref() {
+            return Err(
+                format!("non-default toolchain is only allowed for test builds ('{tc}'").into(),
+            );
+        }
         cmd.args([
             "build",
             if self.binary { "--bin" } else { "--package" },
