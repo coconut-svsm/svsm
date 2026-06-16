@@ -2,6 +2,7 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
+mod cargo;
 mod features;
 mod fs;
 mod fw;
@@ -22,7 +23,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 type BuildResult<T> = Result<T, Box<dyn Error>>;
 
@@ -107,6 +108,7 @@ enum BuildType {
     #[default]
     Cargo,
     Make,
+    Test,
 }
 
 /// Binutils target used in objcopy
@@ -171,6 +173,7 @@ impl ComponentConfig {
         match self.build_type {
             BuildType::Cargo => self.cargo_build(args, pkg, target, cmd_feats),
             BuildType::Make => self.makefile_build(args, pkg, cmd_feats),
+            BuildType::Test => self.cargo_test_build(args, pkg, target, cmd_feats),
         }
     }
 
@@ -246,6 +249,62 @@ impl ComponentConfig {
 
         bin.push(pkg);
         Ok(bin)
+    }
+
+    /// Build this component as a cargo test binary. Runs `cargo test --no-run`
+    /// with machine-readable output and returns the path to the test
+    /// executable cargo produced.
+    fn cargo_test_build(
+        &self,
+        args: &Args,
+        pkg: &str,
+        target: BuildTarget,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<PathBuf> {
+        let mut cmd = Command::new("cargo");
+        if let Some(tc) = self.toolchain.as_deref() {
+            cmd.arg(format!("+{tc}"));
+        }
+        cmd.args([
+            "test",
+            "--no-run",
+            "--message-format=json-render-diagnostics",
+            "--package",
+            pkg,
+        ]);
+        if let Some(triple) = target.as_str() {
+            cmd.args(["--target", triple]);
+        }
+        self.apply_features(&mut cmd, args, pkg, cmd_feats);
+        if let Some(manifest) = self.manifest.as_ref() {
+            cmd.args(["--manifest-path".as_ref(), manifest.as_os_str()]);
+        }
+        if args.release {
+            cmd.arg("--release");
+        }
+        if args.offline {
+            cmd.args(["--offline", "--locked"]);
+        }
+        if args.verbose {
+            cmd.arg("-vv");
+        }
+        for (k, v) in &self.env {
+            cmd.env(k, v);
+        }
+
+        if args.verbose {
+            println!("{cmd:?}");
+        }
+
+        // Capture stdout for JSON parsing and let stderr go through so
+        // it is visble to the user
+        let output = cmd.stderr(Stdio::inherit()).output()?;
+        if !output.status.success() {
+            return Err(format!("cargo test failed for {pkg}").into());
+        }
+
+        cargo::find_test_executable(&output.stdout, pkg)
+            .ok_or_else(|| format!("no test executable found for {pkg}").into())
     }
 
     /// Build this component as a Makefile binary.
