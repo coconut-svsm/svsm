@@ -26,6 +26,7 @@ ifdef RELEASE
 TARGET_PATH=release
 CARGO_ARGS += --release
 XBUILD_ARGS += --release
+XBUILD_ARGS_TEST += --release
 OBJCOPY_ELF_ARGS := --strip-unneeded
 else
 TARGET_PATH=debug
