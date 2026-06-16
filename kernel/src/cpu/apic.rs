@@ -153,8 +153,8 @@ impl LocalApic {
 
     fn get_ppr_with_tpr(&self, tpr: u8) -> u8 {
         // Determine the priority of the current in-service interrupt, if any.
-        let ppr = if self.isr_stack_index != 0 {
-            self.isr_stack[self.isr_stack_index]
+        let ppr = if let Some(idx) = self.isr_stack_index.checked_sub(1) {
+            self.isr_stack[idx]
         } else {
             0
         };
