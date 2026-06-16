@@ -57,6 +57,9 @@ pub enum ApicError {
     /// An error related to APIC emulation.
     Emulation,
 
+    /// An access was attempted on an invalid or unsupported register.
+    InvalidRegister,
+
     /// An error related to APIC registration.
     Registration,
 }

@@ -7,7 +7,7 @@
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::percpu::{PERCPU_AREAS, PerCpuShared, current_ghcb, this_cpu};
 use crate::cpu::x86::apic_post_irq;
-use crate::error::ApicError::Emulation;
+use crate::error::ApicError::{Emulation, InvalidRegister};
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
 use crate::platform::guest_cpu::GuestCpuState;
@@ -547,7 +547,9 @@ impl LocalApic {
             }
             APIC_REGISTER_TPR => Ok(cpu_state.get_tpr() as u64),
             APIC_REGISTER_PPR => Ok(self.get_ppr(cpu_state) as u64),
-            _ => Err(SvsmError::Apic(Emulation)),
+            // Write-only registers
+            APIC_REGISTER_EOI | APIC_REGISTER_SELF_IPI => Err(SvsmError::Apic(Emulation)),
+            _ => Err(SvsmError::Apic(InvalidRegister)),
         }
     }
 
@@ -613,7 +615,14 @@ impl LocalApic {
                 self.post_interrupt(vector, false);
                 Ok(())
             }
-            _ => Err(SvsmError::Apic(Emulation)),
+            // Read-only registers
+            APIC_REGISTER_APIC_ID
+            | APIC_REGISTER_PPR
+            | APIC_REGISTER_LDR
+            | APIC_REGISTER_ISR_0..=APIC_REGISTER_ISR_7
+            | APIC_REGISTER_TMR_0..=APIC_REGISTER_TMR_7
+            | APIC_REGISTER_IRR_0..=APIC_REGISTER_IRR_7 => Err(SvsmError::Apic(Emulation)),
+            _ => Err(SvsmError::Apic(InvalidRegister)),
         }
     }
 
