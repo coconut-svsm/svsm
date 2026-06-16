@@ -24,6 +24,7 @@ use cpuarch::x86apic::APIC_REGISTER_IRR_0;
 use cpuarch::x86apic::APIC_REGISTER_IRR_7;
 use cpuarch::x86apic::APIC_REGISTER_ISR_0;
 use cpuarch::x86apic::APIC_REGISTER_ISR_7;
+use cpuarch::x86apic::APIC_REGISTER_LDR;
 use cpuarch::x86apic::APIC_REGISTER_PPR;
 use cpuarch::x86apic::APIC_REGISTER_SELF_IPI;
 use cpuarch::x86apic::APIC_REGISTER_TMR_0;
@@ -529,6 +530,7 @@ impl LocalApic {
         match register {
             APIC_REGISTER_ICR => Ok(self.handle_icr_read()),
             APIC_REGISTER_APIC_ID => Ok(u64::from(cpu_shared.apic_id())),
+            APIC_REGISTER_LDR => Ok(self.handle_ldr_read()),
             APIC_REGISTER_IRR_0..=APIC_REGISTER_IRR_7 => {
                 let offset = register - APIC_REGISTER_IRR_0;
                 let index: usize = offset.try_into().unwrap();
@@ -551,6 +553,12 @@ impl LocalApic {
 
     fn handle_icr_read(&self) -> u64 {
         self.icr.into()
+    }
+
+    fn handle_ldr_read(&self) -> u64 {
+        let apic_id = this_cpu().get_apic_id();
+        let ldr = ((apic_id & !0xF) << 12) | (1 << (apic_id & 0xF));
+        ldr as u64
     }
 
     fn handle_icr_write(&mut self, value: u64) -> Result<(), SvsmError> {
