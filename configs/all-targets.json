@@ -44,8 +44,8 @@
             "objcopy": "binary"
         },
         "tdx-stage1": {
-            "type": "make",
-            "output_file": "bin/stage1-trampoline",
+            "manifest": "stage1/Cargo.toml",
+            "binary": true,
             "objcopy": "binary"
         }
     },

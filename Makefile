@@ -42,9 +42,6 @@ else ifeq ($(V), 2)
 CARGO_ARGS += -vv
 endif
 
-STAGE1_RUSTC_ARGS += -C panic=abort
-
-STAGE1_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage1"
 BLDR_ELF = "target/x86_64-unknown-none/$(TARGET_PATH)/bldr"
 SVSM_KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
 FS_BIN=bin/svsm-fs.bin
@@ -165,21 +162,12 @@ ifneq ($(FS_FILE), none)
 endif
 	touch ${FS_BIN}
 
-stage1_elf_trampoline:
-	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --target=x86_64-unknown-none --bin stage1 -- ${STAGE1_RUSTC_ARGS}
-
-bin/stage1-trampoline: stage1_elf_trampoline
-	cp -f $(STAGE1_ELF) $@
-
-bin/stage1-trampoline.bin: bin/stage1-trampoline
-	objcopy -O binary $< $@
-
 clippy:
 	${CARGO} clippy ${CLIPPY_OPTIONS} --workspace --exclude svsm --exclude stage1 --exclude svsm-fuzz -- ${CLIPPY_ARGS}
 	RUSTFLAGS="--cfg fuzzing" ${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm-fuzz -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm --target x86_64-unknown-none -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --package bldr --target x86_64-unknown-none -- ${CLIPPY_ARGS}
-	${CARGO} clippy ${CLIPPY_OPTIONS} --package stage1 --target x86_64-unknown-none -- ${CLIPPY_ARGS} ${STAGE1_RUSTC_ARGS}
+	${CARGO} clippy ${CLIPPY_OPTIONS} --package stage1 --target x86_64-unknown-none -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --workspace --tests --exclude svsm -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm --tests -- ${CLIPPY_ARGS}
 
@@ -190,4 +178,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test miri clean clippy bin/bldr.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
+.PHONY: test miri clean clippy bin/bldr.bin bin/svsm-kernel.elf bin/test-kernel.elf distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
