@@ -322,9 +322,10 @@ impl LocalApic {
 
     fn perform_host_eoi(vector: u8) {
         // Errors from the host are not expected and cannot be meaningfully
-        // handled, so simply ignore them.
-        let _r = current_ghcb().specific_eoi(vector, GUEST_VMPL.try_into().unwrap());
-        assert!(_r.is_ok());
+        // handled, so simply log them but do not propagate the error
+        if let Err(e) = current_ghcb().specific_eoi(vector, GUEST_VMPL.try_into().unwrap()) {
+            log::warn!("Host EOI failed: {e:?}");
+        }
     }
 
     fn perform_eoi(&mut self) {
