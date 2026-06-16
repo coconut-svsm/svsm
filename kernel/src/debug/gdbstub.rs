@@ -480,10 +480,10 @@ pub mod svsm_gdbstub {
                 0, // r9
                 0, // r10
                 0, // r11
-                0, // r12
-                0, // r13
-                0, // r14
-                0, // r15
+                value.regs.r12 as u64,
+                value.regs.r13 as u64,
+                value.regs.r14 as u64,
+                value.regs.r15 as u64,
             ];
             regs
         }

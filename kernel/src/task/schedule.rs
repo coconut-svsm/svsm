@@ -703,6 +703,10 @@ global_asm!(
         // stack.
         pushq   %rbp
         pushq   %rbx
+        pushq   %r15
+        pushq   %r14
+        pushq   %r13
+        pushq   %r12
         subq    $24, %rsp
 
         // If `prev` is not null...
@@ -811,6 +815,10 @@ global_asm!(
         popq    %rsi
         popq    %rdx
         popq    %rcx
+        popq    %r12
+        popq    %r13
+        popq    %r14
+        popq    %r15
         popq    %rbx
         popq    %rbp
 
