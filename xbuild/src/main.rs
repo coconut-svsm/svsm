@@ -143,6 +143,8 @@ struct ComponentConfig {
     #[serde(default)]
     features: Option<String>,
     #[serde(default)]
+    no_default_features: bool,
+    #[serde(default)]
     binary: bool,
     #[serde(default)]
     objcopy: Objcopy,
@@ -171,6 +173,23 @@ impl ComponentConfig {
             .unwrap_or_default()
     }
 
+    /// Append `--all-features`, `--no-default-features` and/or `--features`
+    /// to `cmd` based on the recipe/command-line options.
+    fn apply_features(&self, cmd: &mut Command, args: &Args, pkg: &str, cmd_feats: &mut Features) {
+        if args.all_features {
+            cmd.arg("--all-features");
+            return;
+        }
+        if self.no_default_features {
+            cmd.arg("--no-default-features");
+        }
+        let mut features = self.features();
+        features.append(&mut cmd_feats.feature_list(pkg));
+        if !features.is_empty() {
+            cmd.args(["--features", features.join(",").as_str()]);
+        }
+    }
+
     /// Build this component as a cargo binary
     fn cargo_build(
         &self,
@@ -191,15 +210,7 @@ impl ComponentConfig {
             cmd.args(["--target", triple]);
             bin.push(triple);
         };
-        if args.all_features {
-            cmd.args(["--all-features"]);
-        } else {
-            let mut features = self.features();
-            features.append(&mut cmd_feats.feature_list(pkg));
-            if !features.is_empty() {
-                cmd.args(["--features", features.join(",").as_str()]);
-            }
-        }
+        self.apply_features(&mut cmd, args, pkg, cmd_feats);
         if let Some(manifest) = self.manifest.as_ref() {
             cmd.args(["--manifest-path".as_ref(), manifest.as_os_str()]);
         }
