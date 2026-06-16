@@ -437,7 +437,7 @@ impl LocalApic {
         // as a self-IPI. Otherwise, locate the target processor by APIC ID.
         let destination = icr.destination();
         if destination == this_cpu().get_apic_id() {
-            self.post_interrupt(icr.vector(), false);
+            self.post_icr_interrupt(icr);
             false
         } else {
             // If the target CPU cannot be located, then simply drop the
