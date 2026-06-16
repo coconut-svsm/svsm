@@ -561,7 +561,7 @@ impl LocalApic {
             IcrMessageType::Fixed | IcrMessageType::Nmi
         );
 
-        if !valid_type {
+        if !valid_type || icr.rsvd_13() || icr.rsvd_31_20() != 0 {
             return Err(SvsmError::Apic(Emulation));
         }
 

@@ -74,7 +74,7 @@ pub struct ApicIcr {
     pub message_type: IcrMessageType,
     pub destination_mode: bool,
     pub delivery_status: bool,
-    rsvd_13: bool,
+    pub rsvd_13: bool,
     pub assert: bool,
     pub trigger_mode: bool,
     #[bits(2)]
@@ -82,6 +82,6 @@ pub struct ApicIcr {
     #[bits(2)]
     pub destination_shorthand: IcrDestFmt,
     #[bits(12)]
-    rsvd_31_20: u64,
+    pub rsvd_31_20: u64,
     pub destination: u32,
 }
