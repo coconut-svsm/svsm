@@ -10,6 +10,9 @@
 //! It works by assigning a single owner for each struct [`Task`]. The owner
 //! depends on the state of the task:
 //!
+//! * [`PENDING`] A task has been created but has not yet been scheduled for
+//!   the first time, nor has it been placed into any wait queue or any other
+//!   type of queue.
 //! * [`RUNNING`] A task in running state is owned by the [`RunQueue`] and either
 //!   stored in the `run_list` (when the task is not actively running) or in
 //!   `current_task` when it is scheduled on the CPU.
@@ -24,6 +27,7 @@
 //! specific CPU. Tasks in the [`BLOCKED`] state have no CPU assigned and will run
 //! on the CPU where their event is triggered that makes them [`RUNNING`] again.
 //!
+//! [`PENDING`]: super::tasks::TaskState::PENDING
 //! [`RUNNING`]: super::tasks::TaskState::RUNNING
 //! [`BLOCKED`]: super::tasks::TaskState::BLOCKED
 //! [`TERMINATED`]: super::tasks::TaskState::TERMINATED
@@ -113,11 +117,19 @@ impl RunQueue {
 
     /// Place a task back onto the run queue so it can be scheduled again.
     fn enqueue_task(&mut self, task: TaskPointer) {
-        // Task termination should not follow this path.
-        debug_assert!(!task.is_terminated());
+        // Callers are expected to place the task into the RUNNING state
+        // before a task is queued.
+        debug_assert!(task.is_running());
         if !task.is_idle_task() {
             self.run_list.push_back(task);
         }
+    }
+
+    /// Prepare to run a task by marking it runnable and placing it into the
+    /// run queue.
+    fn prepare_run_task(&mut self, task: TaskPointer) {
+        task.set_task_running();
+        self.enqueue_task(task);
     }
 
     /// Initializes the scheduler for this (RunQueue)[RunQueue]. This method is
@@ -160,7 +172,6 @@ impl RunQueue {
             // important to make sure the last runnable task keeps running,
             // even if it calls schedule()
             let current = self.current_task.take().unwrap();
-            debug_assert!(current.is_running());
             self.enqueue_task(current.clone());
             current
         } else {
@@ -200,6 +211,7 @@ impl RunQueue {
     /// Panics if the idle task was already set.
     pub fn set_idle_task(&mut self, task: TaskPointer) {
         task.set_idle_task();
+        task.set_task_running();
 
         // Add idle task to global task list
         TASKLIST.lock().list().push_front(task.clone());
@@ -304,7 +316,7 @@ pub fn start_kernel_task(
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue_mut().enqueue_task(task.clone());
+    cpu.runqueue_mut().prepare_run_task(task.clone());
 
     schedule();
 
@@ -335,7 +347,7 @@ pub fn start_kernel_thread(start_info: KernelThreadStartInfo) -> Result<TaskPoin
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue_mut().enqueue_task(task.clone());
+    cpu.runqueue_mut().prepare_run_task(task.clone());
 
     schedule();
 
@@ -372,7 +384,7 @@ pub fn finish_user_task(task: TaskPointer) {
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    this_cpu().runqueue_mut().enqueue_task(task);
+    this_cpu().runqueue_mut().prepare_run_task(task);
 }
 
 pub fn current_task() -> TaskPointer {
@@ -420,12 +432,11 @@ fn current_task_terminated() {
     // valid task, and every task has its pointer pushed into the global task
     // list during its creation.
     let wakeup = unsafe { TASKLIST.lock().terminate(task_node.clone()) };
-    drop(rq);
 
     // If another thread must be woken as a result of the termination, then
     // schedule it now.
     if let Some(wake_task) = wakeup {
-        enqueue_task(wake_task);
+        rq.prepare_run_task(wake_task);
     }
 }
 
@@ -672,13 +683,9 @@ fn select_new_task(reschedule: bool, irq_guard: Option<IrqGuard>) {
     drop(prev_task);
 }
 
-fn enqueue_task(task: TaskPointer) {
-    task.set_task_running();
-    this_cpu().runqueue_mut().enqueue_task(task);
-}
-
-pub fn schedule_task(task: TaskPointer) {
-    enqueue_task(task);
+pub fn wake_and_schedule_task(task: TaskPointer) {
+    debug_assert!(!task.is_running());
+    this_cpu().runqueue_mut().prepare_run_task(task);
     schedule();
 }
 

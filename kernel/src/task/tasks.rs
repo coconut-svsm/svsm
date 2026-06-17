@@ -135,9 +135,10 @@ enum ThreadStartInfo {
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
 #[repr(u32)]
 pub enum TaskState {
+    #[default]
+    PENDING,
     RUNNING,
     BLOCKED,
-    #[default]
     TERMINATED,
 }
 
@@ -146,7 +147,8 @@ impl From<u32> for TaskState {
         match v {
             x if x == Self::RUNNING as u32 => Self::RUNNING,
             x if x == Self::BLOCKED as u32 => Self::BLOCKED,
-            _ => Self::TERMINATED,
+            x if x == Self::TERMINATED as u32 => Self::TERMINATED,
+            _ => Self::PENDING,
         }
     }
 }
@@ -241,7 +243,7 @@ impl TaskSchedState {
         Self {
             idle_task: AtomicBool::new(false),
             active: AtomicBool::new(false),
-            state: AtomicU32::new(TaskState::RUNNING.into()),
+            state: AtomicU32::new(TaskState::PENDING.into()),
             cpu_index: AtomicUsize::new(cpu_index),
         }
     }
@@ -361,7 +363,7 @@ impl Drop for Task {
         // Check that the task state is correct and that interrupts are
         // enabled.  These don't affect memory safety so they are debug-only,
         // but they are good sanity checks on the scheduler.
-        debug_assert!(self.is_terminated());
+        debug_assert!(self.is_terminated() || self.is_pending());
         debug_assert!(irqs_enabled());
     }
 }
@@ -598,6 +600,10 @@ impl Task {
 
     pub fn is_running(&self) -> bool {
         self.sched_state.get_state() == TaskState::RUNNING
+    }
+
+    pub fn is_pending(&self) -> bool {
+        self.sched_state.get_state() == TaskState::PENDING
     }
 
     pub fn is_terminated(&self) -> bool {
