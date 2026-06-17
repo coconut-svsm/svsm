@@ -1873,18 +1873,26 @@ impl<const N: usize> SlabPage<N> {
             return Err(AllocError::OutOfMemory);
         }
 
-        for i in 0..self.get_capacity() {
-            let idx = i / 64;
-            let mask = 1u64 << (i % 64);
+        let capacity = self.get_capacity();
 
-            if self.used_bitmap[idx] & mask == 0 {
-                self.used_bitmap[idx] |= mask;
-                self.free -= 1;
-                let vaddr = self.vaddr + (N * i);
-                // SAFETY: `self.vaddr` is set when `self.free` is initialized to a non-zero
-                // value, which we have checked above.
-                return unsafe { Ok(NonNull::new_unchecked(vaddr.as_mut_ptr())) };
+        for (idx, slot) in self.used_bitmap.iter_mut().enumerate() {
+            if *slot == u64::MAX {
+                continue;
             }
+
+            let bit = slot.trailing_ones() as usize;
+            let abs_bit = bit + idx * (u64::BITS as usize);
+            if abs_bit >= capacity {
+                break;
+            }
+
+            *slot |= 1 << bit;
+            self.free -= 1;
+            let vaddr = self.vaddr + (N * abs_bit);
+
+            // SAFETY: `self.vaddr` is set when `self.free` is initialized to a non-zero
+            // value, which we have checked above.
+            return unsafe { Ok(NonNull::new_unchecked(vaddr.as_mut_ptr())) };
         }
 
         Err(AllocError::OutOfMemory)
