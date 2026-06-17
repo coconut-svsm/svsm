@@ -366,107 +366,53 @@ fn get_attestation_report_extended(
     Ok((resp, certs))
 }
 
-fn write_report_and_manifest(
+fn write_attestation_report(
     manifest: &[u8],
-    params: &mut RequestParams,
-    ops: &AttestServicesOp,
     report: &[u8],
-) -> Result<(), SvsmReqError> {
-    // Get attestation report buffer's gPA from call's Attest Services Operation structure.
-    // The buffer is required to be page aligned but can be bigger than 4K so can cross pages.
-    // If it is bigger than 4K, it must be physically contiguous.
-    let report_region = ops.get_report_region()?;
-
-    // Get manifest buffer's GPA from call's Attest Services Operation structure
-    // The buffer is required to be page aligned but can be bigger than 4K so can cross pages.
-    // If it is bigger than 4K, it must be physically contiguous.
-    let manifest_region = ops.get_manifest_region()?;
-
-    // Check that the manifest will fit in the buffer by checking that the length of the manifest
-    // is less than the size of the buffer. The size of the buffer was used to create the guard,
-    // so can not be tricked into writing outside the buffer.
-    // If the manifest is larger than the buffer, it is either a malformed manifest or buffer too
-    // small. In either case, return an error.
-    if manifest.len() > manifest_region.len() {
-        return Err(SvsmError::Attestation(AttestError::Manifest).into());
-    }
-
-    // Check that the attestation report will fit in the buffer by checking that the length of the
-    // report is less than the size of the buffer. The size of the buffer was used to create the
-    // guard, so can not be tricked into writing outside the buffer.
-    // If the report is larger than the buffer, it is either a malformed report or buffer too small.
-    // In either case, return an error.
-    if report.len() > report_region.len() {
-        return Err(SvsmError::Attestation(AttestError::Report).into());
-    }
-
-    copy_slice_to_guest(report, report_region.start())?;
-
-    // Set report size in bytes in r8 register
-    params.r8 = report
-        .len()
-        .try_into()
-        .map_err(|_| SvsmError::Attestation(AttestError::Report))?;
-
-    copy_slice_to_guest(manifest, manifest_region.start())?;
-
-    // Set the manifest size in bytes in rcx register
-    params.rcx = manifest
-        .len()
-        .try_into()
-        .map_err(|_| SvsmError::Attestation(AttestError::Manifest))?;
-
-    Ok(())
-}
-
-fn write_certs(
-    certs: &[u8],
-    params: &mut RequestParams,
+    certs: Option<&[u8]>,
     ops: &AttestServicesOp,
+    params: &mut RequestParams,
 ) -> Result<(), SvsmReqError> {
-    // Get certificate buffer's gPA from call's Attest Services Operation structure.
-    // The buffer is required to be page aligned but can be bigger than 4K so can cross pages.
-    // If it is bigger than 4K, it must be physically contiguous.
+    // Get guest physical addresses to copy data to.
+    let manifest_region = ops.get_manifest_region()?;
+    let report_region = ops.get_report_region()?;
     let cert_region = ops.get_certificate_region()?;
-
-    // If certificate region is None, it means that the certificate buffer is not present.
-    // This is valid and shall not return an error.
-    let cert_region = match cert_region {
-        Some(region) => region,
-        None => {
-            // If the certificate region is None, it means that the certificate buffer is not present.
-            // This is valid and shall not return an error.
-            // It is used to indicate that the user does not want an extended attestation
-            // that returns certificates.
-            // Set certificate size to 0, so that the caller knows that there is no certificate.
-            params.rdx = 0;
-            return Ok(());
-        }
-    };
 
     // According to "SEV-ES Guest-Hypervisor Communication Block Standardization, Revision 2.04"
     // the initial 24 bytes of the certificate buffer is the certificate header and will be all zeros
-    // if there is no certificate returned.
-    // This is valid and shall not return an error.
-    // Set certificate size to 0, so that the caller knows that there is no certificate.
-    if certs[..24] == [0; 24] {
-        params.rdx = 0;
-        return Ok(());
+    // if there is no certificate returned. Treat "the guest did not supply a buffer" and "the host
+    // did not supply a certificate" equally.
+    let certs = match (cert_region.as_ref(), certs) {
+        (Some(_), Some(data)) if data.get(..24).is_some_and(|h| h != [0u8; 24]) => Some(data),
+        _ => None,
+    };
+
+    // Write output registers. The guest relies on these to resize its
+    // provided buffers if they are too small.
+    params.rcx = manifest.len() as u64;
+    params.rdx = certs.as_ref().map_or(0, |certs| certs.len() as u64);
+    params.r8 = report.len() as u64;
+
+    // Now check that data fits in the guest buffers. Return the error required by the
+    // spec and let the guest resize the buffer and call again.
+    if manifest.len() > manifest_region.len() {
+        return Err(SvsmReqError::invalid_parameter());
+    }
+    if report.len() > report_region.len() {
+        return Err(SvsmReqError::invalid_parameter());
+    }
+    if let (Some(region), Some(data)) = (cert_region.as_ref(), certs) {
+        if data.len() > region.len() {
+            return Err(SvsmReqError::invalid_parameter());
+        }
     }
 
-    // Check that certificates fit in the buffer. If too large,
-    // return an error indicating the buffer is too small .
-    if certs.len() > cert_region.len() {
-        return Err(SvsmError::Attestation(AttestError::CertificateSize).into());
+    // All sizes match, copy data to guest
+    copy_slice_to_guest(report, report_region.start())?;
+    copy_slice_to_guest(manifest, manifest_region.start())?;
+    if let (Some(region), Some(data)) = (cert_region, certs) {
+        copy_slice_to_guest(data, region.start())?;
     }
-
-    copy_slice_to_guest(certs, cert_region.start())?;
-
-    // Set certificate size in bytes in rdx register
-    params.rdx = certs
-        .len()
-        .try_into()
-        .map_err(|_| SvsmError::Attestation(AttestError::Certificate))?;
 
     Ok(())
 }
@@ -494,18 +440,24 @@ fn get_attestation_report(
                 // The required size is in certs_buffer_size but specified as number of 4 KB pages.
                 // Per SVSM spec, return required size (in bytes) in rdx and raise an error
                 params.rdx = certs_buffer_size << PAGE_SHIFT;
-                return Err(SvsmError::Attestation(AttestError::CertificateSize).into());
+                params.rcx = manifest.len() as u64;
+                return Err(SvsmReqError::invalid_parameter());
             }
             Err(e) => return Err(e),
         };
 
-        write_report_and_manifest(manifest, params, ops, resp.report.as_bytes())?;
-        write_certs(certs.as_slice(), params, ops)
+        write_attestation_report(
+            manifest,
+            resp.report.as_bytes(),
+            Some(certs.as_slice()),
+            ops,
+            params,
+        )
     } else {
         // Get attestation standard report from PSP with Sha512(nonce||manifest) as REPORT_DATA.
         let resp = get_attestation_report_standard(hash)?;
 
-        write_report_and_manifest(manifest, params, ops, resp.report.as_bytes())
+        write_attestation_report(manifest, resp.report.as_bytes(), None, ops, params)
     }
 }
 
