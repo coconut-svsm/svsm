@@ -83,7 +83,6 @@ impl From<SvsmError> for SvsmReqError {
                 ApicError::Emulation => Self::invalid_parameter(),
                 ApicError::Registration => Self::protocol(SVSM_ERR_APIC_CANNOT_REGISTER),
             },
-            SvsmError::Attestation(e) => Self::protocol(e as u64),
             SvsmError::InvalidParameter => Self::invalid_parameter(),
             SvsmError::InvalidFormat => Self::invalid_format(),
             SvsmError::NotSupported

@@ -10,7 +10,7 @@ extern crate alloc;
 
 use crate::address::{Address, PhysAddr};
 use crate::crypto::digest::{Algorithm, Sha512};
-use crate::error::{AttestError, SvsmError};
+use crate::error::SvsmError;
 use crate::greq::services::get_extended_report;
 use crate::greq::{
     pld_report::{SnpReportRequest, SnpReportResponse},
