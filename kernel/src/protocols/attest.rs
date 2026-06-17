@@ -423,15 +423,15 @@ fn get_attestation_report(
     params: &mut RequestParams,
     ops: &AttestServicesOp,
 ) -> Result<(), SvsmReqError> {
-    if ops.is_extended_report()? {
+    let (resp, certs) = if ops.is_extended_report()? {
         // If the report is an extended report, it means that the caller requested a certificate.
         // Get extended attestation report from PSP with Sha512(nonce||manifest) as REPORT_DATA.
         // Handle SvsmReqError::FatalError(SvsmError::Ghcb(GhcbError::VmgexitError(certs_buffer_size,psp_rc,)))
         // from the PSP indicating that the certificate buffer is too small.
         // The required size (in 4 KB pages) is in certs_buffer_size.
         // Per SVSM spec, return required size (in bytes) in rdx register and raise an error.
-        let (resp, certs) = match get_attestation_report_extended(hash) {
-            Ok((resp, certs)) => (resp, certs),
+        match get_attestation_report_extended(hash) {
+            Ok((resp, certs)) => (resp, Some(certs)),
             Err(SvsmReqError::FatalError(SvsmError::Ghcb(GhcbError::VmgexitError(
                 certs_buffer_size,
                 _psp_rc,
@@ -444,21 +444,20 @@ fn get_attestation_report(
                 return Err(SvsmReqError::invalid_parameter());
             }
             Err(e) => return Err(e),
-        };
-
-        write_attestation_report(
-            manifest,
-            resp.report.as_bytes(),
-            Some(certs.as_slice()),
-            ops,
-            params,
-        )
+        }
     } else {
         // Get attestation standard report from PSP with Sha512(nonce||manifest) as REPORT_DATA.
         let resp = get_attestation_report_standard(hash)?;
+        (resp, None)
+    };
 
-        write_attestation_report(manifest, resp.report.as_bytes(), None, ops, params)
-    }
+    write_attestation_report(
+        manifest,
+        resp.report.as_bytes(),
+        certs.as_deref().map(|b| b.as_bytes()),
+        ops,
+        params,
+    )
 }
 
 #[allow(dead_code)]
