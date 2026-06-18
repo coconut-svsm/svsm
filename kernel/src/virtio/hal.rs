@@ -133,7 +133,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
             let dst = shared_page.addr().as_mut_ptr::<u8>();
 
             // SAFETY: We demand a valid `buffer` from the caller (virtio-drivers crate).
-            //         We assterted that `dst` can hold at least `buffer.len()`.
+            //         We asserted that `dst` can hold at least `buffer.len()`.
             unsafe {
                 core::ptr::copy_nonoverlapping(src, dst, buffer.len());
             }
