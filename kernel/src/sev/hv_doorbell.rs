@@ -156,28 +156,9 @@ impl HVDoorbell {
 
     pub fn no_eoi_required(&self) -> bool {
         // Check to see if the "no EOI required" flag is set to determine
-        // whether an explicit EOI can be avoided.
-        let mut no_eoi_required = self.no_eoi_required.load(Ordering::Relaxed);
-        loop {
-            // If the flag is not set, then an explicit EOI is required.
-            if (no_eoi_required & 1) == 0 {
-                return false;
-            }
-            // Attempt to atomically clear the flag.
-            match self.no_eoi_required.compare_exchange_weak(
-                no_eoi_required,
-                no_eoi_required & !1,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(new) => no_eoi_required = new,
-            }
-        }
-
-        // If the flag was successfully cleared, then no explicit EOI is
-        // required.
-        true
+        // whether an explicit EOI can be avoided. If the flag was successfully
+        // cleared, then no explicit EOI is required, and required otherwise.
+        self.no_eoi_required.swap(0, Ordering::Relaxed) != 0
     }
 }
 
