@@ -26,7 +26,7 @@ support patches applied is needed on the host machine.
 A repository based on the SNP-host patches with support for
 `guest-memfd` and SVSM support on-top is available here:
 [https://github.com/coconut-svsm/linux](https://github.com/coconut-svsm/linux).
-It is based on kernel 6.5 and code written by AMD to support [linux-svsm](https://github.com/AMDESE/linux-svsm/).
+It is based on kernel 7.1 and code written by AMD to support [linux-svsm](https://github.com/AMDESE/linux-svsm/).
 
 To use it, check out the svsm branch:
 
@@ -39,16 +39,20 @@ git checkout svsm
 Build, install and boot a kernel from that branch. For best chances of
 success use a kernel configuration provided by the distribution. Make
 sure the configuration includes support for AMD Secure Processor which is
-a requirement for SEV support (`CONFIG_KVM_AMD_SEV`). On openSUSE (other
-distributions may vary) the kernel configuration can be obtained by:
+a requirement for SEV support (`CONFIG_KVM_AMD_SEV`). On openSUSE the kernel configuration can be obtained by:
 
 ```shell
 gunzip -c /proc/config.gz > .config
 make olddefconfig
 ```
 
-After the new kernel is booted, the kernel log contains SEV-SNP
-initialization messages:
+Other distributions like Ubuntu ususally provide to configuration of the
+installed kernels in the `/boot` directory. Copy the configuration file
+matching your running kernel version to `.config` in the SVSM kernel source
+tree and run `make olddefconfig`.
+
+After the new kernel is compiled, installed, and booted, the kernel log contains
+SEV-SNP initialization messages:
 
 ```plain
 $ dmesg | grep SEV
@@ -68,10 +72,10 @@ Building QEMU
 
 COCONUT-SVSM is packaged during the build into a file conforming to the
 [Independent Guest Virtual Machine (IGVM)
-format](https://docs.rs/igvm_defs/0.1.3/igvm_defs/index.html). Current versions
-of QEMU do not support launching guests using IGVM, but a branch is available
-that includes this capability. This will need to be built in order to be able to
-launch COCONUT-SVSM.
+format](https://docs.rs/igvm_defs/0.4.0/igvm_defs/). Current versions
+of QEMU do not support launching an SVSM with guest support, but a branch is
+available that includes this capability. This will need to be built in order to
+be able to launch COCONUT-SVSM.
 
 First make sure to have all build requirements for QEMU installed. RPM
 and DEB based distributions provide ways to install build dependencies
@@ -81,6 +85,12 @@ enabled and then the packages can be installed by:
 ```shell
 sudo zypper refresh
 sudo zypper si -d qemu-kvm
+```
+
+On Debian and derived distributions you need to activate source repositories an install build dependencies with:
+
+```shell
+sudo apt build-dep qemu-system-x86
 ```
 
 Support for IGVM within QEMU depends on the IGVM library. This needs to be
@@ -105,7 +115,7 @@ and switch to the branch that supports IGVM:
 ```shell
 git clone https://github.com/coconut-svsm/qemu
 cd qemu
-git checkout svsm-igvm
+git checkout svsm
 ```
 
 Now the right branch is checked out and you can continue with the build.
@@ -146,6 +156,12 @@ openSUSE you can do this by:
 
 ```shell
 sudo zypper si -d qemu-ovmf-x86_64
+```
+
+Debian and derived distributions use:
+
+```shell
+sudo apt build-dep ovmf
 ```
 
 Then go back to the EDK2 source directory and follow the steps below to
@@ -282,7 +298,7 @@ guest:
 
 ```plain
   -cpu EPYC-v4 \
-  -machine q35,confidential-guest-support=sev0,memory-backend=ram1,igvm-cfg=igvm0 \
+  -machine q35,confidential-guest-support=sev0,memory-backend=ram1,igvm-cfg=igvm0,kernel-irqchip=split,device-plane=2 \
   -object memory-backend-memfd,id=ram1,size=8G,share=true,prealloc=false,reserve=false \
   -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1 \
   -object igvm-cfg,id=igvm0,file=/path/to/coconut-qemu.igvm
@@ -294,7 +310,8 @@ done by the AMD security processor. It also allocates memory from the
 SEV-SNP guests. An ```sev-snp-guest``` object needs to be defined to enable
 SEV-SNP protection for the guest. The `igvm-file` parameter informs QEMU to load
 and configure the guest using directives in the specified IGVM file, which
-contains both the COCONUT-SVSM and OVMF binary images.
+contains both the COCONUT-SVSM and OVMF binary images. KVM must be configured
+in split IRQ-chip mode and device IRQs are routed to plane 2.
 
 With these extensions QEMU will launch an SEV-SNP protected guest with
 the COCONUT-SVSM.
@@ -306,7 +323,7 @@ export IGVM=/path/to/coconut-qemu.igvm
 sudo $HOME/bin/qemu-svsm/bin/qemu-system-x86_64 \
   -enable-kvm \
   -cpu EPYC-v4 \
-  -machine q35,confidential-guest-support=sev0,memory-backend=ram1,igvm-cfg=igvm0 \
+  -machine q35,confidential-guest-support=sev0,memory-backend=ram1,igvm-cfg=igvm0,kernel-irqchip=split,device-plane=2 \
   -object memory-backend-memfd,id=ram1,size=8G,share=true,prealloc=false,reserve=false \
   -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1 \
   -object igvm-cfg,id=igvm0,file=$IGVM \
