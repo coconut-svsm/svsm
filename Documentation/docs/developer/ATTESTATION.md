@@ -261,7 +261,16 @@ To try for yourself, we provide a test KBS server that requires no configuration
 and simply indicates if attestation was successful or not. This requires a
 SEV-SNP machine with an SVSM-enabled kernel.
 
-1. Clone and run the `kbs-test` server used for testing. Supply the following
+1. Clone and build SVSM
+
+    ```shell
+    git clone https://github.com/coconut-svsm/svsm.git
+    # ... build OVMF, qemu, SVSM IGVM, etc...
+    FW_FILE=... make FEATURES=attest                       # serial transport
+    FW_FILE=... make FEATURES=attest,vsock,virtio-drivers  # vsock transport (with serial fallback)
+    ```
+
+2. Clone and run the `kbs-test` server used for testing. Supply the following
    argument on the command line:
 
     * `--measurement`: hex-encoded expected launch measurement (64 bytes in size).
@@ -274,15 +283,6 @@ SEV-SNP machine with an SVSM-enabled kernel.
     cargo run -- --measurement $MEASUREMENT --secret $HEX_SECRET
     ```
     This will run the `kbs-test` server at <http://0.0.0.0:8080>.
-
-2. Clone and build SVSM
-
-    ```shell
-    git clone https://github.com/coconut-svsm/svsm.git
-    # ... build OVMF, qemu, SVSM IGVM, etc...
-    FW_FILE=... make FEATURES=attest                       # serial transport
-    FW_FILE=... make FEATURES=attest,vsock,virtio-drivers  # vsock transport (with serial fallback)
-    ```
 
 3. Run the proxy on the host
 
