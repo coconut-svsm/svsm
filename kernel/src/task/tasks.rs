@@ -195,7 +195,7 @@ impl Default for TaskExitStatus {
 
 #[derive(Clone, Copy, Debug)]
 pub enum TaskError {
-    // Attempt to close a non-terminated task
+    // Attempt to close or to retrieve the exit status of a non-terminated task
     NotTerminated,
     // A closed task could not be removed from the task list
     CloseFailed,
@@ -355,6 +355,9 @@ pub struct Task {
 
     /// Queue of tasks waiting for completion of this task.
     wait_queue: SpinLockIrqSafe<WaitQueue>,
+
+    /// Exit status of the task
+    exit_status: AtomicU32,
 }
 
 // Expose the offsets of critical task fields to assembly.
@@ -529,6 +532,7 @@ impl Task {
             runlist_link: LinkedListAtomicLink::default(),
             objs: objtree,
             wait_queue: SpinLockIrqSafe::new(WaitQueue::new()),
+            exit_status: AtomicU32::new(TaskExitStatus::default().into()),
         }))
     }
 
@@ -646,6 +650,27 @@ impl Task {
 
     pub fn is_terminated(&self) -> bool {
         self.sched_state.get_state() == TaskState::TERMINATED
+    }
+
+    pub fn set_exit_status(&self, exit_status: TaskExitStatus) {
+        assert!(
+            !self.is_terminated(),
+            "The exit status can only be set for a task that is not yet terminated"
+        );
+        // Use Relaxed order since the exit status is set before the task
+        // is marked terminated with Release order
+        self.exit_status
+            .store(exit_status.into(), Ordering::Relaxed);
+    }
+
+    pub fn get_exit_status(&self) -> Result<TaskExitStatus, SvsmError> {
+        if self.is_terminated() {
+            // Use Relaxed order since the exit status is read after the task
+            // state is checked with Acquire order
+            Ok(self.exit_status.load(Ordering::Relaxed).into())
+        } else {
+            Err(TaskError::NotTerminated.into())
+        }
     }
 
     pub fn set_idle_task(&self) {
