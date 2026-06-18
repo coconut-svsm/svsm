@@ -271,15 +271,18 @@ SEV-SNP machine with an SVSM-enabled kernel.
     ```
 
 2. Clone and run the `kbs-test` server used for testing. Supply the following
-   argument on the command line:
+   arguments on the command line:
 
     * `--measurement`: hex-encoded expected launch measurement (64 bytes in size).
+    * `--secret` (optional): hex-encoded secret payload that will be delivered
+      to SVSM upon successful attestation.
 
     ```shell
     # SVSM=<path to your Coconut SVSM directory>
     git clone https://github.com/coconut-svsm/kbs-test.git
     cd kbs-test
     MEASUREMENT="$(${SVSM}/bin/igvmmeasure --check-kvm ${SVSM}/bin/coconut-qemu.igvm measure -b)"
+    HEX_SECRET="$(openssl rand -hex 32)"
     cargo run -- --measurement $MEASUREMENT --secret $HEX_SECRET
     ```
     This will run the `kbs-test` server at <http://0.0.0.0:8080>.
