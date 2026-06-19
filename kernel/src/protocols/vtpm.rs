@@ -19,6 +19,9 @@ use crate::{
     vtpm::{TcgTpmSimulatorInterface, VtpmProtocolInterface, vtpm_get_locked},
 };
 
+pub const VTPM_PROTOCOL_VERSION_MIN: u32 = 1;
+pub const VTPM_PROTOCOL_VERSION_MAX: u32 = 1;
+
 /// vTPM platform commands (SVSM spec, section 8.1 - SVSM_VTPM_QUERY)
 ///
 /// The platform commmand values follow the values used by the
