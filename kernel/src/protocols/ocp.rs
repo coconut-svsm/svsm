@@ -38,6 +38,10 @@ const LOW_32_BITS: u64 = 0xffff_ffff;
 const OCP_BUFFER_MAX_SIZE: usize = PAGE_SIZE;
 const OCP_BUFFER_ALIGNMENT: usize = 8;
 
+// Min and Max supported protocol version
+pub const OBSERVABILITY_CONFIGURATION_PROTOCOL_VERSION_MIN: u32 = 1;
+pub const OBSERVABILITY_CONFIGURATION_PROTOCOL_VERSION_MAX: u32 = 1;
+
 #[bitfield(u32)]
 #[derive(IntoBytes, Immutable)]
 struct OcpSourceFlags {
