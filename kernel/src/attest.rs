@@ -8,6 +8,7 @@
 extern crate alloc;
 
 use crate::{
+    crypto::SecretSlice,
     error::SvsmError,
     greq::{pld_report::*, services::get_regular_report},
     io::{DEFAULT_IO_DRIVER, Read, Write},
@@ -128,7 +129,7 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
 
 impl AttestationDriver<'_> {
     /// Attest SVSM's launch state by communicating with the attestation proxy.
-    pub fn attest(&mut self) -> Result<Vec<u8>, SvsmError> {
+    pub fn attest(&mut self) -> Result<SecretSlice, SvsmError> {
         let negotiation = self.negotiation()?;
 
         Ok(self.attestation(negotiation)?)
@@ -152,7 +153,7 @@ impl AttestationDriver<'_> {
     /// Send an attestation request to the proxy. Proxy should reply with attestation response
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
-    fn attestation(&mut self, n: NegotiationResponse) -> Result<Vec<u8>, AttestationError> {
+    fn attestation(&mut self, n: NegotiationResponse) -> Result<SecretSlice, AttestationError> {
         let curve =
             Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
 
@@ -185,13 +186,18 @@ impl AttestationDriver<'_> {
             return Err(AttestationError::PublicKeyMissing)?;
         };
 
-        let Some(mut secret) = response.secret else {
+        let Some(secret_enc) = response.secret else {
             return Err(AttestationError::SecretMissing);
         };
 
-        self.decrypt(&mut secret, decryption)?;
+        // `secret_enc` holds ciphertext from the attestation server. Move it
+        // into `SecretSlice` before decryption so the same buffer is decrypted
+        // in-place and zeroed on drop.
+        let mut secret_slice = SecretSlice::from(secret_enc.into_boxed_slice());
 
-        Ok(secret)
+        self.decrypt(&mut secret_slice, decryption)?;
+
+        Ok(secret_slice)
     }
 
     /// Decrypt a secret from the attestation server with the TEE private key. Secrets are

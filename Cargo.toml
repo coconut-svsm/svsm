@@ -98,6 +98,7 @@ virtfw-libefi = { version = "0.6" }
 virtfw-varstore = { version = "0.6.1" }
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.8.2", features = ["derive"] }
+zeroize = { version = "1.8.2", default-features = false }
 embedded-io = { version = "0.6.1" }
 
 # Verus repos
