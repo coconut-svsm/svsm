@@ -147,3 +147,9 @@ pub fn add_ocp_object(sup_index: u32, source: Arc<dyn OcpObjectOperations>) {
 
     let _ = map.insert(sup_index, source);
 }
+
+pub fn ocp_protocol_request(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    match request {
+        _ => Err(SvsmReqError::unsupported_call()),
+    }
+}
