@@ -7,7 +7,7 @@
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::percpu::{PERCPU_AREAS, PerCpuShared, current_ghcb, this_cpu};
 use crate::cpu::x86::apic_post_irq;
-use crate::error::ApicError::Emulation;
+use crate::error::ApicError::{Emulation, InvalidRegister};
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
 use crate::platform::guest_cpu::GuestCpuState;
@@ -24,6 +24,7 @@ use cpuarch::x86apic::APIC_REGISTER_IRR_0;
 use cpuarch::x86apic::APIC_REGISTER_IRR_7;
 use cpuarch::x86apic::APIC_REGISTER_ISR_0;
 use cpuarch::x86apic::APIC_REGISTER_ISR_7;
+use cpuarch::x86apic::APIC_REGISTER_LDR;
 use cpuarch::x86apic::APIC_REGISTER_PPR;
 use cpuarch::x86apic::APIC_REGISTER_SELF_IPI;
 use cpuarch::x86apic::APIC_REGISTER_TMR_0;
@@ -153,8 +154,8 @@ impl LocalApic {
 
     fn get_ppr_with_tpr(&self, tpr: u8) -> u8 {
         // Determine the priority of the current in-service interrupt, if any.
-        let ppr = if self.isr_stack_index != 0 {
-            self.isr_stack[self.isr_stack_index]
+        let ppr = if let Some(idx) = self.isr_stack_index.checked_sub(1) {
+            self.isr_stack[idx]
         } else {
             0
         };
@@ -322,9 +323,10 @@ impl LocalApic {
 
     fn perform_host_eoi(vector: u8) {
         // Errors from the host are not expected and cannot be meaningfully
-        // handled, so simply ignore them.
-        let _r = current_ghcb().specific_eoi(vector, GUEST_VMPL.try_into().unwrap());
-        assert!(_r.is_ok());
+        // handled, so simply log them but do not propagate the error
+        if let Err(e) = current_ghcb().specific_eoi(vector, GUEST_VMPL.try_into().unwrap()) {
+            log::warn!("Host EOI failed: {e:?}");
+        }
     }
 
     fn perform_eoi(&mut self) {
@@ -436,7 +438,7 @@ impl LocalApic {
         // as a self-IPI. Otherwise, locate the target processor by APIC ID.
         let destination = icr.destination();
         if destination == this_cpu().get_apic_id() {
-            self.post_interrupt(icr.vector(), false);
+            self.post_icr_interrupt(icr);
             false
         } else {
             // If the target CPU cannot be located, then simply drop the
@@ -528,6 +530,7 @@ impl LocalApic {
         match register {
             APIC_REGISTER_ICR => Ok(self.handle_icr_read()),
             APIC_REGISTER_APIC_ID => Ok(u64::from(cpu_shared.apic_id())),
+            APIC_REGISTER_LDR => Ok(self.handle_ldr_read()),
             APIC_REGISTER_IRR_0..=APIC_REGISTER_IRR_7 => {
                 let offset = register - APIC_REGISTER_IRR_0;
                 let index: usize = offset.try_into().unwrap();
@@ -544,12 +547,20 @@ impl LocalApic {
             }
             APIC_REGISTER_TPR => Ok(cpu_state.get_tpr() as u64),
             APIC_REGISTER_PPR => Ok(self.get_ppr(cpu_state) as u64),
-            _ => Err(SvsmError::Apic(Emulation)),
+            // Write-only registers
+            APIC_REGISTER_EOI | APIC_REGISTER_SELF_IPI => Err(SvsmError::Apic(Emulation)),
+            _ => Err(SvsmError::Apic(InvalidRegister)),
         }
     }
 
     fn handle_icr_read(&self) -> u64 {
         self.icr.into()
+    }
+
+    fn handle_ldr_read(&self) -> u64 {
+        let apic_id = this_cpu().get_apic_id();
+        let ldr = ((apic_id & !0xF) << 12) | (1 << (apic_id & 0xF));
+        ldr as u64
     }
 
     fn handle_icr_write(&mut self, value: u64) -> Result<(), SvsmError> {
@@ -560,7 +571,7 @@ impl LocalApic {
             IcrMessageType::Fixed | IcrMessageType::Nmi
         );
 
-        if !valid_type {
+        if !valid_type || icr.rsvd_13() || icr.rsvd_31_20() != 0 {
             return Err(SvsmError::Apic(Emulation));
         }
 
@@ -592,6 +603,9 @@ impl LocalApic {
                 Ok(())
             }
             APIC_REGISTER_EOI => {
+                if value != 0 {
+                    return Err(SvsmError::Apic(Emulation));
+                }
                 self.perform_eoi();
                 Ok(())
             }
@@ -601,7 +615,14 @@ impl LocalApic {
                 self.post_interrupt(vector, false);
                 Ok(())
             }
-            _ => Err(SvsmError::Apic(Emulation)),
+            // Read-only registers
+            APIC_REGISTER_APIC_ID
+            | APIC_REGISTER_PPR
+            | APIC_REGISTER_LDR
+            | APIC_REGISTER_ISR_0..=APIC_REGISTER_ISR_7
+            | APIC_REGISTER_TMR_0..=APIC_REGISTER_TMR_7
+            | APIC_REGISTER_IRR_0..=APIC_REGISTER_IRR_7 => Err(SvsmError::Apic(Emulation)),
+            _ => Err(SvsmError::Apic(InvalidRegister)),
         }
     }
 

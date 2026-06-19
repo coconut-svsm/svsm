@@ -10,6 +10,7 @@ pub const APIC_REGISTER_APIC_ID: u64 = 0x802;
 pub const APIC_REGISTER_TPR: u64 = 0x808;
 pub const APIC_REGISTER_PPR: u64 = 0x80A;
 pub const APIC_REGISTER_EOI: u64 = 0x80B;
+pub const APIC_REGISTER_LDR: u64 = 0x80D;
 pub const APIC_REGISTER_ISR_0: u64 = 0x810;
 pub const APIC_REGISTER_ISR_7: u64 = 0x817;
 pub const APIC_REGISTER_TMR_0: u64 = 0x818;
@@ -74,7 +75,7 @@ pub struct ApicIcr {
     pub message_type: IcrMessageType,
     pub destination_mode: bool,
     pub delivery_status: bool,
-    rsvd_13: bool,
+    pub rsvd_13: bool,
     pub assert: bool,
     pub trigger_mode: bool,
     #[bits(2)]
@@ -82,6 +83,6 @@ pub struct ApicIcr {
     #[bits(2)]
     pub destination_shorthand: IcrDestFmt,
     #[bits(12)]
-    rsvd_31_20: u64,
+    pub rsvd_31_20: u64,
     pub destination: u32,
 }
