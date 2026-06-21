@@ -22,6 +22,11 @@ use crate::protocols::uefivars::{UEFI_MM_PROTOCOL_VERSION_MAX, UEFI_MM_PROTOCOL_
 use crate::protocols::{
     RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
 };
+#[cfg(all(feature = "vtpm", not(test)))]
+use crate::protocols::{
+    SVSM_VTPM_PROTOCOL,
+    vtpm::{VTPM_PROTOCOL_VERSION_MAX, VTPM_PROTOCOL_VERSION_MIN},
+};
 use crate::requests::SvsmCaa;
 use crate::sev::utils::{
     PvalidateOp, RMPFlags, SevSnpError, pvalidate, rmp_clear_guest_vmsa, rmp_grant_guest_access,
@@ -258,6 +263,12 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
             version,
             ATTEST_PROTOCOL_VERSION_MIN,
             ATTEST_PROTOCOL_VERSION_MAX,
+        ),
+        #[cfg(all(feature = "vtpm", not(test)))]
+        SVSM_VTPM_PROTOCOL => protocol_supported(
+            version,
+            VTPM_PROTOCOL_VERSION_MIN,
+            VTPM_PROTOCOL_VERSION_MAX,
         ),
         #[cfg(all(feature = "uefivars", not(test)))]
         SVSM_UEFI_MM_PROTOCOL => protocol_supported(
