@@ -261,7 +261,8 @@ To try for yourself, we provide a test KBS server that requires no configuration
 and simply indicates if attestation was successful or not. This requires a
 SEV-SNP machine with an SVSM-enabled kernel.
 
-1. Clone and build SVSM
+1. Clone and build SVSM (see [INSTALL.md](../installation/INSTALL.md) for more
+   details)
 
     ```shell
     git clone https://github.com/coconut-svsm/svsm.git
