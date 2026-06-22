@@ -9,7 +9,10 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::collections::TryReserveError;
 use zeroize::{Zeroize, ZeroizeOnDrop};
+
+use crate::utils::vec::vec_sized;
 
 /// Container for sensitive byte data.
 ///
@@ -17,6 +20,13 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// [`zeroize`](Zeroize::zeroize)d.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct SecretSlice(Box<[u8]>);
+
+impl SecretSlice {
+    pub fn new_sized(size: usize) -> Result<Self, TryReserveError> {
+        let v = vec_sized(size)?;
+        Ok(Self(v.into_boxed_slice()))
+    }
+}
 
 impl From<Box<[u8]>> for SecretSlice {
     fn from(data: Box<[u8]>) -> Self {
