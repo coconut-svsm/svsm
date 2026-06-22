@@ -21,7 +21,7 @@ elf.workspace = true
 syscall.workspace = true
 
 aes-gcm = { workspace = true, features = ["aes", "alloc", "zeroize"] }
-aes-kw = { workspace = true, optional = true }
+aes-kw = { workspace = true, features = ["zeroize"], optional = true }
 bitfield-struct.workspace = true
 bitflags.workspace = true
 cocoon-tpm-crypto = { workspace = true, features = [
