@@ -26,6 +26,28 @@ struct TokenResponse {
 }
 
 impl AttestationProtocol for KbsProtocol {
+    fn fetch_secret(
+        &self,
+        http: &mut HttpClient,
+        req: &SecretRequest,
+        token: &str,
+    ) -> anyhow::Result<reqwest::blocking::Response> {
+        match req {
+            SecretRequest::KbsResource { resource_id } => http
+                .cli
+                .get(format!("{}/kbs/v0/resource/{}", http.url, resource_id))
+                .header("Authorization", format!("Bearer {token}"))
+                .send()
+                .context("unable to GET from KBS resource endpoint"),
+            SecretRequest::Pkcs11Unwrap { wrapped_key } => http
+                .cli
+                .get(format!("{}/kbs/v0/pkcs11/wrap-key", http.url))
+                .header("Authorization", format!("Bearer {token}"))
+                .body(wrapped_key.clone())
+                .send()
+                .context("unable to unwrap via PKCS11 plugin"),
+        }
+    }
     /// KBS servers usually want two components hashed into attestation evidence: the public
     /// components of the TEE key, and a nonce provided in the KBS challenge that is fetched
     /// from the server's /auth endpoint. These must be hased in order.
@@ -152,11 +174,15 @@ impl AttestationProtocol for KbsProtocol {
         //
         // TODO: Further modify this backend to support the KBS module's PKCS11 plugin.
         // With this, wrapped secrets can be POSTed to the PKCS11 plugin for unwrapping.
-        let http_resp = http
-            .cli
-            .get(format!("{}/kbs/v0/resource/default/sample/test", http.url))
-            .send()
-            .context("unable to POST to KBS /attest endpoint")?;
+
+        let secret_request = request
+            .secret_request
+            .unwrap_or(SecretRequest::KbsResource {
+                resource_id: "default/sample/test".to_string(),
+            });
+
+        // Fetch secret using the resolved strategy (KBS resource / pkcs11 plugin)
+        let http_resp = self.fetch_secret(http, &secret_request, &token_resp.token)?;
 
         // Unsuccessful attempt at retrieving secret.
         if http_resp.status() != StatusCode::OK {

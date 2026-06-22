@@ -71,6 +71,12 @@ impl From<ArgsBackend> for Protocol {
 /// Trait to implement the negotiation and attestation phases across different attestation
 /// protocols.
 pub trait AttestationProtocol {
+    fn fetch_secret(
+        &self,
+        http: &mut HttpClient,
+        req: &SecretRequest,
+        token: &str,
+    ) -> anyhow::Result<reqwest::blocking::Response>;
     fn negotiation(
         &mut self,
         client: &mut HttpClient,
