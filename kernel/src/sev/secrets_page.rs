@@ -14,6 +14,7 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 extern crate alloc;
 use alloc::boxed::Box;
 use core::ptr;
+use zeroize::Zeroizing;
 
 pub const VMPCK_SIZE: usize = 32;
 
@@ -122,8 +123,8 @@ impl SecretsPage {
         self.svsm_guest_vmpl = GUEST_VMPL as u8;
     }
 
-    pub fn get_vmpck(&self, idx: usize) -> [u8; VMPCK_SIZE] {
-        self.vmpck[idx]
+    pub fn get_vmpck(&self, idx: usize) -> Zeroizing<[u8; VMPCK_SIZE]> {
+        Zeroizing::new(self.vmpck[idx])
     }
 
     pub fn is_vmpck_clear(&self, idx: usize) -> bool {
