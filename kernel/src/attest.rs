@@ -216,16 +216,12 @@ impl AttestationDriver<'_> {
         kdm.extend_from_slice(&(256_u32).to_be_bytes());
 
         let wrapping_key: KekAes256 = {
-            let mut buf: Vec<u8> = vec_sized(32).or(Err(AttestationError::VecAlloc))?;
+            let mut buf = SecretSlice::new_sized(32).or(Err(AttestationError::VecAlloc))?;
 
             concat_kdf::derive_key_into::<sha2::Sha256>(&z, &kdm, &mut buf)
                 .map_err(AttestationError::KeyDerivation)?;
 
-            let sized: [u8; 32] = buf
-                .try_into()
-                .or(Err(AttestationError::WrapKeyArrayConvert))?;
-
-            Kek::new(&GenericArray::from(sized))
+            Kek::new(GenericArray::from_slice(&buf))
         };
 
         let mut cek = SecretSlice::new_sized(&decryption.wrapped_cek.len() - 8)
