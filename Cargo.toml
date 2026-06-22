@@ -65,7 +65,6 @@ packit = { path = "packit" }
 userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
 release = { path = "release" }
-virtio-drivers = { git = "https://github.com/coconut-svsm/virtio-drivers.git", rev = "dcbdbc8cefc0c985322382acdeb633a63a3a4cc1" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
@@ -90,16 +89,19 @@ libfuzzer-sys = "0.4"
 log = "0.4.17"
 p384 = { version = "0.13.0" }
 rustc-demangle = { version = "0.1.26" }
+safe-mmio = { version = "0.3", features = ["custom-mmio"] }
 serde = { version = "1.0.215", default-features = false }
 serde_json = { version = "1.0", default-features = false }
 sha2 = { version = "0.10.8", default-features = false }
 uuid = { version = "1.6.1", default-features = false }
 virtfw-libefi = { version = "0.6" }
 virtfw-varstore = { version = "0.6.1" }
+# We can pull virtio-drivers from crates.io once the vsock connection manager
+# changes have been released.
+virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers.git", rev = "c8786e83e6a64e46ed5cab301048dbaf3aab1444" }
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.8.2", features = ["derive"] }
 zeroize = { version = "1.8.2", default-features = false }
-embedded-io = { version = "0.6.1" }
 
 # Verus repos
 verus_builtin = { version = "=0.0.0-2026-04-12-0118", default-features = false }
@@ -110,6 +112,12 @@ vstd = { version = "=0.0.0-2026-04-12-0118", features = ["alloc", "allow_panic"]
 # Verification libs
 verify_proof = { path = "verification/verify_proof", default-features = false  }
 verify_external = { path = "verification/verify_external", default-features = false  }
+
+[patch.crates-io]
+# Force all dependencies to use the same version of safe-mmio, which has
+# the new custom-mmio feature, so that injecting our MMIO backend works.
+# This can be removed once the feature has been released on creates.io.
+safe-mmio = { git = "https://github.com/google/safe-mmio", rev = "89f584caaf32fcd4341a5a716c97d67be83edb9c" }
 
 [profile.release]
 panic = 'abort'
