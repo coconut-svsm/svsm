@@ -20,7 +20,7 @@ libaproxy = { workspace = true, optional = true }
 elf.workspace = true
 syscall.workspace = true
 
-aes-gcm = { workspace = true, features = ["aes", "alloc"] }
+aes-gcm = { workspace = true, features = ["aes", "alloc", "zeroize"] }
 aes-kw = { workspace = true, optional = true }
 bitfield-struct.workspace = true
 bitflags.workspace = true
