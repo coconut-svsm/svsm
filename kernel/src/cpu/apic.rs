@@ -571,7 +571,14 @@ impl LocalApic {
             IcrMessageType::Fixed | IcrMessageType::Nmi
         );
 
-        if !valid_type || icr.rsvd_13() || icr.rsvd_31_20() != 0 {
+        // Reject invalid message types, and make sure must-be-zero and
+        // x2APIC reserved fields are not set by the guest.
+        if !valid_type
+            || icr.rsvd_13()
+            || icr.rsvd_31_20() != 0
+            || icr.remote_read_status() != 0
+            || icr.delivery_status()
+        {
             return Err(SvsmError::Apic(Emulation));
         }
 
