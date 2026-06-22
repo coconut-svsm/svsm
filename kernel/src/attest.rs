@@ -228,8 +228,8 @@ impl AttestationDriver<'_> {
             Kek::new(&GenericArray::from(sized))
         };
 
-        let mut cek =
-            vec_sized(&decryption.wrapped_cek.len() - 8).or(Err(AttestationError::VecAlloc))?;
+        let mut cek = SecretSlice::new_sized(&decryption.wrapped_cek.len() - 8)
+            .or(Err(AttestationError::VecAlloc))?;
 
         wrapping_key
             .unwrap(&decryption.wrapped_cek, &mut cek)
