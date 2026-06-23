@@ -16,6 +16,7 @@ markdown_extensions:
 
 nav:
   - Documentation Home: 'index.md'
+  - 'RELEASE-PROCESS.md'
   - Building and launching:
     - 'installation/INSTALL.md'
   - Build Recipe Documentation:
