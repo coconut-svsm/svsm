@@ -261,21 +261,8 @@ To try for yourself, we provide a test KBS server that requires no configuration
 and simply indicates if attestation was successful or not. This requires a
 SEV-SNP machine with an SVSM-enabled kernel.
 
-1. Clone and run the `kbs-test` server used for testing. Supply the following
-   argument on the command line:
-
-    * `--measurement`: hex-encoded expected launch measurement (64 bytes in size).
-
-    ```shell
-    # SVSM=<path to your Coconut SVSM directory>
-    git clone https://github.com/coconut-svsm/kbs-test.git
-    cd kbs-test
-    MEASUREMENT="$(${SVSM}/bin/igvmmeasure --check-kvm ${SVSM}/bin/coconut-qemu.igvm measure -b)"
-    cargo run -- --measurement $MEASUREMENT --secret $HEX_SECRET
-    ```
-    This will run the `kbs-test` server at <http://0.0.0.0:8080>.
-
-2. Clone and build SVSM
+1. Clone and build SVSM (see [INSTALL.md](../installation/INSTALL.md) for more
+   details)
 
     ```shell
     git clone https://github.com/coconut-svsm/svsm.git
@@ -283,6 +270,23 @@ SEV-SNP machine with an SVSM-enabled kernel.
     FW_FILE=... make FEATURES=attest                       # serial transport
     FW_FILE=... make FEATURES=attest,vsock,virtio-drivers  # vsock transport (with serial fallback)
     ```
+
+2. Clone and run the `kbs-test` server used for testing. Supply the following
+   arguments on the command line:
+
+    * `--measurement`: hex-encoded expected launch measurement (64 bytes in size).
+    * `--secret` (optional): hex-encoded secret payload that will be delivered
+      to SVSM upon successful attestation.
+
+    ```shell
+    # SVSM=<path to your Coconut SVSM directory>
+    git clone https://github.com/coconut-svsm/kbs-test.git
+    cd kbs-test
+    MEASUREMENT="$(${SVSM}/bin/igvmmeasure --check-kvm ${SVSM}/bin/coconut-qemu.igvm measure -b)"
+    HEX_SECRET="$(openssl rand -hex 32)"
+    cargo run -- --measurement $MEASUREMENT --secret $HEX_SECRET
+    ```
+    This will run the `kbs-test` server at <http://0.0.0.0:8080>.
 
 3. Run the proxy on the host
 
