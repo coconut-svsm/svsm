@@ -34,9 +34,9 @@ pub fn sev_status_verify() {
     let required = SEVStatusFlags::SEV
         | SEVStatusFlags::SEV_ES
         | SEVStatusFlags::SEV_SNP
+        | SEVStatusFlags::REST_INJ
         | SEVStatusFlags::DBGSWP;
     let supported = SEVStatusFlags::VTOM
-        | SEVStatusFlags::REST_INJ
         | SEVStatusFlags::PREV_HOST_IBS
         | SEVStatusFlags::BTB_ISOLATION
         | SEVStatusFlags::SMT_PROT;
