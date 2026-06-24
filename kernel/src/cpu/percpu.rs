@@ -46,9 +46,13 @@ use crate::sev::ghcb::{GHCB, GhcbPage};
 use crate::sev::hv_doorbell::{HVDoorbell, allocate_hv_doorbell_page};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
-use crate::task::{
-    KernelThreadStartInfo, RunQueue, Task, TaskPointer, schedule, schedule_task, scheduler_idle,
-};
+use crate::task::KernelThreadStartInfo;
+use crate::task::RunQueue;
+use crate::task::Task;
+use crate::task::TaskPointer;
+use crate::task::schedule;
+use crate::task::scheduler_idle;
+use crate::task::wake_and_schedule_task;
 use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
@@ -1498,7 +1502,7 @@ pub fn cpu_idle_loop(cpu_index: usize) {
         // result of the wake from idle.
         let maybe_task = this_cpu().runqueue_mut().wake_from_idle();
         if let Some(task) = maybe_task {
-            schedule_task(task);
+            wake_and_schedule_task(task);
         }
 
         // Execute any tasks that are currently runnable.
