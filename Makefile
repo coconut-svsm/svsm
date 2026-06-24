@@ -26,6 +26,7 @@ ifdef RELEASE
 TARGET_PATH=release
 CARGO_ARGS += --release
 XBUILD_ARGS += --release
+XBUILD_ARGS_TEST += --release
 OBJCOPY_ELF_ARGS := --strip-unneeded
 else
 TARGET_PATH=debug
@@ -42,9 +43,6 @@ else ifeq ($(V), 2)
 CARGO_ARGS += -vv
 endif
 
-STAGE1_RUSTC_ARGS += -C panic=abort
-
-STAGE1_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage1"
 BLDR_ELF = "target/x86_64-unknown-none/$(TARGET_PATH)/bldr"
 SVSM_KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
 FS_BIN=bin/svsm-fs.bin
@@ -152,34 +150,18 @@ bin/svsm-kernel.elf: bin
 	cargo build --package svsm --bin svsm ${CARGO_ARGS} ${SVSM_ARGS} --target=x86_64-unknown-none
 	objcopy -O elf64-x86-64 ${OBJCOPY_ELF_ARGS} ${SVSM_KERNEL_ELF} $@
 
-bin/test-kernel.elf: bin
-# RUSTDOC=true removes doctests, which is necessary as they do not work with
-# custom test runners. See https://github.com/coconut-svsm/svsm/issues/705.
-	RUSTDOC=true LINK_TEST=1 cargo +nightly test --package svsm ${CARGO_ARGS} ${SVSM_ARGS_TEST} \
-		--target=x86_64-unknown-none \
-		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../$@"]'
-
 ${FS_BIN}: bin
 ifneq ($(FS_FILE), none)
 	cp -f $(FS_FILE) ${FS_BIN}
 endif
 	touch ${FS_BIN}
 
-stage1_elf_trampoline:
-	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --target=x86_64-unknown-none --bin stage1 -- ${STAGE1_RUSTC_ARGS}
-
-bin/stage1-trampoline: stage1_elf_trampoline
-	cp -f $(STAGE1_ELF) $@
-
-bin/stage1-trampoline.bin: bin/stage1-trampoline
-	objcopy -O binary $< $@
-
 clippy:
 	${CARGO} clippy ${CLIPPY_OPTIONS} --workspace --exclude svsm --exclude stage1 --exclude svsm-fuzz -- ${CLIPPY_ARGS}
 	RUSTFLAGS="--cfg fuzzing" ${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm-fuzz -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm --target x86_64-unknown-none -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --package bldr --target x86_64-unknown-none -- ${CLIPPY_ARGS}
-	${CARGO} clippy ${CLIPPY_OPTIONS} --package stage1 --target x86_64-unknown-none -- ${CLIPPY_ARGS} ${STAGE1_RUSTC_ARGS}
+	${CARGO} clippy ${CLIPPY_OPTIONS} --package stage1 --target x86_64-unknown-none -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --workspace --tests --exclude svsm -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm --tests -- ${CLIPPY_ARGS}
 
@@ -190,4 +172,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test miri clean clippy bin/bldr.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
+.PHONY: test miri clean clippy bin/bldr.bin bin/svsm-kernel.elf distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)

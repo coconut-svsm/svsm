@@ -12,8 +12,13 @@
     },
     "kernel": {
         "svsm": {
-            "type": "make",
-            "output_file": "bin/test-kernel.elf"
+            "type": "test",
+            "toolchain": "nightly",
+            "no_default_features": true,
+            "env": {
+                "RUSTDOC": "true",
+                "LINK_TEST": "1"
+            }
         },
         "bldr": {
             "manifest": "boot/bldr/Cargo.toml",
@@ -21,8 +26,8 @@
             "objcopy": "binary"
         },
         "tdx-stage1": {
-            "type": "make",
-            "output_file": "bin/stage1-trampoline",
+            "manifest": "stage1/Cargo.toml",
+            "binary": true,
             "objcopy": "binary"
         }
     },

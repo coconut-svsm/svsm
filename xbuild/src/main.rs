@@ -2,6 +2,7 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
+mod cargo;
 mod features;
 mod fs;
 mod fw;
@@ -18,10 +19,11 @@ use clap::Parser;
 use serde::Deserialize;
 use std::borrow::{Borrow, BorrowMut};
 use std::boxed::Box;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 type BuildResult<T> = Result<T, Box<dyn Error>>;
 
@@ -106,6 +108,7 @@ enum BuildType {
     #[default]
     Cargo,
     Make,
+    Test,
 }
 
 /// Binutils target used in objcopy
@@ -143,10 +146,19 @@ struct ComponentConfig {
     #[serde(default)]
     features: Option<String>,
     #[serde(default)]
+    no_default_features: bool,
+    #[serde(default)]
     binary: bool,
     #[serde(default)]
     objcopy: Objcopy,
     path: Option<PathBuf>,
+    /// Toolchain override passed to cargo as `+<toolchain>` (e.g. "nightly").
+    /// Disallowed for non-test builds.
+    #[serde(default)]
+    toolchain: Option<String>,
+    /// Extra environment variables passed to the build command.
+    #[serde(default)]
+    env: HashMap<String, String>,
 }
 
 impl ComponentConfig {
@@ -161,6 +173,7 @@ impl ComponentConfig {
         match self.build_type {
             BuildType::Cargo => self.cargo_build(args, pkg, target, cmd_feats),
             BuildType::Make => self.makefile_build(args, pkg, cmd_feats),
+            BuildType::Test => self.cargo_test_build(args, pkg, target, cmd_feats),
         }
     }
 
@@ -169,6 +182,23 @@ impl ComponentConfig {
             .clone()
             .map(|feat| feat.split(',').map(|f| f.trim().to_string()).collect())
             .unwrap_or_default()
+    }
+
+    /// Append `--all-features`, `--no-default-features` and/or `--features`
+    /// to `cmd` based on the recipe/command-line options.
+    fn apply_features(&self, cmd: &mut Command, args: &Args, pkg: &str, cmd_feats: &mut Features) {
+        if args.all_features {
+            cmd.arg("--all-features");
+            return;
+        }
+        if self.no_default_features {
+            cmd.arg("--no-default-features");
+        }
+        let mut features = self.features();
+        features.append(&mut cmd_feats.feature_list(pkg));
+        if !features.is_empty() {
+            cmd.args(["--features", features.join(",").as_str()]);
+        }
     }
 
     /// Build this component as a cargo binary
@@ -182,6 +212,11 @@ impl ComponentConfig {
         let mut bin = PathBuf::from("target");
 
         let mut cmd = Command::new("cargo");
+        if let Some(tc) = self.toolchain.as_deref() {
+            return Err(
+                format!("non-default toolchain is only allowed for test builds ('{tc}'").into(),
+            );
+        }
         cmd.args([
             "build",
             if self.binary { "--bin" } else { "--package" },
@@ -191,15 +226,7 @@ impl ComponentConfig {
             cmd.args(["--target", triple]);
             bin.push(triple);
         };
-        if args.all_features {
-            cmd.args(["--all-features"]);
-        } else {
-            let mut features = self.features();
-            features.append(&mut cmd_feats.feature_list(pkg));
-            if !features.is_empty() {
-                cmd.args(["--features", features.join(",").as_str()]);
-            }
-        }
+        self.apply_features(&mut cmd, args, pkg, cmd_feats);
         if let Some(manifest) = self.manifest.as_ref() {
             cmd.args(["--manifest-path".as_ref(), manifest.as_os_str()]);
         }
@@ -215,10 +242,69 @@ impl ComponentConfig {
         if args.verbose {
             cmd.arg("-vv");
         }
+        for (k, v) in self.env.iter() {
+            cmd.env(k, v);
+        }
         run_cmd_checked(cmd, args)?;
 
         bin.push(pkg);
         Ok(bin)
+    }
+
+    /// Build this component as a cargo test binary. Runs `cargo test --no-run`
+    /// with machine-readable output and returns the path to the test
+    /// executable cargo produced.
+    fn cargo_test_build(
+        &self,
+        args: &Args,
+        pkg: &str,
+        target: BuildTarget,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<PathBuf> {
+        let mut cmd = Command::new("cargo");
+        if let Some(tc) = self.toolchain.as_deref() {
+            cmd.arg(format!("+{tc}"));
+        }
+        cmd.args([
+            "test",
+            "--no-run",
+            "--message-format=json-render-diagnostics",
+            "--package",
+            pkg,
+        ]);
+        if let Some(triple) = target.as_str() {
+            cmd.args(["--target", triple]);
+        }
+        self.apply_features(&mut cmd, args, pkg, cmd_feats);
+        if let Some(manifest) = self.manifest.as_ref() {
+            cmd.args(["--manifest-path".as_ref(), manifest.as_os_str()]);
+        }
+        if args.release {
+            cmd.arg("--release");
+        }
+        if args.offline {
+            cmd.args(["--offline", "--locked"]);
+        }
+        if args.verbose {
+            cmd.arg("-vv");
+        }
+        for (k, v) in &self.env {
+            cmd.env(k, v);
+        }
+
+        if args.verbose {
+            println!("{cmd:?}");
+        }
+
+        // Capture stdout for JSON parsing and let stderr go through so
+        // it is visble to the user
+        let output = cmd.stderr(Stdio::inherit()).output()?;
+        if !output.status.success() {
+            return Err(format!("cargo test failed for {pkg}").into());
+        }
+
+        cargo::find_test_executable(&output.stdout, pkg)
+            .ok_or_else(|| format!("no test executable found for {pkg}").into())
     }
 
     /// Build this component as a Makefile binary.
