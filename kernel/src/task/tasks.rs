@@ -274,6 +274,22 @@ struct UserTaskContext {
     pub excp_context: X86ExceptionContext,
 }
 
+// To ensure stack frames are 16b-aligned, ret_addr must be 16b-aligned
+// so that (%rsp + 8) is 16b-aligned after the ret instruction in
+// switch_context
+const _: () = assert!(
+    (size_of::<KernelTaskContext>() - offset_of!(KernelTaskContext, task_context.ret_addr)) % 16
+        == 0
+);
+
+// User-task return to return_new_task which is asm code, so %rsp must be
+// 16b-aligned after the ret instruction in switch_context to ensure stack
+// frames are 16b-aligned
+const _: () = assert!(
+    (size_of::<UserTaskContext>() - offset_of!(UserTaskContext, task_context.ret_addr) - 8) % 16
+        == 0
+);
+
 #[repr(C)]
 struct TaskSchedState {
     /// Whether this is an idle task
@@ -734,15 +750,6 @@ impl Task {
             .checked_sub(stack_offset)
             .unwrap()
             .as_mut_ptr::<u8>();
-        // To ensure stack frames are 16b-aligned, ret_addr must be 16b-aligned
-        // so that (%rsp + 8) is 16b-aligned after the ret instruction in
-        // switch_context
-        debug_assert!(
-            VirtAddr::from(stack_ptr)
-                .checked_sub(8)
-                .unwrap()
-                .is_aligned(16)
-        );
 
         // Make sure there is room for TaskContext
         debug_assert!(
@@ -794,10 +801,7 @@ impl Task {
             .checked_sub(stack_offset)
             .unwrap()
             .as_mut_ptr::<u8>();
-        // return_new_task is asm code, so %rsp must be 16b-aligned after the
-        // ret instruction in switch_context to ensure stack frames are
-        // 16b-aligned
-        debug_assert!(VirtAddr::from(stack_ptr).is_aligned(16));
+
         // Make sure there is room for TaskContext
         debug_assert!(
             (percpu_mapping.virt_addr() + bounds.start().bits()) <= VirtAddr::from(stack_ptr)
