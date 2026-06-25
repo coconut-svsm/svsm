@@ -4,9 +4,14 @@
 //
 // Author: Nicola Ramacciotti <niko.ramak@gmail.com>
 
+extern crate alloc;
+
+use alloc::sync::Arc;
 use bitfield_struct::bitfield;
-use core::{ffi::CStr, mem};
+use core::{ffi::CStr, fmt::Debug, mem};
 use zerocopy::{Immutable, IntoBytes};
+
+use crate::{address::PhysAddr, protocols::errors::SvsmReqError};
 
 pub const OMP_NAME_LEN: usize = 120;
 pub const OMP_IDENTIFIER_LEN: usize = OMP_NAME_LEN * 2;
@@ -107,3 +112,44 @@ const _: () = assert!(
         && mem::offset_of!(OmpSourceInfo, name) == 0x08
         && mem::size_of::<OmpSourceInfo>() == OMP_SOURCE_SIZE
 );
+
+/// Callback type to use when iterating over each OMP source of an OMP object.
+/// The callback should return `Ok(true)` to continue iteration.
+/// `Ok(false)` or `Err(SvsmReqError)` stop the iteration.
+pub type OmpSourceCallback<'a> =
+    &'a mut dyn FnMut(&Arc<dyn OmpSource>) -> Result<bool, SvsmReqError>;
+
+/// Operations required for an OMP object
+pub trait OmpObject: Debug + Send + Sync {
+    fn get_name(&self) -> &str;
+    fn get_info(&self) -> &OmpSourceInfo;
+    fn get_source(&self, name: &str) -> Option<Arc<dyn OmpSource>>;
+    /// Applies `f` to every source until `f` returns `Ok(false)` or an error.
+    /// In the latter case, the error is returned.
+    fn for_each_source(&self, f: OmpSourceCallback<'_>) -> Result<(), SvsmReqError>;
+    fn get_source_count(&self) -> usize;
+}
+
+/// Operations required for an OMP source
+pub trait OmpSource: Debug + Send + Sync {
+    /// Reads `size` bytes from the `gpa` into the local source at the specified `offset`.
+    fn read_from_guest(
+        &self,
+        _offset: u32,
+        _gpa: PhysAddr,
+        _size: u32,
+    ) -> Result<u32, SvsmReqError> {
+        Err(SvsmReqError::unsupported_call())
+    }
+    /// Writes `size` bytes from the local source at the specified `offset` to the `gpa`.
+    fn write_to_guest(
+        &self,
+        _offset: u32,
+        _gpa: PhysAddr,
+        _size: u32,
+    ) -> Result<u32, SvsmReqError> {
+        Err(SvsmReqError::unsupported_call())
+    }
+
+    fn get_info(&self) -> &OmpSourceInfo;
+}
