@@ -262,6 +262,13 @@ pub struct TaskContext {
 
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy)]
+struct KernelTaskContext {
+    pub task_context: TaskContext,
+    pub exit_addr: u64,
+}
+
+#[repr(C)]
+#[derive(Default, Debug, Clone, Copy)]
 struct UserTaskContext {
     pub task_context: TaskContext,
     pub excp_context: X86ExceptionContext,
@@ -722,7 +729,7 @@ impl Task {
         // defined in switch_context below.
         let stack_tos = percpu_mapping.virt_addr() + bounds.end().bits();
         // Make space for the task termination handler
-        let stack_offset = size_of::<u64>();
+        let stack_offset = size_of::<KernelTaskContext>();
         let stack_ptr = stack_tos
             .checked_sub(stack_offset)
             .unwrap()
@@ -736,13 +743,24 @@ impl Task {
                 .unwrap()
                 .is_aligned(16)
         );
+
         // Make sure there is room for TaskContext
         debug_assert!(
-            (percpu_mapping.virt_addr() + bounds.start().bits())
-                <= VirtAddr::from(stack_ptr)
-                    .checked_sub(size_of::<TaskContext>())
-                    .unwrap()
+            (percpu_mapping.virt_addr() + bounds.start().bits()) <= VirtAddr::from(stack_ptr)
         );
+
+        let task_context = KernelTaskContext {
+            task_context: TaskContext {
+                regs: X86TaskSwitchRegs {
+                    rsi: entry,
+                    rdx: xsa_addr,
+                    rcx: start_parameter,
+                    ..Default::default()
+                },
+                ret_addr: start_routine as u64,
+            },
+            exit_addr: task_exit as *const () as u64,
+        };
 
         // 'Push' the task frame onto the stack
         //
@@ -750,21 +768,11 @@ impl Task {
         // can be written to valid memory. The address storing the function
         // pointer is always 8b-aligned.
         unsafe {
-            let task_context = stack_ptr
-                .sub(size_of::<TaskContext>())
-                .cast::<TaskContext>();
-            // ret_addr
-            (*task_context).regs.rsi = entry;
-            // xsave area addr
-            (*task_context).regs.rdx = xsa_addr;
-            // start argument parameter.
-            (*task_context).regs.rcx = start_parameter;
-            (*task_context).ret_addr = start_routine as u64;
-            // Task termination handler for when entry point returns
-            stack_ptr.cast::<u64>().write(task_exit as *const () as u64);
+            let stack_task_context = stack_ptr.cast::<KernelTaskContext>();
+            *stack_task_context = task_context;
         }
 
-        Ok((mapping, bounds, stack_offset + size_of::<TaskContext>()))
+        Ok((mapping, bounds, stack_offset))
     }
 
     fn allocate_utask_stack(
