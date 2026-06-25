@@ -27,7 +27,7 @@ impl FsConfig {
     pub fn build(
         &self,
         args: &Args,
-        mut dst: PathBuf,
+        dst: PathBuf,
         cmd_feats: &mut Features,
     ) -> BuildResult<Option<PathBuf>> {
         if dst.try_exists()? {
@@ -51,19 +51,24 @@ impl FsConfig {
                 .path
                 .as_deref()
                 .unwrap_or_else(|| Path::new(comp.name));
-            // Pushing an absolute path to a PathBuf will overwrite
+            // Joining an absolute path to a PathBuf will overwrite
             // previous elements, so remove leading slash.
             if dst_file.starts_with("/") {
                 dst_file = dst_file.strip_prefix("/").unwrap();
             }
-            dst.push(dst_file);
-            comp.config.objcopy.copy(&bin, &dst, args)?;
+
+            let current_dst = dst.join(dst_file);
+
+            if let Some(parent) = current_dst.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            comp.config.objcopy.copy(&bin, &current_dst, args)?;
 
             let filename = dst_file
                 .to_str()
                 .ok_or_else(|| format!("invalid file name: {}", dst_file.display()))?;
-            enc.load_file(filename, &std::fs::File::open(&dst)?)?;
-            dst.pop();
+            enc.load_file(filename, &std::fs::File::open(&current_dst)?)?;
         }
 
         Ok(Some(fs_path))
