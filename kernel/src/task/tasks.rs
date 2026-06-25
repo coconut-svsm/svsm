@@ -721,13 +721,41 @@ impl Task {
         Ok(())
     }
 
-    fn allocate_stack_common() -> Result<(Mapping, MemoryRegion<VirtAddr>), SvsmError> {
+    fn allocate_stack_common<T>(
+        cpu: &PerCpu,
+        context: &T,
+    ) -> Result<(Mapping, MemoryRegion<VirtAddr>, usize), SvsmError>
+    where
+        T: Sized + Copy,
+    {
         let stack = VMKernelStack::new()?;
         let bounds = stack.bounds(VirtAddr::from(0u64));
 
         let mapping = Arc::new(stack);
+        let percpu_mapping = cpu.new_mapping(mapping.clone())?;
 
-        Ok((mapping, bounds))
+        // We need to setup a context on the stack that matches the stack layout
+        // defined in switch_context below.
+        let stack_tos = percpu_mapping.virt_addr() + bounds.end().bits();
+
+        // Make space for the task termination handler
+        let stack_offset = size_of::<T>();
+        let stack_ptr = stack_tos
+            .checked_sub(stack_offset)
+            .unwrap()
+            .as_mut_ptr::<T>();
+
+        // Make sure there is room for T
+        debug_assert!(
+            (percpu_mapping.virt_addr() + bounds.start().bits()) <= VirtAddr::from(stack_ptr)
+        );
+
+        // 'Push' the task frame onto the stack
+        //
+        // SAFETY: We ensure that T can be written to valid memory.
+        unsafe { stack_ptr.write(*context) };
+
+        Ok((mapping, bounds, stack_offset))
     }
 
     fn allocate_ktask_stack(
@@ -737,25 +765,6 @@ impl Task {
         xsa_addr: usize,
         start_parameter: usize,
     ) -> Result<(Mapping, MemoryRegion<VirtAddr>, usize), SvsmError> {
-        let (mapping, bounds) = Task::allocate_stack_common()?;
-
-        let percpu_mapping = cpu.new_mapping(mapping.clone())?;
-
-        // We need to setup a context on the stack that matches the stack layout
-        // defined in switch_context below.
-        let stack_tos = percpu_mapping.virt_addr() + bounds.end().bits();
-        // Make space for the task termination handler
-        let stack_offset = size_of::<KernelTaskContext>();
-        let stack_ptr = stack_tos
-            .checked_sub(stack_offset)
-            .unwrap()
-            .as_mut_ptr::<u8>();
-
-        // Make sure there is room for TaskContext
-        debug_assert!(
-            (percpu_mapping.virt_addr() + bounds.start().bits()) <= VirtAddr::from(stack_ptr)
-        );
-
         let task_context = KernelTaskContext {
             task_context: TaskContext {
                 regs: X86TaskSwitchRegs {
@@ -769,17 +778,7 @@ impl Task {
             exit_addr: task_exit as *const () as u64,
         };
 
-        // 'Push' the task frame onto the stack
-        //
-        // SAFETY: we ensure that both `TaskContext` and the function pointer
-        // can be written to valid memory. The address storing the function
-        // pointer is always 8b-aligned.
-        unsafe {
-            let stack_task_context = stack_ptr.cast::<KernelTaskContext>();
-            *stack_task_context = task_context;
-        }
-
-        Ok((mapping, bounds, stack_offset))
+        Self::allocate_stack_common(cpu, &task_context)
     }
 
     fn allocate_utask_stack(
@@ -787,26 +786,7 @@ impl Task {
         user_entry: usize,
         xsa_addr: usize,
     ) -> Result<(Mapping, MemoryRegion<VirtAddr>, usize), SvsmError> {
-        let (mapping, bounds) = Task::allocate_stack_common()?;
         let iret_rflags: usize = 2 | EFLAGS_IF;
-
-        let percpu_mapping = cpu.new_mapping(mapping.clone())?;
-
-        // We need to setup a context on the stack that matches the stack layout
-        // defined in switch_context below.
-        let stack_tos = percpu_mapping.virt_addr() + bounds.end().bits();
-        // Make space for the IRET frame
-        let stack_offset = size_of::<UserTaskContext>();
-        let stack_ptr = stack_tos
-            .checked_sub(stack_offset)
-            .unwrap()
-            .as_mut_ptr::<u8>();
-
-        // Make sure there is room for TaskContext
-        debug_assert!(
-            (percpu_mapping.virt_addr() + bounds.start().bits()) <= VirtAddr::from(stack_ptr)
-        );
-
         let task_context = UserTaskContext {
             task_context: TaskContext {
                 regs: X86TaskSwitchRegs {
@@ -834,16 +814,7 @@ impl Task {
 
         debug_assert!(is_aligned(task_context.excp_context.frame.rsp + 8, 16));
 
-        // 'Push' the task frame onto the stack
-        //
-        // SAFETY: we ensure that both `X86ExceptionContext` and `TaskContext`
-        // can be written to valid memory.
-        unsafe {
-            let stack_task_context = stack_ptr.cast::<UserTaskContext>();
-            *stack_task_context = task_context;
-        }
-
-        Ok((mapping, bounds, stack_offset))
+        Self::allocate_stack_common(cpu, &task_context)
     }
 
     fn allocate_xsave_area() -> PageBox<[u8]> {
