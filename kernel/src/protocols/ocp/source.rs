@@ -4,9 +4,14 @@
 //
 // Author: Nicola Ramacciotti <niko.ramak@gmail.com>
 
+extern crate alloc;
+
+use alloc::sync::Arc;
 use bitfield_struct::bitfield;
-use core::{ffi::CStr, mem};
+use core::{ffi::CStr, fmt::Debug, mem};
 use zerocopy::{Immutable, IntoBytes};
+
+use crate::{address::PhysAddr, protocols::errors::SvsmReqError};
 
 pub const OCP_NAME_LEN: usize = 120;
 pub const OCP_IDENTIFIER_LEN: usize = OCP_NAME_LEN * 2;
@@ -107,3 +112,40 @@ const _: () = assert!(
         && mem::offset_of!(OcpSourceInfo, name) == 0x08
         && mem::size_of::<OcpSourceInfo>() == OCP_SOURCE_SIZE
 );
+
+/// Operations required for an OCP object
+pub trait OcpObject: Debug + Send + Sync {
+    fn get_name(&self) -> &str;
+    fn get_info(&self) -> &OcpSourceInfo;
+    fn get_source(&self, name: &str) -> Option<Arc<dyn OcpSource>>;
+    /// Applies `f` to every source until `f` returns `false`.
+    fn for_each_source(
+        &self,
+        f: &mut dyn FnMut(&Arc<dyn OcpSource>) -> Result<bool, SvsmReqError>,
+    ) -> Result<(), SvsmReqError>;
+    fn get_source_count(&self) -> usize;
+}
+
+/// Operations required for an OCP source
+pub trait OcpSource: Debug + Send + Sync {
+    /// Reads `size` bytes from the `gpa` into the local source at the specified `offset`.
+    fn read_from_guest(
+        &self,
+        _offset: u32,
+        _gpa: PhysAddr,
+        _size: u32,
+    ) -> Result<u32, SvsmReqError> {
+        Err(SvsmReqError::unsupported_call())
+    }
+    /// Writes `size` bytes from the local source at the specified `offset` to the `gpa`.
+    fn write_to_guest(
+        &self,
+        _offset: u32,
+        _gpa: PhysAddr,
+        _size: u32,
+    ) -> Result<u32, SvsmReqError> {
+        Err(SvsmReqError::unsupported_call())
+    }
+
+    fn get_info(&self) -> &OcpSourceInfo;
+}
