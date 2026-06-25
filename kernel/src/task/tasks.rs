@@ -21,7 +21,6 @@ use core::sync::atomic::Ordering;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::IrqGuard;
 use crate::cpu::ShadowStackInit;
-use crate::cpu::X86ExceptionContext;
 use crate::cpu::features::{Feature, cpu_has_feat};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
@@ -33,6 +32,7 @@ use crate::cpu::percpu::this_cpu;
 use crate::cpu::shadow_stack::init_shadow_stack;
 use crate::cpu::sse::sse_restore_context;
 use crate::cpu::sse::xsave_area_size;
+use crate::cpu::{X86ExceptionContext, X86InterruptFrame};
 use crate::error::SvsmError;
 use crate::fs::{Directory, FileHandle, opendir, stdout_open};
 use crate::locking::RWLock;
@@ -258,6 +258,13 @@ pub struct X86TaskSwitchRegs {
 pub struct TaskContext {
     pub regs: X86TaskSwitchRegs,
     pub ret_addr: u64,
+}
+
+#[repr(C)]
+#[derive(Default, Debug, Clone, Copy)]
+struct UserTaskContext {
+    pub task_context: TaskContext,
+    pub excp_context: X86ExceptionContext,
 }
 
 #[repr(C)]
@@ -774,7 +781,7 @@ impl Task {
         // defined in switch_context below.
         let stack_tos = percpu_mapping.virt_addr() + bounds.end().bits();
         // Make space for the IRET frame
-        let stack_offset = size_of::<X86ExceptionContext>();
+        let stack_offset = size_of::<UserTaskContext>();
         let stack_ptr = stack_tos
             .checked_sub(stack_offset)
             .unwrap()
@@ -785,32 +792,11 @@ impl Task {
         debug_assert!(VirtAddr::from(stack_ptr).is_aligned(16));
         // Make sure there is room for TaskContext
         debug_assert!(
-            (percpu_mapping.virt_addr() + bounds.start().bits())
-                <= VirtAddr::from(stack_ptr)
-                    .checked_sub(size_of::<TaskContext>())
-                    .unwrap()
+            (percpu_mapping.virt_addr() + bounds.start().bits()) <= VirtAddr::from(stack_ptr)
         );
 
-        // 'Push' the task frame onto the stack
-        //
-        // SAFETY: we ensure that both `X86ExceptionContext` and `TaskContext`
-        // can be written to valid memory.
-        unsafe {
-            // Setup IRQ return frame.  User-mode tasks always run with
-            // interrupts enabled.
-            let mut iret_frame = X86ExceptionContext::default();
-            iret_frame.frame.rip = user_entry;
-            iret_frame.frame.cs = (SVSM_USER_CS | 3).into();
-            iret_frame.frame.flags = iret_rflags;
-            iret_frame.frame.rsp = (USER_MEM_END - 8).into();
-            iret_frame.frame.ss = (SVSM_USER_DS | 3).into();
-            debug_assert!(is_aligned(iret_frame.frame.rsp + 8, 16));
-
-            // Copy IRET frame to stack
-            let stack_iret_frame = stack_ptr.cast::<X86ExceptionContext>();
-            *stack_iret_frame = iret_frame;
-
-            let task_context = TaskContext {
+        let task_context = UserTaskContext {
+            task_context: TaskContext {
                 regs: X86TaskSwitchRegs {
                     rsi: xsa_addr, // XSAVE area addr
                     ..Default::default()
@@ -819,15 +805,33 @@ impl Task {
                     .bits()
                     .try_into()
                     .unwrap(),
-            };
+            },
+            // Setup IRQ return frame.  User-mode tasks always run with
+            // interrupts enabled.
+            excp_context: X86ExceptionContext {
+                frame: X86InterruptFrame {
+                    rip: user_entry,
+                    cs: (SVSM_USER_CS | 3).into(),
+                    flags: iret_rflags,
+                    rsp: (USER_MEM_END - 8).into(),
+                    ss: (SVSM_USER_DS | 3).into(),
+                },
+                ..Default::default()
+            },
+        };
 
-            let stack_task_context = stack_ptr
-                .sub(size_of::<TaskContext>())
-                .cast::<TaskContext>();
+        debug_assert!(is_aligned(task_context.excp_context.frame.rsp + 8, 16));
+
+        // 'Push' the task frame onto the stack
+        //
+        // SAFETY: we ensure that both `X86ExceptionContext` and `TaskContext`
+        // can be written to valid memory.
+        unsafe {
+            let stack_task_context = stack_ptr.cast::<UserTaskContext>();
             *stack_task_context = task_context;
         }
 
-        Ok((mapping, bounds, stack_offset + size_of::<TaskContext>()))
+        Ok((mapping, bounds, stack_offset))
     }
 
     fn allocate_xsave_area() -> PageBox<[u8]> {
