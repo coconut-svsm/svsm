@@ -6,8 +6,9 @@
 
 //! OCP protocol implementation (SVSM draft spec).
 
+use crate::{address::PhysAddr, protocols::errors::SvsmReqError};
 use bitfield_struct::bitfield;
-use core::mem;
+use core::{fmt::Debug, mem};
 use zerocopy::{Immutable, IntoBytes};
 
 const OCP_SOURCE_NAME_LEN: usize = 112;
@@ -97,4 +98,28 @@ pub struct OcpObjectDetails {
     category: OcpObjectType,
     index: u32,
     count: u32,
+}
+
+/// Operations required for an OCP object
+pub trait OcpObjectOperations: Debug + Send + Sync {
+    fn read(
+        &self,
+        _offset: u32,
+        _gpa: PhysAddr,
+        _size: u32,
+        _sub_index: u32,
+    ) -> Result<u32, SvsmReqError> {
+        Err(SvsmReqError::unsupported_call())
+    }
+    fn write(
+        &self,
+        _offset: u32,
+        _gpa: PhysAddr,
+        _size: u32,
+        _sub_index: u32,
+    ) -> Result<u32, SvsmReqError> {
+        Err(SvsmReqError::unsupported_call())
+    }
+    fn get_object_details(&self) -> &OcpObjectDetails;
+    fn get_object_sources(&self) -> &[OcpSource];
 }
