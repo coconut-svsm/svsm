@@ -31,10 +31,11 @@ OBJCOPY_ELF_ARGS := --strip-unneeded
 else
 TARGET_PATH=debug
 OBJCOPY_ELF_ARGS := --strip-debug
+endif
+
 ifeq ($(DISABLE_CONSOLE_LOG),)
 SVSM_ARGS += --features enable-console-log
 XBUILD_ARGS += -f enable-console-log
-endif
 endif
 
 ifdef OFFLINE
