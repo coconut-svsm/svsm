@@ -8,6 +8,7 @@ use core::arch::asm;
 
 pub const SEV_GHCB: u32 = 0xC001_0130;
 pub const MSR_GS_BASE: u32 = 0xC000_0101;
+pub const MSR_GUEST_TSC_FREQ: u32 = 0xC001_0134;
 
 pub fn read_msr(msr: u32) -> u64 {
     let eax: u32;

@@ -6,18 +6,21 @@
 
 //! API to send `SNP_GUEST_REQUEST` commands to the PSP
 
-use zerocopy::FromBytes;
+use zerocopy::{FromBytes, IntoBytes};
 
 use crate::error::SvsmError;
 use crate::greq::{
     driver::{send_extended_guest_request, send_regular_guest_request},
     msg::SnpGuestRequestMsgType,
     pld_report::{SnpReportRequest, SnpReportResponse},
+    pld_tsc_info::{SnpTscInfoRequest, SnpTscInfoResponse},
 };
 use core::mem::size_of;
 
 const REPORT_REQUEST_SIZE: usize = size_of::<SnpReportRequest>();
 const REPORT_RESPONSE_SIZE: usize = size_of::<SnpReportResponse>();
+const TSC_INFO_REQUEST_SIZE: usize = size_of::<SnpTscInfoRequest>();
+const TSC_INFO_RESPONSE_SIZE: usize = size_of::<SnpTscInfoResponse>();
 
 fn get_report(buffer: &mut [u8], certs: Option<&mut [u8]>) -> Result<usize, SvsmError> {
     let request: &SnpReportRequest = SnpReportRequest::try_from_as_ref(buffer)?;
@@ -104,6 +107,35 @@ pub fn get_regular_report(buffer: &mut [u8]) -> Result<usize, SvsmError> {
 ///             * `psp_rc`: PSP return code
 pub fn get_extended_report(buffer: &mut [u8], certs: &mut [u8]) -> Result<usize, SvsmError> {
     get_report(buffer, Some(certs))
+}
+
+/// Request Secure TSC information from the PSP.
+pub fn get_tsc_info(buffer: &mut [u8]) -> Result<&SnpTscInfoResponse, SvsmError> {
+    if buffer.len() < TSC_INFO_RESPONSE_SIZE {
+        return Err(SvsmError::InvalidParameter);
+    }
+
+    let request = SnpTscInfoRequest::new();
+    buffer
+        .get_mut(..TSC_INFO_REQUEST_SIZE)
+        .ok_or(SvsmError::InvalidParameter)?
+        .copy_from_slice(request.as_bytes());
+
+    let response_len = send_regular_guest_request(
+        SnpGuestRequestMsgType::TscInfoRequest,
+        buffer,
+        TSC_INFO_REQUEST_SIZE,
+    )?;
+
+    if TSC_INFO_RESPONSE_SIZE > response_len {
+        return Err(SvsmError::InvalidParameter);
+    }
+
+    let (response, _rest) =
+        SnpTscInfoResponse::ref_from_prefix(buffer).map_err(|_| SvsmError::InvalidParameter)?;
+    response.validate()?;
+
+    Ok(response)
 }
 
 #[cfg(test)]

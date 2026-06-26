@@ -9,4 +9,5 @@
 pub mod driver;
 pub mod msg;
 pub mod pld_report;
+pub mod pld_tsc_info;
 pub mod services;
