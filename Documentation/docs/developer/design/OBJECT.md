@@ -1,4 +1,6 @@
-# Background
+# Object Handles
+
+## Background
 
 The syscalls design philosophy is to provide a unified interface for the user to
 access system resources, which are represented by object handles. This makes
@@ -7,9 +9,9 @@ objects a fundamental concept in the COCONUT-SVSM kernel
 This document describes the object and object handle from both the user mode's
 and the COCONUT-SVSM kernel's point of view.
 
-# Key Data Structures
+## Key Data Structures
 
-## Object
+### Object
 
 An object represents the type of resource like file, VM, vCPU in the
 COCONUT-SVSM kernel, that can be accessible by the user mode. A trait named Obj
@@ -86,7 +88,7 @@ impl Obj for VcpuObj {
 Objects without special requirements can fall back to the default implementation
 in the Obj trait, which returns None.
 
-## Object Handle
+### Object Handle
 
 When the user mode is trying to open a particular kernel resource via the
 syscalls, the COCONUT-SVSM kernel creates a corresponding object which
@@ -124,7 +126,7 @@ mode, and the subsequent syscalls use this id to access this object. The passed
 id from the syscalls can be converted to an `ObjHandle`, which is used to access
 the object in the COCONUT-SVSM kernel.
 
-### User Mode Object Handle
+#### User Mode Object Handle
 
 The object is exposed to the user mode via the object-opening related syscalls,
 which returns the id of the object created by the COCONUT-SVSM kernel. The user
@@ -173,7 +175,7 @@ pub struct VmObjHandle(ObjHandle);
 pub struct VcpuObjHandle(ObjHandle);
 ```
 
-# Object Management in COCONUT-SVSM Kernel
+## Object Management in COCONUT-SVSM Kernel
 
 To facilitate the user mode using the object, the COCONUT-SVSM kernel should:
 
@@ -221,7 +223,7 @@ When a task is terminated while it still has opened objects, these objects will
 be dropped automatically when the `objs` is dropped, if `objs` held the last
 reference to the objects.
 
-# Opening an Object in User Mode
+## Opening an Object in User Mode
 
 The user mode can open a particular object via syscalls. For example, VM_OPEN
 syscall is used to open a virtual machine object. The COCONUT-SVSM kernel
@@ -308,7 +310,7 @@ particular object to be added, and stores the object in the current task via the
 local to the process, and returned to the syscall. It is converted to a `u32`
 and returned to the user mode as the user mode `ObjHandle`.
 
-# Closing an Object in User Mode
+## Closing an Object in User Mode
 
 The CLOSE syscall can close an object, taking the object handle id as the input
 parameter. The COCONUT-SVSM kernel provides `obj_close()` function to facilitate
@@ -376,7 +378,7 @@ impl Task {
 After removing the `Arc<dyn Obj>` from the current task, the object will be
 dropped by the CLOSE syscall if this is the last reference to the object.
 
-# Accessing an Object in User Mode
+## Accessing an Object in User Mode
 
 Certain syscalls can access the objects by taking the object handle id as an
 input. For example, VM_CAPABILITIES syscall takes an object handle id as input,
