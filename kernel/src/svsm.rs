@@ -421,6 +421,10 @@ unsafe fn svsm_start(
         .configure_alternate_injection(launch_info.use_alternate_injection)
         .expect("Alternate injection required but not available");
 
+    platform
+        .configure_secure_tsc(launch_info.use_secure_tsc)
+        .expect("Secure TSC required but not available");
+
     platform_cell.global_init();
 
     sse_init();

@@ -243,6 +243,18 @@ pub trait SvsmPlatform: Sync {
     /// interrupt.
     fn is_external_interrupt(&self, vector: usize) -> bool;
 
+    /// Configures the use of Secure TSC as requested.
+    ///
+    /// Returns [`SvsmError::NotSupported`] if Secure TSC is requested but not
+    /// supported by the platform.
+    fn configure_secure_tsc(&mut self, secure_tsc_requested: bool) -> Result<(), SvsmError> {
+        if secure_tsc_requested {
+            Err(SvsmError::NotSupported)
+        } else {
+            Ok(())
+        }
+    }
+
     /// Start an additional processor.
     fn start_cpu(
         &self,

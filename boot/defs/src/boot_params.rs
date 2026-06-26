@@ -163,6 +163,12 @@ pub struct BootParamBlock {
     /// region in the memory map that starts at kernel_base and is larger, this maximum size will
     /// be used instead.
     pub kernel_max_size: u32,
+
+    /// Indicates whether SVSM should use SecureTSC.
+    pub use_secure_tsc: u8,
+
+    #[doc(hidden)]
+    pub _reserved: [u8; 7],
 }
 
 const _: () = {
