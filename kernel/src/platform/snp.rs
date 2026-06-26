@@ -31,6 +31,8 @@ use crate::cpu::x86::{apic_enable, apic_initialize, apic_sw_enable};
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
+use crate::greq::pld_tsc_info::SnpTscInfoResponse;
+use crate::greq::services::get_tsc_info;
 use crate::hyperv;
 use crate::io::IOPort;
 use crate::mm::PAGE_SIZE;
@@ -38,13 +40,15 @@ use crate::mm::PAGE_SIZE_2M;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::memory::write_guest_memory_map;
 use crate::platform::IrqGuard;
+use crate::sev::SECURE_TSC_ACCESSOR;
 use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::msr_protocol::{
     GHCBHvFeatures, hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version,
 };
 use crate::sev::secrets_page::initialize_secrets_page;
-use crate::sev::status::vtom_enabled;
+use crate::sev::secure_tsc::{SecureTscInfo, TscAccess};
+use crate::sev::status::{sev_flags, vtom_enabled};
 use crate::sev::tlb::flush_tlb_scope;
 use crate::sev::{
     GHCB_APIC_ACCESSOR, PvalidateOp, init_hypervisor_ghcb_features, pvalidate_range,
@@ -55,9 +59,10 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 #[cfg(test)]
 use bootdefs::platform::SvsmPlatformType;
 use core::arch::x86_64::CpuidResult;
-use core::mem::MaybeUninit;
+use core::mem::{MaybeUninit, size_of};
 use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
+use cpuarch::sev_status::SEVStatusFlags;
 use cpufeature::CpuidFeature;
 use cpufeature::backend::CpuidBackend;
 use syscall::GlobalFeatureFlags;
@@ -179,6 +184,7 @@ impl SvsmPlatform for SnpPlatform {
             GHCB_APIC_ACCESSOR.set_use_restr_inj(true);
             this_cpu().setup_hv_doorbell()?;
         }
+
         guest_request_driver_init();
         Ok(())
     }
@@ -402,6 +408,38 @@ impl SvsmPlatform for SnpPlatform {
         // with all event delivery, so all events are assumed not to be
         // external interrupts.
         false
+    }
+    fn configure_secure_tsc(&mut self, secure_tsc_requested: bool) -> Result<(), SvsmError> {
+        if !secure_tsc_requested {
+            return Ok(());
+        }
+
+        if !sev_flags().contains(SEVStatusFlags::SECURE_TSC) {
+            return Err(SvsmError::NotSupported);
+        }
+
+        let mut buffer = [0u8; size_of::<SnpTscInfoResponse>()];
+        let tsc_info = get_tsc_info(&mut buffer)?;
+        let secure_tsc_info = SecureTscInfo {
+            tsc_scale: tsc_info.tsc_scale(),
+            tsc_offset: tsc_info.tsc_offset(),
+            tsc_factor: tsc_info.tsc_factor(),
+        };
+
+        if secure_tsc_info.tsc_scale == 0 {
+            return Err(SvsmError::InvalidFormat);
+        }
+
+        SECURE_TSC_ACCESSOR.set_tsc_info(secure_tsc_info);
+        SECURE_TSC_ACCESSOR.set_use_secure_tsc(true);
+
+        let base = SECURE_TSC_ACCESSOR.read_tsc_frequency();
+        if base == 0 {
+            SECURE_TSC_ACCESSOR.set_use_secure_tsc(false);
+            return Err(SvsmError::NotSupported);
+        }
+
+        Ok(())
     }
 
     fn start_cpu(
