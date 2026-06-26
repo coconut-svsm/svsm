@@ -97,7 +97,9 @@ pub enum ShadowStackInit {
         /// The address of the first instruction that will be executed by the task.
         entry_return: usize,
         /// The address of the function that's executed when the task exits.
-        exit_return: Option<usize>,
+        exit_return: usize,
+        /// Whether there is an iret frame on the bottom of the stack.
+        iret_frame: bool,
     },
     /// A shadow stack to be used during context switches.
     ///
@@ -116,58 +118,63 @@ pub fn init_shadow_stack(
     init: ShadowStackInit,
 ) -> (Option<VirtAddr>, VirtAddr) {
     // Initialize the shadow stack.
-    let mut chunk = [0; 24];
-    let (base_token_addr, ssp) = match init {
+    let mut chunk = [0; 32];
+    let (base_token_addr, ssp, len) = match init {
         ShadowStackInit::Normal {
             entry_return,
             exit_return,
+            iret_frame,
         } => {
-            // If exit return is empty, then this thread will be used as a
-            // user task stack.  In that case, place a busy token at the
-            // base of the shadow stack.
             let base_token_addr = top_of_sstack - 8;
-            let base_token = match exit_return {
-                Some(addr) => addr,
-                None => base_token_addr.bits() + BUSY,
-            };
-
             let (token_bytes, rip_bytes) = chunk.split_at_mut(8);
 
+            let len: usize = if iret_frame { 32 } else { 24 };
+
             // Create a shadow stack restore token.
-            let token_addr = top_of_sstack - 24;
+            let token_addr = top_of_sstack - len;
             let token = (token_addr + 8).bits() + MODE_64BIT;
             token_bytes.copy_from_slice(&token.to_ne_bytes());
 
             let (entry_bytes, base_bytes) = rip_bytes.split_at_mut(8);
             entry_bytes.copy_from_slice(&entry_return.to_ne_bytes());
-            base_bytes.copy_from_slice(&base_token.to_ne_bytes());
 
-            (Some(base_token_addr), token_addr)
+            let (exit_bytes, bottom_bytes) = base_bytes.split_at_mut(8);
+            exit_bytes.copy_from_slice(&exit_return.to_ne_bytes());
+
+            if iret_frame {
+                // If iret_frame is true, then this thread will be used as a
+                // user task stack.  In that case, place a busy token at the
+                // base of the shadow stack.
+                let base_token = base_token_addr.bits() + BUSY;
+                bottom_bytes.copy_from_slice(&base_token.to_ne_bytes());
+            }
+
+            (Some(base_token_addr), token_addr, len)
         }
         ShadowStackInit::ContextSwitch => {
-            let (_, token_bytes) = chunk.split_at_mut(16);
+            let (_, token_bytes) = chunk.split_at_mut(24);
 
             // Create a shadow stack restore token.
             let token_addr = top_of_sstack - 8;
             let token = (token_addr + 8).bits() + MODE_64BIT;
             token_bytes.copy_from_slice(&token.to_ne_bytes());
 
-            (None, token_addr)
+            (None, token_addr, 32)
         }
         ShadowStackInit::Exception => {
-            let (_, token_bytes) = chunk.split_at_mut(16);
+            let (_, token_bytes) = chunk.split_at_mut(24);
 
             // Create a supervisor shadow stack token.
             let token_addr = top_of_sstack - 8;
             let token = token_addr.bits();
             token_bytes.copy_from_slice(&token.to_ne_bytes());
 
-            (None, token_addr)
+            (None, token_addr, 32)
         }
-        ShadowStackInit::Init => (None, top_of_sstack - 8),
+        ShadowStackInit::Init => (None, top_of_sstack - 8, 24),
     };
 
-    page.write(PAGE_SIZE - chunk.len(), &chunk);
+    page.write(PAGE_SIZE - len, &chunk[..len]);
 
     (base_token_addr, ssp)
 }

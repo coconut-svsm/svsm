@@ -22,7 +22,7 @@ use crate::address::{Address, VirtAddr};
 use crate::cpu::IrqGuard;
 use crate::cpu::ShadowStackInit;
 use crate::cpu::features::{Feature, cpu_has_feat};
-use crate::cpu::idt::svsm::return_new_task;
+use crate::cpu::idt::svsm::{default_return, thread_entry_asm};
 use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::irqs_enable;
 use crate::cpu::irqs_enabled;
@@ -264,6 +264,7 @@ pub struct TaskContext {
 #[derive(Default, Debug, Clone, Copy)]
 struct KernelTaskContext {
     pub task_context: TaskContext,
+    pub thread_routine: u64,
     pub exit_addr: u64,
 }
 
@@ -271,6 +272,8 @@ struct KernelTaskContext {
 #[derive(Default, Debug, Clone, Copy)]
 struct UserTaskContext {
     pub task_context: TaskContext,
+    pub thread_routine: u64,
+    pub exit_addr: u64,
     pub excp_context: X86ExceptionContext,
 }
 
@@ -278,15 +281,12 @@ struct UserTaskContext {
 // so that (%rsp + 8) is 16b-aligned after the ret instruction in
 // switch_context
 const _: () = assert!(
-    (size_of::<KernelTaskContext>() - offset_of!(KernelTaskContext, task_context.ret_addr)) % 16
+    ((size_of::<KernelTaskContext>() - offset_of!(KernelTaskContext, task_context.ret_addr)) % 16)
+        - 8
         == 0
 );
-
-// User-task return to return_new_task which is asm code, so %rsp must be
-// 16b-aligned after the ret instruction in switch_context to ensure stack
-// frames are 16b-aligned
 const _: () = assert!(
-    (size_of::<UserTaskContext>() - offset_of!(UserTaskContext, task_context.ret_addr) - 8) % 16
+    ((size_of::<UserTaskContext>() - offset_of!(UserTaskContext, task_context.ret_addr)) % 16) - 8
         == 0
 );
 
@@ -478,11 +478,10 @@ impl Task {
 
         // Determine which kernel-mode entry/exit routines will be used for
         // this task.
-        let (entry_return, exit_return) = match args.start_info {
-            ThreadStartInfo::User(_) => (return_new_task as *const () as usize, None),
-            ThreadStartInfo::Kernel(ref info) => {
-                (info.start_routine, Some(task_exit as *const () as usize))
-            }
+        let entry_return = thread_entry_asm as *const () as usize;
+        let (exit_return, iret_frame) = match args.start_info {
+            ThreadStartInfo::User(_) => (default_return as *const () as usize, true),
+            ThreadStartInfo::Kernel(_) => (task_exit as *const () as usize, false),
         };
 
         let mut shadow_stack_offset = VirtAddr::null();
@@ -506,6 +505,7 @@ impl Task {
                 ShadowStackInit::Normal {
                     entry_return,
                     exit_return,
+                    iret_frame,
                 },
             );
 
@@ -768,13 +768,15 @@ impl Task {
         let task_context = KernelTaskContext {
             task_context: TaskContext {
                 regs: X86TaskSwitchRegs {
-                    rsi: entry,
-                    rdx: xsa_addr,
-                    rcx: start_parameter,
+                    rsi: xsa_addr,
+                    // Put these into callee-saved registers
+                    r14: entry,
+                    r15: start_parameter,
                     ..Default::default()
                 },
-                ret_addr: start_routine as u64,
+                ret_addr: thread_entry_asm as *const () as u64,
             },
+            thread_routine: start_routine as u64,
             exit_addr: task_exit as *const () as u64,
         };
 
@@ -793,11 +795,13 @@ impl Task {
                     rsi: xsa_addr, // XSAVE area addr
                     ..Default::default()
                 },
-                ret_addr: VirtAddr::from(return_new_task as *const ())
-                    .bits()
-                    .try_into()
-                    .unwrap(),
+                ret_addr: thread_entry_asm as *const () as u64,
             },
+            thread_routine: run_user_task as *const () as u64,
+            exit_addr: VirtAddr::from(default_return as *const ())
+                .bits()
+                .try_into()
+                .unwrap(),
             // Setup IRQ return frame.  User-mode tasks always run with
             // interrupts enabled.
             excp_context: X86ExceptionContext {
@@ -1044,23 +1048,14 @@ fn task_attach_console() {
         .expect("Failed to attach console");
 }
 
-/// Runs the first time a new task is scheduled, in the context of the new
-/// task. Any first-time initialization and setup work for a new task that
-/// needs to happen in its context must be done here.
-/// # Safety
-/// The caller is required to verify the correctness of the save area address.
+/// Finished the setup of a new thread by doing all setup work which needs to
+/// happen in the context of the new thread.
+///
+/// Right now this is mostly work done also in the switch_to() function after
+/// the task switch happened, as new threads do not go through this path when they
+/// first run.
 #[unsafe(no_mangle)]
-unsafe fn setup_user_task(prev: usize, xsa_addr: u64) {
-    // SAFETY: caller needs to make sure that the previous task pointer and
-    // xsa_addr are valid.
-    unsafe {
-        // Needs to be the first function called here.
-        setup_new_task_common(xsa_addr, complete_task_switch(prev));
-    }
-    task_attach_console();
-}
-
-unsafe fn setup_new_task_common(xsa_addr: u64, prev_task: Option<TaskPointer>) {
+unsafe fn complete_new_thread(prev: usize, xsa_addr: u64) {
     // Re-enable IRQs here, as they are still disabled from the
     // schedule()/sched_init() functions. After the context switch the IrqGuard
     // from the previous task is not dropped, which causes IRQs to stay
@@ -1069,6 +1064,9 @@ unsafe fn setup_new_task_common(xsa_addr: u64, prev_task: Option<TaskPointer>) {
     // subsequent task switches will go through schedule() and there the guard
     // is dropped, re-enabling IRQs.
     irqs_enable();
+
+    // SAFETY: the scheduler passes the correct pointer to the previous task.
+    let prev_task = unsafe { complete_task_switch(prev) };
 
     // Drop the previous task reference now that interrupts are reenabled.
     // This ensures that the task destructor will run with interrupts enabled.
@@ -1081,25 +1079,22 @@ unsafe fn setup_new_task_common(xsa_addr: u64, prev_task: Option<TaskPointer>) {
     }
 }
 
+/// Runs the first time a new task is scheduled, in the context of the new
+/// task. Any first-time initialization specific to user-tasks need to happen
+/// here.
+/// # Safety
+/// This is called from assembly code. The caller needs to ensure the
+/// parameters are passed correctly.
+#[unsafe(no_mangle)]
+unsafe fn run_user_task() {
+    task_attach_console();
+}
+
 /// # Safety
 /// This function must only be invoked as a thread start function, and must
 /// be invoked according to the start parameter data type expected by the entry
 /// point.
-unsafe fn run_kernel_task<T: KernelThreadStartParameter>(
-    prev: usize,
-    entry: fn(T),
-    xsa_addr: u64,
-    start_parameter: usize,
-) {
-    // SAFETY: the scheduler passes the correct pointer to the previous task.
-    let prev_task = unsafe { complete_task_switch(prev) };
-
-    // SAFETY: the save area address is provided by the context switch assembly
-    // code.
-    unsafe {
-        setup_new_task_common(xsa_addr, prev_task);
-    }
-
+unsafe fn run_kernel_task<T: KernelThreadStartParameter>(entry: fn(T), start_parameter: usize) {
     // SAFETY: the `usize` start parameter was generated from an earlier call
     // to `KernelThreadStartParameter::to_usize` when the start argument was
     // prepared for use in the initial stack context, and therefore the safety
