@@ -22,7 +22,7 @@ use crate::{
     error::SvsmError,
     greq::msg::{SnpGuestRequestExtData, SnpGuestRequestMsg, SnpGuestRequestMsgType},
     locking::SpinLock,
-    sev::{VMPCK_SIZE, ghcb::GhcbError, secrets_page, secrets_page_mut},
+    sev::{ghcb::GhcbError, secrets_page, secrets_page_mut},
     types::PAGE_SHIFT,
     utils::page_align_up,
 };
@@ -150,7 +150,7 @@ impl SnpGuestRequestDriver {
         command_len: usize,
     ) -> Result<(), SvsmError> {
         // VMPL0 `SNP_GUEST_REQUEST` commands are encrypted with the VMPCK0 key
-        let vmpck0: [u8; VMPCK_SIZE] = secrets_page().unwrap().get_vmpck(0);
+        let vmpck0 = secrets_page().unwrap().get_vmpck(0);
 
         let inbuf = buffer
             .get(..command_len)
@@ -171,7 +171,7 @@ impl SnpGuestRequestDriver {
         msg_type: SnpGuestRequestMsgType,
         buffer: &mut [u8],
     ) -> Result<usize, SvsmError> {
-        let vmpck0: [u8; VMPCK_SIZE] = secrets_page().unwrap().get_vmpck(0);
+        let vmpck0 = secrets_page().unwrap().get_vmpck(0);
 
         // For security reasons, decrypt the message in protected memory (staging)
         self.response.read_into(&mut self.staging);

@@ -18,7 +18,7 @@ use crate::{
 #[cfg(feature = "vsock")]
 use crate::{vsock::VMADDR_CID_HOST, vsock::stream::VsockStream};
 use aes_gcm::{AeadInPlace, Aes256Gcm, KeyInit, Nonce, aead::generic_array::GenericArray};
-use aes_kw::{Kek, KekAes256};
+use aes_kw::{KeyInit as _, KwAes256};
 use alloc::{string::ToString, vec::Vec};
 use cocoon_tpm_crypto::{
     CryptoError, EmptyCryptoIoSlices,
@@ -215,24 +215,20 @@ impl AttestationDriver<'_> {
         kdm.extend_from_slice(&(0_u32).to_be_bytes());
         kdm.extend_from_slice(&(256_u32).to_be_bytes());
 
-        let wrapping_key: KekAes256 = {
-            let mut buf: Vec<u8> = vec_sized(32).or(Err(AttestationError::VecAlloc))?;
+        let wrapping_key: KwAes256 = {
+            let mut buf = SecretSlice::new_sized(32).or(Err(AttestationError::VecAlloc))?;
 
             concat_kdf::derive_key_into::<sha2::Sha256>(&z, &kdm, &mut buf)
                 .map_err(AttestationError::KeyDerivation)?;
 
-            let sized: [u8; 32] = buf
-                .try_into()
-                .or(Err(AttestationError::WrapKeyArrayConvert))?;
+            KwAes256::new_from_slice(&buf).or(Err(AttestationError::WrapKeyArrayConvert))
+        }?;
 
-            Kek::new(&GenericArray::from(sized))
-        };
-
-        let mut cek =
-            vec_sized(&decryption.wrapped_cek.len() - 8).or(Err(AttestationError::VecAlloc))?;
+        let mut cek = SecretSlice::new_sized(&decryption.wrapped_cek.len() - 8)
+            .or(Err(AttestationError::VecAlloc))?;
 
         wrapping_key
-            .unwrap(&decryption.wrapped_cek, &mut cek)
+            .unwrap_key(&decryption.wrapped_cek, &mut cek)
             .or(Err(AttestationError::CekUnwrap))?;
 
         let cipher = Aes256Gcm::new(GenericArray::from_slice(&cek));
