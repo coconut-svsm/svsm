@@ -154,15 +154,20 @@ impl LocalApic {
 
     fn get_ppr_with_tpr(&self, tpr: u8) -> u8 {
         // Determine the priority of the current in-service interrupt, if any.
-        let ppr = if let Some(idx) = self.isr_stack_index.checked_sub(1) {
+        let isrv = if let Some(idx) = self.isr_stack_index.checked_sub(1) {
             self.isr_stack[idx]
         } else {
             0
         };
 
         // The PPR is the higher of the in-service interrupt priority and the
-        // task priority.
-        if (ppr >> 4) > (tpr >> 4) { ppr } else { tpr }
+        // task priority. PPR[3:0] (priority subclass) is only set if the TPR
+        // determines the PPR, so mask it out otherwise.
+        if (isrv >> 4) > (tpr >> 4) {
+            isrv & 0xF0
+        } else {
+            tpr
+        }
     }
 
     fn get_ppr<T: GuestCpuState>(&self, cpu_state: &T) -> u8 {
