@@ -7,6 +7,7 @@
 #
 # Modes:
 #   --all				check every tracked file.
+#   --files <path> [<path> ...]	check one or more files.
 #   <start_commit> [<end_commit>]	check only files added in this commit range.
 #					<end_commit> defaults to HEAD.
 
@@ -17,12 +18,20 @@ cd "$(git rev-parse --show-toplevel)"
 
 if [ $# -lt 1 ]; then
 	echo "Usage: $0 --all"
+	echo "       $0 --files <path> [<path> ...]"
 	echo "       $0 <start_commit> [<end_commit>]"
 	exit 1
 fi
 
 if [ "$1" = "--all" ]; then
 	files=$(git ls-files)
+elif [ "$1" = "--files" ]; then
+	shift
+	if [ $# -lt 1 ]; then
+		echo "Usage: $0 --files <path> [<path> ...]"
+		exit 1
+	fi
+	files=$*
 else
 	start=$1
 	end=${2:-HEAD}
