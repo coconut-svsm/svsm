@@ -378,6 +378,11 @@ thread_entry_asm:
 	movq %r15, %rsi
 	movq %r14, %rdi
 
+	// Move pointer to X86ExceptionContext to %rdx - Only present and used
+	// for user-tasks
+	movq %rsp, %rdx
+	addq $16, %rdx
+
 	// Fetch thread entry function pointer - do not touch stack pointer to
 	// keep stack alignment
 	movq (%rsp), %rax

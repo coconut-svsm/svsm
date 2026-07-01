@@ -21,5 +21,5 @@ pub use tasks::{
     TaskExitStatus, TaskListAdapter, TaskPointer, TaskRunListAdapter, TaskState, is_task_fault,
 };
 
-pub use exec::exec_user;
+pub use exec::{UserExecInfo, exec_user};
 pub use waiting::WaitQueue;

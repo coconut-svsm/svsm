@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use alloc::boxed::Box;
 use alloc::collections::btree_map::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -45,16 +46,18 @@ use crate::mm::{
     mappings::create_anon_mapping, mappings::create_file_mapping,
 };
 use crate::syscall::{Obj, ObjError, ObjHandle};
-use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
+use crate::types::{SVSM_USER_CPL, SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::{MemoryRegion, is_aligned};
 use intrusive_collections::{LinkedListAtomicLink, intrusive_adapter};
 
-use super::WaitQueue;
+use super::exec::exec;
 use super::schedule::complete_task_switch;
 use super::schedule::terminate;
 use super::task_mm::{TaskKernelMapping, TaskMM};
+use super::{UserExecInfo, WaitQueue};
 
 pub const INITIAL_TASK_ID: u32 = 1;
+pub const EFLAGS_INIT: usize = 2;
 
 /// This trait is used to describe a type that can be used as the start
 /// parameter for a kernel thread.  The thread start path requires that all
@@ -128,7 +131,7 @@ impl KernelThreadStartInfo {
 #[derive(Debug)]
 enum ThreadStartInfo {
     Kernel(KernelThreadStartInfo),
-    User(usize),
+    User(*const UserExecInfo),
 }
 
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
@@ -520,7 +523,7 @@ impl Task {
 
         // Call the correct stack creation routine for this task.
         let (stack, raw_bounds, rsp_offset) = match args.start_info {
-            ThreadStartInfo::User(entry) => Self::allocate_utask_stack(cpu, entry, xsa_addr)?,
+            ThreadStartInfo::User(info_ptr) => Self::allocate_utask_stack(cpu, info_ptr, xsa_addr)?,
             ThreadStartInfo::Kernel(ref info) => Self::allocate_ktask_stack(
                 cpu,
                 info.entry,
@@ -582,7 +585,7 @@ impl Task {
 
     pub fn create_user(
         cpu: &PerCpu,
-        user_entry: usize,
+        info: Box<UserExecInfo>,
         root: Arc<dyn Directory>,
         name: String,
     ) -> Result<TaskPointer, SvsmError> {
@@ -592,14 +595,23 @@ impl Task {
         unsafe {
             vm_user_range.initialize_lazy()?;
         }
+
+        // Destroy the Box and get the pointer to the raw data
+        let info_ptr = Box::into_raw(info);
+
         let create_args = CreateTaskArguments {
-            start_info: ThreadStartInfo::User(user_entry),
+            start_info: ThreadStartInfo::User(info_ptr),
             name,
             vm_user_range: Some(vm_user_range),
             rootdir: root,
             thread_of: None,
         };
-        Self::create_common(cpu, create_args)
+        Self::create_common(cpu, create_args).inspect_err(|_| {
+            // In error case, make sure info gets freed
+            // SAFETY: info_ptr was created above from a Box and not
+            // dropped in the create_common call-path.
+            drop(unsafe { Box::from_raw(info_ptr) });
+        })
     }
 
     /// Create a new thread for an existing task.
@@ -785,14 +797,14 @@ impl Task {
 
     fn allocate_utask_stack(
         cpu: &PerCpu,
-        user_entry: usize,
+        info_ptr: *const UserExecInfo,
         xsa_addr: usize,
     ) -> Result<(Mapping, MemoryRegion<VirtAddr>, usize), SvsmError> {
-        let iret_rflags: usize = 2 | EFLAGS_IF;
         let task_context = UserTaskContext {
             task_context: TaskContext {
                 regs: X86TaskSwitchRegs {
-                    rsi: xsa_addr, // XSAVE area addr
+                    rsi: xsa_addr,          // XSAVE area addr
+                    r14: info_ptr as usize, // New task launch info
                     ..Default::default()
                 },
                 ret_addr: thread_entry_asm as *const () as u64,
@@ -804,19 +816,8 @@ impl Task {
                 .unwrap(),
             // Setup IRQ return frame.  User-mode tasks always run with
             // interrupts enabled.
-            excp_context: X86ExceptionContext {
-                frame: X86InterruptFrame {
-                    rip: user_entry,
-                    cs: (SVSM_USER_CS | 3).into(),
-                    flags: iret_rflags,
-                    rsp: (USER_MEM_END - 8).into(),
-                    ss: (SVSM_USER_DS | 3).into(),
-                },
-                ..Default::default()
-            },
+            excp_context: X86ExceptionContext::default(),
         };
-
-        debug_assert!(is_aligned(task_context.excp_context.frame.rsp + 8, 16));
 
         Self::allocate_stack_common(cpu, &task_context)
     }
@@ -1082,11 +1083,42 @@ unsafe fn complete_new_thread(prev: usize, xsa_addr: u64) {
 /// Runs the first time a new task is scheduled, in the context of the new
 /// task. Any first-time initialization specific to user-tasks need to happen
 /// here.
+///
+/// # Arguments:
+///
+/// * `info_ptr` - Pointer to a UserExecInfo structure.
+/// * `_unused` - Unused parameter, is the start parameter for kernel tasks
+/// * `ctxt` - Mutable reference to a struct X86ExceptionContext which must be
+///   prepared for the return-to-user path.
+///
 /// # Safety
+///
 /// This is called from assembly code. The caller needs to ensure the
 /// parameters are passed correctly.
 #[unsafe(no_mangle)]
-unsafe fn run_user_task() {
+unsafe fn run_user_task(info_ptr: *mut UserExecInfo, _unused: u64, ctxt: &mut X86ExceptionContext) {
+    // SAFETY: The raw pointer was extracted from a Box in
+    // allocate_utask_stack() to move ownership to a new process.
+    let info = unsafe { Box::from_raw(info_ptr) };
+
+    let entry = match exec(*info) {
+        Ok(e) => e,
+        Err(e) => {
+            log::error!("Failed to load ELF binary: {e:?}");
+            terminate(None);
+        }
+    };
+
+    ctxt.frame = X86InterruptFrame {
+        rip: entry as usize,
+        cs: (SVSM_USER_CS | SVSM_USER_CPL).into(),
+        flags: EFLAGS_INIT | EFLAGS_IF,
+        rsp: (USER_MEM_END - 8).into(),
+        ss: (SVSM_USER_DS | SVSM_USER_CPL).into(),
+    };
+
+    debug_assert!(is_aligned(ctxt.frame.rsp + 8, 16));
+
     task_attach_console();
 }
 
