@@ -17,9 +17,9 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-/// Represents a raw file handle.
+/// Represents a handle used for file operations in a thread-safe manner.
 #[derive(Debug)]
-struct RawFileHandle {
+pub struct FileHandle {
     file: Arc<dyn File>,
     /// Current file offset for read/write operations. Use a spinlock
     /// to serialize updates when reading or writing using this handle.
@@ -33,14 +33,27 @@ struct RawFileHandle {
     write: bool,
 }
 
-impl RawFileHandle {
-    fn new(file: &Arc<dyn File>, read: bool, write: bool) -> Self {
+impl FileHandle {
+    /// Create a new file handle instance.
+    pub fn new(file: &Arc<dyn File>, read: bool, write: bool) -> Self {
         Self {
             file: file.clone(),
             current: SpinLock::new(0),
             read,
             write,
         }
+    }
+
+    /// Check whether FileHandle is open for reading.
+    #[inline]
+    pub fn readable(&self) -> bool {
+        self.read
+    }
+
+    /// Check whether FileHandle is open for writing.
+    #[inline]
+    pub fn writable(&self) -> bool {
+        self.write
     }
 
     fn check_read(&self) -> Result<(), SvsmError> {
@@ -59,110 +72,6 @@ impl RawFileHandle {
         }
     }
 
-    fn read(&self, buf: &mut [u8]) -> Result<usize, SvsmError> {
-        self.check_read()?;
-        let mut current = self.current.lock();
-        let result = self.file.read(buf, *current);
-        if let Ok(v) = result {
-            *current += v;
-        }
-        result
-    }
-
-    fn read_buffer(&self, buffer: &mut dyn Buffer) -> Result<usize, SvsmError> {
-        self.check_read()?;
-        let mut current = self.current.lock();
-        let result = self.file.read_buffer(buffer, *current);
-        if let Ok(bytes) = result {
-            *current += bytes;
-        }
-        result
-    }
-
-    fn write(&self, buf: &[u8]) -> Result<usize, SvsmError> {
-        self.check_write()?;
-        let mut current = self.current.lock();
-        let result = self.file.write(buf, *current);
-        if let Ok(num) = result {
-            *current += num;
-        }
-        result
-    }
-
-    fn write_buffer(&self, buffer: &dyn Buffer) -> Result<usize, SvsmError> {
-        self.check_write()?;
-        let mut current = self.current.lock();
-        let result = self.file.write_buffer(buffer, *current);
-        if let Ok(bytes) = result {
-            *current += bytes;
-        }
-        result
-    }
-
-    fn truncate(&self, offset: usize) -> Result<usize, SvsmError> {
-        self.check_write()?;
-        let mut current = self.current.lock();
-        let result = self.file.truncate(offset);
-        if let Ok(new_size) = result {
-            *current = current.min(new_size);
-        }
-        result
-    }
-
-    fn seek_abs_locked(&self, current: &mut usize, pos: usize) {
-        *current = min(pos, self.file.size())
-    }
-
-    fn seek_abs(&self, pos: usize) {
-        let mut current = self.current.lock();
-        self.seek_abs_locked(&mut current, pos)
-    }
-
-    fn seek_rel(&self, offset: isize) {
-        let mut current = self.current.lock();
-        let pos = current.checked_add_signed(offset).unwrap_or(0);
-        self.seek_abs_locked(&mut current, pos);
-    }
-
-    fn seek_end(&self, offset: usize) {
-        let mut current = self.current.lock();
-        let pos = self.file.size().saturating_sub(offset);
-        *current = pos;
-    }
-
-    fn size(&self) -> usize {
-        self.file.size()
-    }
-
-    fn mapping(&self, offset: usize) -> Option<PageRef> {
-        self.file.mapping(offset)
-    }
-}
-
-/// Represents a handle used for file operations in a thread-safe manner.
-#[derive(Debug)]
-pub struct FileHandle {
-    handle: RawFileHandle,
-}
-
-impl FileHandle {
-    /// Create a new file handle instance.
-    pub fn new(file: &Arc<dyn File>, read: bool, write: bool) -> Self {
-        FileHandle {
-            handle: RawFileHandle::new(file, read, write),
-        }
-    }
-
-    /// Check whether FileHandle is open for reading.
-    pub fn readable(&self) -> bool {
-        self.handle.check_read().is_ok()
-    }
-
-    /// Check whether FileHandle is open for writing.
-    pub fn writable(&self) -> bool {
-        self.handle.check_write().is_ok()
-    }
-
     /// Used to read contents from the file handle.
     ///
     /// # Arguments
@@ -175,7 +84,13 @@ impl FileHandle {
     /// bytes read if successful, or an [`SvsmError`] if there was a problem
     /// during the read operation.
     pub fn read(&self, buf: &mut [u8]) -> Result<usize, SvsmError> {
-        self.handle.read(buf)
+        self.check_read()?;
+        let mut current = self.current.lock();
+        let result = self.file.read(buf, *current);
+        if let Ok(v) = result {
+            *current += v;
+        }
+        result
     }
 
     /// Read contents from the file to a [`Buffer`].
@@ -190,7 +105,13 @@ impl FileHandle {
     /// bytes read if successful, or an [`SvsmError`] if there was a problem
     /// during the read operation.
     pub fn read_buffer(&self, buffer: &mut dyn Buffer) -> Result<usize, SvsmError> {
-        self.handle.read_buffer(buffer)
+        self.check_read()?;
+        let mut current = self.current.lock();
+        let result = self.file.read_buffer(buffer, *current);
+        if let Ok(bytes) = result {
+            *current += bytes;
+        }
+        result
     }
 
     /// Used to write contents to the file handle
@@ -205,7 +126,13 @@ impl FileHandle {
     /// bytes written if successful, or an [`SvsmError`] if there was a problem
     /// during the write operation.
     pub fn write(&self, buf: &[u8]) -> Result<usize, SvsmError> {
-        self.handle.write(buf)
+        self.check_write()?;
+        let mut current = self.current.lock();
+        let result = self.file.write(buf, *current);
+        if let Ok(num) = result {
+            *current += num;
+        }
+        result
     }
 
     /// Write data to the file via a [`Buffer`].
@@ -220,7 +147,13 @@ impl FileHandle {
     /// bytes written if successful, or an [`SvsmError`] if the operation
     /// failed.
     pub fn write_buffer(&self, buffer: &dyn Buffer) -> Result<usize, SvsmError> {
-        self.handle.write_buffer(buffer)
+        self.check_write()?;
+        let mut current = self.current.lock();
+        let result = self.file.write_buffer(buffer, *current);
+        if let Ok(bytes) = result {
+            *current += bytes;
+        }
+        result
     }
 
     /// Used to truncate the file to the specified size.
@@ -236,7 +169,17 @@ impl FileHandle {
     /// file after truncation if successful, or an [`SvsmError`] if there was
     /// a problem during the truncate operation.
     pub fn truncate(&self, offset: usize) -> Result<usize, SvsmError> {
-        self.handle.truncate(offset)
+        self.check_write()?;
+        let mut current = self.current.lock();
+        let result = self.file.truncate(offset);
+        if let Ok(new_size) = result {
+            *current = current.min(new_size);
+        }
+        result
+    }
+
+    fn seek_abs_locked(&self, current: &mut usize, pos: usize) {
+        *current = min(pos, self.file.size())
     }
 
     /// Change the current file offset to an absolute position.
@@ -245,7 +188,8 @@ impl FileHandle {
     ///
     /// - `pos`: intended new file offset value.
     pub fn seek_abs(&self, pos: usize) {
-        self.handle.seek_abs(pos);
+        let mut current = self.current.lock();
+        self.seek_abs_locked(&mut current, pos)
     }
 
     /// Change the current file offset relative to the current position.
@@ -254,7 +198,9 @@ impl FileHandle {
     ///
     /// - `offset`: Signed value to add to current file position.
     pub fn seek_rel(&self, offset: isize) {
-        self.handle.seek_rel(offset);
+        let mut current = self.current.lock();
+        let pos = current.checked_add_signed(offset).unwrap_or(0);
+        self.seek_abs_locked(&mut current, pos);
     }
 
     /// Set the current file offset relative to the end of file.
@@ -263,7 +209,9 @@ impl FileHandle {
     ///
     /// - `offset`: Value to subtract from end-of-file position.
     pub fn seek_end(&self, offset: usize) {
-        self.handle.seek_end(offset);
+        let mut current = self.current.lock();
+        let pos = self.file.size().saturating_sub(offset);
+        *current = pos;
     }
 
     /// Used to get the size of the file.
@@ -272,15 +220,15 @@ impl FileHandle {
     ///
     /// Size of the file in bytes.
     pub fn size(&self) -> usize {
-        self.handle.size()
+        self.file.size()
     }
 
     pub fn position(&self) -> usize {
-        *self.handle.current.lock()
+        *self.current.lock()
     }
 
     pub fn mapping(&self, offset: usize) -> Option<PageRef> {
-        self.handle.mapping(offset)
+        self.file.mapping(offset)
     }
 }
 
