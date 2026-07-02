@@ -9,17 +9,19 @@ use crate::address::VirtAddr;
 use crate::cpu::percpu::current_task;
 use crate::fs::find_dir;
 use crate::mm::guestmem::UserPtr;
+use crate::task::TaskExitStatus;
 use crate::task::exec_user;
 use crate::task::terminate;
 use core::ffi::c_char;
 use syscall::SysCallError;
 
 pub fn sys_exit(exit_code: u32) -> ! {
+    let code = (exit_code & 0xffff) as u16;
     log::info!(
-        "Terminating task {}, exit_code {exit_code}",
+        "Terminating task {}, exit_code {code}",
         current_task().get_task_name()
     );
-    terminate();
+    terminate(Some(TaskExitStatus::Exited(code)));
 }
 
 pub fn sys_exec(file: usize, root: usize, _flags: usize) -> Result<u64, SysCallError> {

@@ -36,6 +36,7 @@ extern crate alloc;
 
 use super::tasks::TASK_ACTIVE_OFFSET;
 use super::tasks::TASK_CUR_CPU_OFFSET;
+use super::tasks::TaskExitStatus;
 use super::{
     INITIAL_TASK_ID, KernelThreadStartInfo, Task, TaskListAdapter, TaskPointer, TaskRunListAdapter,
 };
@@ -440,10 +441,18 @@ fn current_task_terminated() {
     }
 }
 
-pub fn terminate() -> ! {
+/// Terminate the current task and optionally set its exit status.
+/// If no exit status is provided, then the task will terminate
+/// with the default value `Exited(0)`.
+pub fn terminate(exit_status: Option<TaskExitStatus>) -> ! {
     // Terminating a task will result in a task change, so preemption must
     // be allowable.
     preemption_checks();
+
+    if let Some(status) = exit_status {
+        current_task().set_exit_status(status);
+    }
+
     current_task_terminated();
 
     // The current task will not run again, so switch to a different task.

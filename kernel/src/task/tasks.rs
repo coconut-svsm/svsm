@@ -1131,7 +1131,7 @@ unsafe fn run_kernel_task<T: KernelThreadStartParameter>(
 }
 
 fn task_exit() {
-    terminate();
+    terminate(None);
 }
 
 #[cfg(all(test, test_in_svsm))]
