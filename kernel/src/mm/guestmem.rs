@@ -269,6 +269,38 @@ unsafe fn copy_bytes(src: *const u8, dst: *mut u8, size: usize) -> Result<(), Sv
     }
 }
 
+/// Zeroes `size` number of bytes at `dst`, catching any fault that / might
+/// happen during the operation.
+///
+/// # Safety
+///
+/// The caller must make sure that writing to `dst` does not harm memory safety.
+unsafe fn clear_bytes(dst: *mut u8, size: usize) -> Result<(), SvsmError> {
+    let mut rcx: u64;
+
+    // SAFETY: The safety requirements of the function need to be met. Will
+    // write only `size` zero bytes at `dst`.
+    unsafe {
+        asm!("1: rep stosb
+              2:
+                 .pushsection \"__exception_table\",\"a\"
+                 .balign 16
+                 .quad (1b)
+                 .quad (2b)
+                 .popsection",
+                 inout("rdi") dst.expose_provenance() => _,
+                 inout("rcx") size => rcx,
+                 in("rax") 0,
+                 options(att_syntax, nostack));
+    }
+
+    if rcx == 0 {
+        Ok(())
+    } else {
+        Err(SvsmError::Fault)
+    }
+}
+
 /// Copies `src` to `dst`.
 ///
 /// # Safety
@@ -559,6 +591,19 @@ fn check_bounds_user(start: usize, len: usize) -> Result<(), SvsmError> {
         Err(SvsmError::InvalidAddress)
     } else {
         Ok(())
+    }
+}
+
+pub fn zero_user_mem(dst: VirtAddr, size: usize) -> Result<(), SvsmError> {
+    let destination = with_exposed_provenance_mut::<u8>(dst.bits());
+
+    check_bounds_user(dst.bits(), size)?;
+
+    // SAFETY: As per above check this clears only the requested memory in
+    // user-mode memory.
+    unsafe {
+        let _guard = UserAccessGuard::new();
+        clear_bytes(destination, size)
     }
 }
 
