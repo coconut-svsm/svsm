@@ -4,12 +4,12 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
-use super::{GuestExitMessage, GuestRegister, set_guest_register};
+use super::GuestExitMessage;
 use crate::cpu::percpu::{GuestVmsaRef, this_cpu};
 use crate::cpu::{IrqGuard, flush_tlb_global_sync};
 use crate::mm::GuestPtr;
-use crate::protocols::RequestParams;
 use crate::protocols::errors::SvsmReqError;
+use crate::protocols::{RequestOutput, RequestParams};
 use crate::requests::SvsmCaa;
 use crate::sev::ghcb::switch_to_vmpl;
 use crate::sev::vmsa::VMSAControl;
@@ -72,7 +72,7 @@ fn get_svsm_request_message(vmsa_ref: &mut GuestVmsaRef) -> Option<GuestExitMess
     None
 }
 
-pub fn enter_guest(mut regs: &[GuestRegister]) -> GuestExitMessage {
+pub fn enter_guest(mut regs: RequestOutput) -> GuestExitMessage {
     let cpu = this_cpu();
 
     // If no VMSA or CAA are configured, then the guest cannot be entered.
@@ -86,13 +86,11 @@ pub fn enter_guest(mut regs: &[GuestRegister]) -> GuestExitMessage {
         let caa_addr = vmsa_ref.caa();
         let vmsa = vmsa_ref.vmsa();
 
-        for reg in regs {
-            set_guest_register(vmsa, reg);
-        }
+        regs.copy_to_vmsa(vmsa);
 
         // Ensure that no further register modification occurs if the loop
         // restarts.
-        regs = &[];
+        regs.clear();
 
         // No interrupts may be processed once guest APIC state is updated,
         // since handling an interrupt may modify the guest APIC state

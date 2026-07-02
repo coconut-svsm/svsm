@@ -4,26 +4,23 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-extern crate alloc;
-
 use crate::cpu::ipi::wait_for_ipi_block;
 use crate::cpu::percpu::{PERCPU_AREAS, this_cpu};
 use crate::protocols::apic::apic_protocol_request;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
 use crate::task::{KernelThreadStartInfo, go_idle, set_affinity, start_kernel_thread};
-use crate::vmm::{GuestExitMessage, GuestRegister, enter_guest};
+use crate::vmm::{GuestExitMessage, enter_guest};
 
 use crate::protocols::attest::attest_protocol_request;
 use crate::protocols::{
-    RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
+    RequestOutput, RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
 };
 #[cfg(all(feature = "uefivars", not(test)))]
 use crate::protocols::{SVSM_UEFI_MM_PROTOCOL, uefivars::uefi_mm_protocol_request};
 #[cfg(all(feature = "vtpm", not(test)))]
 use crate::protocols::{SVSM_VTPM_PROTOCOL, vtpm::vtpm_protocol_request};
 
-use alloc::vec::Vec;
 use zerocopy::{FromBytes, IntoBytes};
 
 /// The SVSM Calling Area (CAA)
@@ -118,32 +115,34 @@ fn request_loop_main(cpu_index: usize) {
     // other CPUs have done the same.
     wait_for_ipi_block();
 
-    let mut guest_regs = Vec::<GuestRegister>::new();
+    let mut output = RequestOutput::new();
 
     loop {
         // Attempt to enter the guest.  Once registers have been set, reset the
         // vector so they are not set again.
-        let msg = enter_guest(guest_regs.as_slice());
-        guest_regs = Vec::new();
+        let msg = enter_guest(output);
+        output.clear();
 
         match msg {
             GuestExitMessage::NoMappings => {
                 log::debug!("No VMSA or CAA! Halting");
                 go_idle();
             }
-            GuestExitMessage::Svsm((protocol, request, mut params)) => {
-                guest_regs = process_request(protocol, request, &mut params);
+            GuestExitMessage::Svsm((protocol, request, mut input)) => {
+                let rax = process_request(protocol, request, &mut input);
+                output.set_rax(rax);
+                input.capture(&mut output);
             }
         }
     }
 }
 
-fn process_request(protocol: u32, request: u32, params: &mut RequestParams) -> Vec<GuestRegister> {
-    let rax: Option<u64> = match request_loop_once(params, protocol, request) {
-        Ok(()) => Some(SvsmResultCode::SUCCESS.into()),
+fn process_request(protocol: u32, request: u32, params: &mut RequestParams) -> u64 {
+    match request_loop_once(params, protocol, request) {
+        Ok(()) => SvsmResultCode::SUCCESS.into(),
         Err(SvsmReqError::RequestError(code)) => {
             log::debug!("Soft error handling protocol {protocol} request {request}: {code:?}");
-            Some(code.into())
+            code.into()
         }
         Err(SvsmReqError::FatalError(err)) => {
             panic!(
@@ -151,15 +150,5 @@ fn process_request(protocol: u32, request: u32, params: &mut RequestParams) -> V
                 request, err
             );
         }
-    };
-
-    // Generate vector of registers to update.
-    let mut guest_regs = Vec::<GuestRegister>::new();
-    if let Some(val) = rax {
-        guest_regs.push(GuestRegister::X64Rax(val));
     }
-
-    params.capture(&mut guest_regs);
-
-    guest_regs
 }
