@@ -11,6 +11,7 @@ use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::fs::{Directory, open_read};
 use crate::mm::vm::VMFileMappingFlags;
+use crate::mm::zero_user_mem;
 use crate::mm::{USER_MEM_END, mmap_user};
 use crate::task::{create_user_task, current_task, finish_user_task, schedule};
 use crate::types::PAGE_SIZE;
@@ -93,31 +94,54 @@ pub fn exec(info: UserExecInfo) -> Result<u64, SvsmError> {
 
     for seg in elf_bin.image_load_segment_iter(virt_base) {
         let virt_start = VirtAddr::from(seg.vaddr_range.vaddr_begin);
-        let virt_end = VirtAddr::from(seg.vaddr_range.vaddr_end).align_up(PAGE_SIZE);
+        let virt_end = VirtAddr::from(seg.vaddr_range.vaddr_end);
         let file_offset = seg.file_range.offset_begin;
-        let len = virt_end - virt_start;
+        let mem_size = virt_end - virt_start;
         let file_size = seg.file_range.offset_end - seg.file_range.offset_begin;
         let flags = convert_elf_phdr_flags(seg.flags);
 
-        if file_offset > 0 {
-            if file_size > len {
-                return Err(SvsmError::Elf(elf::ElfError::InvalidFileRange));
-            }
+        // Handle unaligned VirtAddr and Offset
+        let map_start = virt_start.page_align();
+        let mem_map_size = mem_size + virt_start.page_offset();
 
-            // Handle unaligned VirtAddr and Offset
-            let start_aligned = virt_start.page_align();
-            let offset = file_offset - virt_start.page_offset();
-            let size = file_size + virt_start.page_offset();
-            mmap_user(start_aligned, Some(&fh), offset, size, flags)?;
+        if file_size == 0 {
+            // No file backing - Map the segment with anonymous memory
+            mmap_user(map_start, None, 0, mem_map_size, flags)?;
+            continue;
+        }
 
-            let size_aligned = align_up(size, PAGE_SIZE);
-            if size_aligned < len {
-                let start_anon = start_aligned.const_add(size_aligned);
-                let remaining_len = len - size_aligned;
-                mmap_user(start_anon, None, 0, remaining_len, flags)?;
-            }
-        } else {
-            mmap_user(virt_start, None, 0, len, flags)?;
+        if file_size > mem_size {
+            return Err(SvsmError::Elf(elf::ElfError::InvalidFileRange));
+        }
+
+        let page_offset = virt_start.page_offset();
+        if file_offset % PAGE_SIZE != page_offset {
+            return Err(SvsmError::Elf(elf::ElfError::UnalignedSegmentAddress));
+        }
+
+        let map_offset = file_offset - page_offset;
+        let file_map_size = file_size + page_offset;
+        mmap_user(map_start, Some(&fh), map_offset, file_map_size, flags)?;
+
+        let file_map_size_aligned = align_up(file_map_size, PAGE_SIZE);
+        let zero_end = file_map_size_aligned.min(mem_map_size);
+
+        // Zero the part of the last file-backed page covered by p_memsz but not
+        // by p_filesz.  mmap_user() maps whole pages, so this would otherwise
+        // expose bytes following the segment in the ELF file.
+        if zero_end > file_map_size && seg.flags.contains(Elf64PhdrFlags::WRITE) {
+            zero_user_mem(map_start + file_map_size, zero_end - file_map_size)?;
+        }
+
+        if file_map_size_aligned < mem_map_size {
+            let remaining_len = mem_map_size - file_map_size_aligned;
+            mmap_user(
+                map_start + file_map_size_aligned,
+                None,
+                0,
+                remaining_len,
+                flags,
+            )?;
         }
     }
 
