@@ -103,9 +103,8 @@ impl RawFileHandle {
         self.check_write()?;
         let mut current = self.current.lock();
         let result = self.file.truncate(offset);
-        let new_size = self.file.size();
-        if result.is_ok() && *current >= new_size {
-            *current = new_size;
+        if let Ok(new_size) = result {
+            *current = current.min(new_size);
         }
         result
     }
