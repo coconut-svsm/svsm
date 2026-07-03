@@ -537,7 +537,21 @@ unsafe fn switch_to(prev_task: Option<TaskPointer>, next_task: TaskPointer) -> O
     // the page table and stack information in those tasks are correct and
     // can be used to switch to the correct page table and execution stack.
     unsafe {
-        let cr3 = (*next).page_table.lock().cr3_value().bits();
+        let cr3 = {
+            let mut cr3 = (*next).page_table.lock().cr3_value().bits();
+            if let Some(pcid) = (*next).pcid() {
+                cr3 |= usize::from(pcid);
+                // Set bit 63 so that writing CR3 does not flush the TLB
+                // entries associated with the target PCID. Without this bit,
+                // every write to CR3 invalidates all non-global entries for
+                // the loaded PCID, defeating the purpose of tagging address
+                // spaces with a PCID across context switches. Targeted
+                // invalidation is performed explicitly via INVPCID / INVLPGB
+                // when a mapping actually changes.
+                cr3 |= 1usize << 63;
+            }
+            cr3
+        };
 
         // Switch to new task
         let new_prev = switch_context(

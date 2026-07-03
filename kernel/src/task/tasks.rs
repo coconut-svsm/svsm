@@ -664,6 +664,10 @@ impl Task {
         self.rootdir.clone()
     }
 
+    pub fn pcid(&self) -> Option<u16> {
+        self.mm.pcid()
+    }
+
     pub fn set_task_active(&self) {
         self.sched_state.set_active();
     }
