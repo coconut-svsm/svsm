@@ -17,6 +17,8 @@ use crate::mm::{SIZE_LEVEL3, SVSM_PERTASK_BASE, SVSM_PERTASK_END, alloc::AllocEr
 use crate::utils::MemoryRegion;
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 
+use super::pcid::{TaskPcid, pcid_supported};
+
 static KTASK_VADDR_BITMAP: SpinLock<BitmapAllocator1024> =
     SpinLock::new(BitmapAllocator1024::new_empty());
 
@@ -61,6 +63,9 @@ pub struct TaskMM {
 
     /// Task virtual memory range for use at CPL 3 - None for kernel tasks
     vm_user_range: Option<VMR>,
+
+    /// PCID tagging this address space's page-table root
+    pcid: Option<TaskPcid>,
 }
 
 impl TaskMM {
@@ -103,10 +108,23 @@ impl TaskMM {
             vm_kernel_range.initialize()?;
         }
 
+        // Try to assign a unique PCID to tag this address space. If PCIDs are
+        // exhausted, fall back to no PCID (the reserved PCID 0). Such a task
+        // loads CR3 with PCID=0 and CR3[63]=0, which fully flushes non-global
+        // TLB entries on every switch, exactly as if PCIDs were not in use.
+        // This lets PCID and non-PCID address spaces coexist without failing
+        // task creation when the PCID space is full.
+        let pcid = if pcid_supported() {
+            TaskPcid::new().ok()
+        } else {
+            None
+        };
+
         Ok(TaskMM {
             _ktask_region: ktask_region,
             vm_kernel_range,
             vm_user_range: user_vmr,
+            pcid,
         })
     }
 
@@ -126,6 +144,11 @@ impl TaskMM {
     /// `Some(&VMR)` referencing the user-mode `[VMR]` for a user-task, `None` otherwise.
     pub fn user_range(&self) -> Option<&VMR> {
         self.vm_user_range.as_ref()
+    }
+
+    /// PCID for this address space, if PCID support is available.
+    pub fn pcid(&self) -> Option<u16> {
+        self.pcid.as_ref().map(TaskPcid::pcid)
     }
 }
 

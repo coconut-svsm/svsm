@@ -6,6 +6,7 @@
 
 use crate::address::{Address, VirtAddr};
 use crate::cpu::control_regs::{read_cr3, read_cr4, write_cr3, write_cr4};
+use crate::cpu::features::{Feature, cpu_has_feat};
 use crate::cpu::ipi::{IpiMessage, IpiTarget, send_multicast_ipi};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::PageSize;
@@ -20,6 +21,13 @@ static FLUSH_SMP: AtomicBool = AtomicBool::new(false);
 /// need to be flushed exceeds this value, a complete TLB flush will
 /// be performed instead.
 const TLB_FLUSH_ALL_THRESHOLD: usize = 256;
+
+/// INVPCID descriptor (Intel SDM Vol. 2A, `INVPCID`).
+#[repr(C, align(16))]
+struct InvpcidDesc {
+    pcid: u64,
+    reserved: u64,
+}
 
 /// Defines the scope of a TLB flush.
 #[derive(Copy, Clone, Debug)]
@@ -40,6 +48,9 @@ pub struct TlbFlushScope {
     pub global: bool,
     /// Indicates the range of virtual addresses that should be flushed.
     pub range: TlbFlushRange,
+    /// When set, flush all non-global entries for this PCID (INVPCID or
+    /// INVLPGB, depending on CPU features).
+    pub pcid: Option<u16>,
 }
 
 impl TlbFlushScope {
@@ -48,6 +59,16 @@ impl TlbFlushScope {
         Self {
             global: true,
             range: TlbFlushRange::All,
+            pcid: None,
+        }
+    }
+
+    /// Creates a TLB flush scope targeting all non-global entries tagged with the given PCID.
+    pub const fn pcid(pcid: u16) -> Self {
+        Self {
+            global: false,
+            range: TlbFlushRange::All,
+            pcid: Some(pcid),
         }
     }
 
@@ -63,6 +84,7 @@ impl TlbFlushScope {
         Self {
             global: true,
             range: TlbFlushRange::Range { region, pgsize },
+            pcid: None,
         }
     }
 
@@ -94,6 +116,10 @@ impl TlbFlushScope {
 
     /// Flushes all the entries in the TLB for the current CPU.
     fn flush_percpu_all(&self) {
+        if let Some(pcid) = self.pcid {
+            flush_pcid_percpu(pcid);
+            return;
+        }
         match self.global {
             true => __flush_tlb_global_percpu(),
             false => __flush_tlb_percpu(),
@@ -130,6 +156,11 @@ pub fn set_tlb_flush_smp() {
     FLUSH_SMP.store(true, Ordering::Relaxed);
 }
 
+/// Flushes all non-global TLB entries tagged with `pcid` on all CPUs.
+pub fn flush_tlb_pcid_sync(pcid: u16) {
+    TlbFlushScope::pcid(pcid).flush_all_cpus();
+}
+
 pub fn flush_tlb_global_sync() {
     TlbFlushScope::all().with_global(true).flush_all_cpus();
 }
@@ -164,6 +195,25 @@ pub fn flush_tlb_global_percpu_page(vaddr: VirtAddr, pgsize: PageSize) {
 
 pub fn flush_tlb_percpu() {
     TlbFlushScope::all().with_global(false).flush_percpu();
+}
+
+fn flush_pcid_percpu(pcid: u16) {
+    if cpu_has_feat(Feature::Invpcid) {
+        let desc = InvpcidDesc {
+            pcid: u64::from(pcid),
+            reserved: 0,
+        };
+        // SAFETY: INVPCID type 1 (single-context invalidation) flushes all
+        // non-global TLB entries for the PCID in desc. Type in any GPR,
+        // descriptor in memory. The descriptor must be 16-byte aligned;
+        // alignment is guaranteed by InvpcidDesc's #[repr(C, align(16))] attribute.
+        unsafe {
+            asm!("invpcid ({0}), {1}",
+                 in(reg) &raw const desc,
+                 in(reg) 1u64,
+                 options(att_syntax));
+        }
+    }
 }
 
 fn __flush_tlb_global_percpu() {
