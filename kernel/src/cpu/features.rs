@@ -10,9 +10,9 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use cpufeature::CpuidFeature;
 use cpufeature::CpuidRegister;
 use cpufeature::leaves::{
-    CET_SS, INVLPGB_MAX_PAGES, PTE_CBIT_POS, X86_FEATURE_PGE, X86_FEATURE_SMAP, X86_FEATURE_SMEP,
-    X86_FEATURE_UMIP, X86_FEATURE_X2APIC, X86_FEATURE_XMM, X86_FEATURE_XSAVE, X86_FEATURE_XSAVEOPT,
-    XCR0_AVX, XCR0_SSE, XCR0_X87,
+    CET_SS, INVLPGB, INVLPGB_MAX_PAGES, PTE_CBIT_POS, X86_FEATURE_INVPCID, X86_FEATURE_PCID,
+    X86_FEATURE_PGE, X86_FEATURE_SMAP, X86_FEATURE_SMEP, X86_FEATURE_UMIP, X86_FEATURE_X2APIC,
+    X86_FEATURE_XMM, X86_FEATURE_XSAVE, X86_FEATURE_XSAVEOPT, XCR0_AVX, XCR0_SSE, XCR0_X87,
 };
 
 /// CPUID leaf 0 — CPU vendor ID string (EBX/ECX/EDX).
@@ -159,5 +159,8 @@ define_cpu_feats! {
     HyperV => CpuFeat::new(HYPERV_INTERFACE, HYPERV_INTERFACE_SIGNATURE),
     PhysAddrSizes => CpuFeat::new(PHYS_ADDR_SIZES, 0),
     InvlpgbMax => CpuFeat::new(INVLPGB_MAX_PAGES, 0),
+    Invlpgb => CpuFeat::new_bit(INVLPGB),
     Cbit => CpuFeat::new(PTE_CBIT_POS, 0),
+    Pcid => CpuFeat::new_bit(X86_FEATURE_PCID),
+    Invpcid => CpuFeat::new_bit(X86_FEATURE_INVPCID),
 }
