@@ -15,7 +15,7 @@ use bitflags::bitflags;
 bitflags! {
 /// Attributes of an ELF64 program header, to specify whether
 /// the segment is readable, writable, and/or executable
-    #[derive(Debug)]
+    #[derive(Copy, Clone, Debug)]
     pub struct Elf64PhdrFlags : Elf64Word {
         const EXECUTE = 0x01;
         const WRITE   = 0x02;
@@ -24,7 +24,7 @@ bitflags! {
 }
 
 /// Program header entry in an ELF64 file
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Elf64Phdr {
     /// Type of the program header entry
     pub p_type: Elf64Word,
