@@ -24,6 +24,7 @@ use core::ffi::CStr;
 // OCP protocol services
 const SVSM_OCP_LIST: u32 = 0;
 const SVSM_OCP_READ: u32 = 1;
+const SVSM_OCP_WRITE: u32 = 2;
 
 const LOW_32_BITS: u64 = 0xffff_ffff;
 const OCP_BUFFER_MAX_SIZE: usize = PAGE_SIZE;
@@ -229,10 +230,43 @@ fn ocp_read_request(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     Ok(())
 }
 
+fn ocp_write_request(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    let gpa_buffer = PhysAddr::from(params.rdx);
+
+    if !gpa_buffer.is_aligned(OCP_BUFFER_ALIGNMENT) {
+        return Err(SvsmReqError::invalid_address());
+    }
+
+    let gpa_id = PhysAddr::from(params.rcx);
+    let bytes_to_write = (params.r8 & LOW_32_BITS) as u32;
+    let offset = (params.r9 & LOW_32_BITS) as u32;
+
+    if bytes_to_write as usize > OCP_BUFFER_MAX_SIZE {
+        return Err(SvsmReqError::invalid_parameter());
+    }
+
+    let source = get_requested_source(gpa_id)?;
+
+    let source_info = source.get_info();
+    if !source_info.is_valid_access(offset, bytes_to_write) {
+        return Err(SvsmReqError::invalid_parameter());
+    }
+    if !source_info.is_writable() {
+        return Err(SvsmReqError::invalid_parameter());
+    }
+
+    let bytes_copied = source.write(offset, gpa_buffer, bytes_to_write)?;
+
+    params.r8 = bytes_copied as u64;
+
+    Ok(())
+}
+
 pub fn ocp_protocol_request(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
     match request {
         SVSM_OCP_LIST => ocp_list_request(params),
         SVSM_OCP_READ => ocp_read_request(params),
+        SVSM_OCP_WRITE => ocp_write_request(params),
         _ => Err(SvsmReqError::unsupported_call()),
     }
 }
