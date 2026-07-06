@@ -64,25 +64,6 @@ pub enum ApicError {
     Registration,
 }
 
-/// Errors related to Attestation handling. These may originate from multiple
-/// layers in the system. Added to protocol base for protocol error.
-#[repr(u64)]
-#[derive(Clone, Copy, Debug)]
-pub enum AttestError {
-    /// An error related to attestation report.
-    Report = 0,
-
-    /// An error related to attestation manifest.
-    Manifest = 1,
-
-    /// An error related to attestation certificates.
-    Certificate = 2,
-
-    /// Error reported when size of the certificates exceeds the size of the supplied
-    /// certificate buffer. Required size in bytes is returned in RDX register.
-    CertificateSize = 3,
-}
-
 /// A generic error during SVSM operation.
 #[derive(Clone, Copy, Debug)]
 pub enum SvsmError {
@@ -148,8 +129,6 @@ pub enum SvsmError {
     SnpGuestRequest(u32),
     /// Generic errors related to APIC emulation.
     Apic(ApicError),
-    /// Generic errors related to attestation handling.
-    Attestation(AttestError),
     /// Errors related to Hyper-V.
     HyperV(u16),
     /// Errors related to Virtio drivers.
@@ -185,12 +164,6 @@ impl From<ElfError> for SvsmError {
 impl From<ApicError> for SvsmError {
     fn from(err: ApicError) -> Self {
         Self::Apic(err)
-    }
-}
-
-impl From<AttestError> for SvsmError {
-    fn from(err: AttestError) -> Self {
-        Self::Attestation(err)
     }
 }
 
