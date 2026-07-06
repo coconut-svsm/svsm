@@ -24,12 +24,6 @@ Detailed installation instructions are in the [INSTALL.md](Documentation/docs/in
 file. It walks through the process of building all the necessary parts
 to get a virtual machine powered by the COCONUT-SVSM up and running.
 
-Documentation
--------------
-
-Information about COCONUT-SVSM can be found on at the
-[COCONUT-SVSM documentation site](https://coconut-svsm.github.io/svsm).
-
 Community
 ---------
 
@@ -64,6 +58,9 @@ lists planned and in-progress work items.
 
 Documentation
 -------------
+
+Information about COCONUT-SVSM can be found on at the
+[COCONUT-SVSM documentation site](https://coconut-svsm.github.io/svsm).
 
 Coconut-SVSM components are documented using rustdoc, a tool that produces
 a user-friendly, browsable website explaining the code's contents. To
