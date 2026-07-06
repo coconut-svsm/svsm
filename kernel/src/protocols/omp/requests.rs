@@ -24,6 +24,7 @@ use core::ffi::CStr;
 // OMP protocol services
 const SVSM_OMP_LIST: u32 = 0;
 const SVSM_OMP_READ: u32 = 1;
+const SVSM_OMP_WRITE: u32 = 2;
 
 const LOW_32_BITS: u64 = 0xffff_ffff;
 const OMP_BUFFER_MAX_SIZE: usize = PAGE_SIZE;
@@ -233,10 +234,40 @@ fn omp_read_request(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     Ok(())
 }
 
+fn omp_write_request(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    let gpa_buffer = PhysAddr::from(params.rdx);
+
+    if !gpa_buffer.is_aligned(OMP_BUFFER_ALIGNMENT) {
+        return Err(SvsmReqError::invalid_address());
+    }
+
+    let gpa_id = PhysAddr::from(params.rcx);
+    let num_bytes = (params.r8 & LOW_32_BITS) as u32;
+    let offset = (params.r9 & LOW_32_BITS) as u32;
+
+    if num_bytes as usize > OMP_BUFFER_MAX_SIZE {
+        return Err(SvsmReqError::invalid_parameter());
+    }
+
+    let source = get_requested_source(gpa_id)?;
+
+    let source_info = source.get_info();
+    if !source_info.is_valid_access(offset, num_bytes) || !source_info.is_writable() {
+        return Err(SvsmReqError::invalid_parameter());
+    }
+
+    let bytes_copied = source.read_from_guest(offset, gpa_buffer, num_bytes)?;
+
+    params.r8 = bytes_copied as u64;
+
+    Ok(())
+}
+
 pub fn omp_protocol_request(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
     match request {
         SVSM_OMP_LIST => omp_list_request(params),
         SVSM_OMP_READ => omp_read_request(params),
+        SVSM_OMP_WRITE => omp_write_request(params),
         _ => Err(SvsmReqError::unsupported_call()),
     }
 }
