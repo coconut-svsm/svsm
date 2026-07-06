@@ -20,6 +20,7 @@ use super::map::{explore_map, get_object};
 const SVSM_OCP_LIST_OBJECTS: u32 = 0;
 const SVSM_OCP_LIST_OBJECT_SOURCES: u32 = 1;
 const SVSM_OCP_READ: u32 = 2;
+const SVSM_OCP_WRITE: u32 = 3;
 
 const LOW_32_BITS: u64 = 0xffff_ffff;
 const OCP_BUFFER_MAX_SIZE: usize = PAGE_SIZE;
@@ -164,11 +165,39 @@ fn ocp_read_request(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     Ok(())
 }
 
+fn ocp_write_request(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    let gpa_buffer = PhysAddr::from(params.rdx);
+
+    if !gpa_buffer.is_aligned(OCP_BUFFER_ALIGNMENT) {
+        return Err(SvsmReqError::invalid_address());
+    }
+
+    let sub_index = (params.rcx & LOW_32_BITS) as u32;
+    let sup_index = ((params.rcx & !LOW_32_BITS) >> 32) as u32;
+    let bytes_to_write = (params.r8 & LOW_32_BITS) as u32;
+    let offset = (params.r9 & LOW_32_BITS) as u32;
+
+    if bytes_to_write as usize > OCP_BUFFER_MAX_SIZE {
+        return Err(SvsmReqError::invalid_parameter());
+    }
+
+    let Some(object) = get_object(sup_index) else {
+        return Err(SvsmReqError::invalid_parameter());
+    };
+
+    let bytes_copied = object.write(offset, gpa_buffer, bytes_to_write, sub_index)?;
+
+    params.r8 = bytes_copied as u64;
+
+    Ok(())
+}
+
 pub fn ocp_protocol_request(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
     match request {
         SVSM_OCP_LIST_OBJECTS => ocp_list_objects_request(params),
         SVSM_OCP_LIST_OBJECT_SOURCES => ocp_list_object_sources_request(params),
         SVSM_OCP_READ => ocp_read_request(params),
+        SVSM_OCP_WRITE => ocp_write_request(params),
         _ => Err(SvsmReqError::unsupported_call()),
     }
 }
