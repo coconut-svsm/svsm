@@ -5,29 +5,12 @@
 #
 # Author: Joerg Roedel <jroedel@suse.de>
 
-check_file_header() {
-	header_warning="Header format incorrect in $1, follow the header structure in other files"
-	IFS=$'\n'
-	arr=($(head -n 5 "$1"))
-	if  ! [[ "${arr[0]}" == "// SPDX-License-Identifier: MIT OR Apache-2.0" ||
-	         "${arr[0]}" == "// SPDX-License-Identifier: MIT" ]] ; then
-		echo "${header_warning}"
-		return 1
-	fi
-	if  ! [[ "${arr[2]}" =~ ^//[[:space:]]Copyright ]] ; then
-		echo "${header_warning}"
-		return 1
-	fi
-	if  ! [[ "${arr[4]}" =~ ^//[[:space:]]Author: ]] ; then
-		echo "${header_warning}"
-		return 1
-	fi
-	return 0
-}
-
 RET=0
+CHECK_SPDX="$(git rev-parse --show-toplevel)/scripts/check-spdx.sh"
 
-for file in `git diff --diff-filter=d --name-only --staged`; do
+staged_files=$(git diff --diff-filter=d --name-only --staged)
+
+for file in $staged_files; do
     ext=${file##*.}
     if [ "$ext" == "rs" ]; then
         rustfmt --check $file > /dev/null 2>&1
@@ -35,12 +18,12 @@ for file in `git diff --diff-filter=d --name-only --staged`; do
             echo "$file needs rustfmt checking"
             RET=1
         fi
-	check_file_header $file
-        if [ "$?" == "1" ]; then
-            RET=1
-        fi
     fi
 done
+
+if [ -n "$staged_files" ]; then
+    "$CHECK_SPDX" --files $staged_files || RET=1
+fi
 
 make clippy || exit 1
 
