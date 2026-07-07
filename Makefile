@@ -18,7 +18,7 @@ CLIPPY_OPTIONS ?= --all-features
 CLIPPY_ARGS ?= -D warnings
 
 # Packages that require --target x86_64-unknown-none
-BARE_METAL_MEMBERS := svsm stage1
+BARE_METAL_MEMBERS := svsm bldr stage1
 BARE_METAL_EXCLUDES := $(addprefix --exclude ,$(BARE_METAL_MEMBERS))
 
 ifdef CARGO_HACK
