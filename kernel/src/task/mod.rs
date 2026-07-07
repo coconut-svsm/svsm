@@ -18,7 +18,7 @@ pub use schedule::{
 
 pub use tasks::{
     INITIAL_TASK_ID, KernelThreadStartInfo, TASK_FLAG_SHARE_PT, Task, TaskContext, TaskError,
-    TaskListAdapter, TaskPointer, TaskRunListAdapter, TaskState, is_task_fault,
+    TaskExitStatus, TaskListAdapter, TaskPointer, TaskRunListAdapter, TaskState, is_task_fault,
 };
 
 pub use exec::exec_user;

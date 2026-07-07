@@ -28,7 +28,7 @@ use crate::mm::GuestPtr;
 use crate::mm::PAGE_SIZE;
 use crate::platform::PageValidateOp;
 use crate::platform::SvsmPlatform;
-use crate::task::{is_task_fault, terminate};
+use crate::task::{TaskExitStatus, is_task_fault, terminate};
 use crate::tdx::ve::handle_virtualization_exception;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -194,7 +194,7 @@ extern "C" fn ex_handler_terminate(ctx: &mut X86ExceptionContext, vector: usize)
             vector,
             { ctx.frame.rip }
         );
-        terminate();
+        terminate(Some(TaskExitStatus::Exception));
     } else {
         // Kernel-mode tasks should never cause a termination class exception,
         // so any such exception is grounds for panic.
@@ -225,7 +225,7 @@ extern "C" fn ex_handler_double_fault(ctxt: &mut X86ExceptionContext) {
         log::error!(
             "Double-Fault at RIP {rip:#018x} RSP: {rsp:#018x} CR2: {cr2:#018x} - Terminating task"
         );
-        terminate();
+        terminate(Some(TaskExitStatus::Exception));
     } else {
         panic!(
             "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
@@ -245,7 +245,7 @@ extern "C" fn ex_handler_general_protection(ctxt: &mut X86ExceptionContext) {
         log::error!(
             "Unhandled General-Protection-Fault at RIP {rip:#018x} error code: {err:#018x} rsp: {rsp:#018x} - Terminating task"
         );
-        terminate();
+        terminate(Some(TaskExitStatus::Exception));
     } else if !handle_exception_table(ctxt) {
         panic!(
             "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x} rsp: {:#018x}",
@@ -290,7 +290,7 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usiz
             log::error!(
                 "Unexpected user-mode page-fault at RIP {rip:#018x} CR2: {cr2:#018x} error code: {err:#018x} - Terminating task"
             );
-            terminate();
+            terminate(Some(TaskExitStatus::Exception));
         }
     } else if this_cpu()
         .handle_pf(
@@ -377,7 +377,7 @@ extern "C" fn ex_handler_ve(ctxt: &mut X86ExceptionContext) {
             log::error!(
                 "Failed to handle #VE from user-mode at RIP {rip:#018x} code: {code:#018x} - Terminating task"
             );
-            terminate();
+            terminate(Some(TaskExitStatus::Exception));
         } else {
             panic!(
                 "Failed to handle #VE from kernel-mode at RIP {:#018x} code: {:#018x}",
@@ -399,7 +399,7 @@ extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vecto
             log::error!(
                 "Failed to handle #VC from user-mode at RIP {rip:#018x} code: {code:#018x} - Terminating task"
             );
-            terminate();
+            terminate(Some(TaskExitStatus::Exception));
         } else {
             panic!(
                 "Failed to handle #VC from kernel-mode at RIP {:#018x} code: {:#018x}",
