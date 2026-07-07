@@ -136,12 +136,6 @@ impl SecretsPage {
     }
 }
 
-impl Default for SecretsPage {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 static SECRETS_PAGE: ImmutAfterInitCell<RWLock<&'static mut SecretsPage>> =
     ImmutAfterInitCell::uninit();
 
