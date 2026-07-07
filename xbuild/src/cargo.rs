@@ -20,9 +20,28 @@ enum CargoMessage {
     Other,
 }
 
+/// The kind of a cargo target as reported in `compiler-artifact` messages.
+#[derive(Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+enum ArtifactKind {
+    Bin,
+    Lib,
+    Rlib,
+    Dylib,
+    Cdylib,
+    Staticlib,
+    ProcMacro,
+    Test,
+    Bench,
+    Example,
+    #[serde(other)]
+    Other,
+}
+
 #[derive(Deserialize)]
 struct ArtifactTarget {
     name: String,
+    kind: Vec<ArtifactKind>,
 }
 
 #[derive(Deserialize)]
@@ -34,9 +53,8 @@ struct ArtifactProfile {
 /// the path to the test executable produced for package `pkg`.
 ///
 /// Cargo emits one JSON object per line. Look for the `compiler-artifact`
-/// record whose target name matches `pkg`, was built in test mode, and has
-/// an `executable` path. If cargo produces several such records (e.g. lib +
-/// integration tests) the last one wins.
+/// record whose target name matches `pkg`, is a lib target, was built in test
+/// mode, and has an `executable` path.
 pub fn find_test_executable(stdout: &[u8], pkg: &str) -> Option<PathBuf> {
     std::str::from_utf8(stdout)
         .ok()?
@@ -47,7 +65,12 @@ pub fn find_test_executable(stdout: &[u8], pkg: &str) -> Option<PathBuf> {
                 target,
                 profile,
                 executable,
-            } if target.name == pkg && profile.test => executable,
+            } if target.name == pkg.replace('-', "_")
+                && target.kind.contains(&ArtifactKind::Lib)
+                && profile.test =>
+            {
+                executable
+            }
             _ => None,
         })
         .next_back()
