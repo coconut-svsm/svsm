@@ -186,8 +186,13 @@ pub trait SvsmPlatform: Sync {
     where
         Self: Sized,
     {
+        // Stable clippy and the nightly rust compiler disagree on the safety
+        // of __cpuid_count(). Silence both until this is resolved.
+        #[allow(unused_unsafe)]
         // SAFETY: CPUID is always safe
-        unsafe { Some(__cpuid_count(eax, ecx)) }
+        unsafe {
+            Some(__cpuid_count(eax, ecx))
+        }
     }
 
     /// Write a host-owned MSR.
