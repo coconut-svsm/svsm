@@ -13,9 +13,6 @@ pub mod uefivars;
 #[cfg(all(feature = "vtpm", not(test)))]
 pub mod vtpm;
 
-extern crate alloc;
-use crate::vmm::GuestRegister;
-use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
 
 // SVSM protocols
@@ -43,9 +40,52 @@ impl RequestParams {
         }
     }
 
-    pub fn capture(&self, regs: &mut Vec<GuestRegister>) {
-        regs.push(GuestRegister::X64Rcx(self.rcx));
-        regs.push(GuestRegister::X64Rdx(self.rdx));
-        regs.push(GuestRegister::X64R8(self.r8));
+    pub fn capture(&self, res: &mut RequestOutput) {
+        res.rcx = Some(self.rcx);
+        res.rdx = Some(self.rdx);
+        res.r8 = Some(self.r8);
+    }
+}
+
+/// Output registers as per the SVSM protocol ABI.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RequestOutput {
+    rax: Option<u64>,
+    rcx: Option<u64>,
+    rdx: Option<u64>,
+    r8: Option<u64>,
+}
+
+impl RequestOutput {
+    pub const fn new() -> Self {
+        Self {
+            rax: None,
+            rcx: None,
+            rdx: None,
+            r8: None,
+        }
+    }
+
+    pub fn set_rax(&mut self, rax: u64) {
+        self.rax = Some(rax);
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::new();
+    }
+
+    pub fn copy_to_vmsa(&self, vmsa: &mut VMSA) {
+        if let Some(val) = self.rax {
+            vmsa.rax = val;
+        }
+        if let Some(val) = self.rcx {
+            vmsa.rcx = val;
+        }
+        if let Some(val) = self.rdx {
+            vmsa.rdx = val;
+        }
+        if let Some(val) = self.r8 {
+            vmsa.r8 = val;
+        }
     }
 }

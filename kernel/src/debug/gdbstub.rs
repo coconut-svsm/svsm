@@ -756,22 +756,15 @@ pub mod svsm_gdbstub {
 
     #[cfg(test)]
     pub mod tests {
-        extern crate alloc;
-
         use super::ExceptionType;
         use crate::cpu::idt::common::{BP_VECTOR, VC_VECTOR};
-        use alloc::vec;
-        use alloc::vec::Vec;
 
         #[test]
         fn exception_type_from() {
-            let exceptions: Vec<ExceptionType> = [VC_VECTOR, BP_VECTOR, 0]
-                .iter()
-                .map(|e| ExceptionType::from(*e))
-                .collect();
+            let exceptions = [VC_VECTOR, BP_VECTOR, 0].map(ExceptionType::from);
             assert_eq!(
                 exceptions,
-                vec![
+                [
                     ExceptionType::Debug,
                     ExceptionType::SwBreakpoint,
                     ExceptionType::PageFault
