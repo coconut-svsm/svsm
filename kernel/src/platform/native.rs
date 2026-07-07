@@ -50,12 +50,18 @@ use bootdefs::platform::SvsmPlatformType;
 pub struct NativePlatform {}
 
 impl NativePlatform {
-    pub fn new(_suppress_svsm_interrupts: bool) -> Self {
+    pub fn new() -> Self {
         // Execution is not possible unless X2APIC is supported.
         if !cpu_has_feat(Feature::X2Apic) {
             panic!("X2APIC is not supported");
         }
         Self {}
+    }
+}
+
+impl Default for NativePlatform {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -204,10 +210,6 @@ impl SvsmPlatform for NativePlatform {
 
     fn query_apic_registration_state(&self) -> bool {
         false
-    }
-
-    fn use_interrupts(&self) -> bool {
-        true
     }
 
     fn is_external_interrupt(&self, _vector: usize) -> bool {

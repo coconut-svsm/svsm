@@ -319,7 +319,7 @@ unsafe fn svsm_start(
     // the address space.
     let debug_serial_port = launch_info.debug_serial_port;
 
-    let mut platform_cell = SvsmPlatformCell::new(launch_info.suppress_svsm_interrupts);
+    let mut platform_cell = SvsmPlatformCell::new();
     let platform = platform_cell.platform_mut();
 
     // SAFETY: the CPUID and secrets page addresses were allocated in the

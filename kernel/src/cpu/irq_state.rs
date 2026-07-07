@@ -375,8 +375,6 @@ impl Drop for TprGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cpu::ipi::ipi_available;
-    use crate::platform::SVSM_PLATFORM;
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
@@ -427,42 +425,38 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn tpr_test() {
-        if SVSM_PLATFORM.use_interrupts() || ipi_available() {
-            assert_eq!(raw_get_tpr(), 0);
-            raise_tpr(7);
-            assert_eq!(raw_get_tpr(), 7);
-            raise_tpr(8);
-            assert_eq!(raw_get_tpr(), 8);
-            lower_tpr(8);
-            assert_eq!(raw_get_tpr(), 7);
-            lower_tpr(7);
-            assert_eq!(raw_get_tpr(), 0);
-        }
+        assert_eq!(raw_get_tpr(), 0);
+        raise_tpr(7);
+        assert_eq!(raw_get_tpr(), 7);
+        raise_tpr(8);
+        assert_eq!(raw_get_tpr(), 8);
+        lower_tpr(8);
+        assert_eq!(raw_get_tpr(), 7);
+        lower_tpr(7);
+        assert_eq!(raw_get_tpr(), 0);
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn tpr_guard_test() {
-        if SVSM_PLATFORM.use_interrupts() || ipi_available() {
-            assert_eq!(raw_get_tpr(), 0);
-            // Test in-order raise/lower.
-            let g1 = TprGuard::raise(8);
-            assert_eq!(raw_get_tpr(), 8);
-            let g2 = TprGuard::raise(9);
-            assert_eq!(raw_get_tpr(), 9);
-            drop(g2);
-            assert_eq!(raw_get_tpr(), 8);
-            drop(g1);
-            assert_eq!(raw_get_tpr(), 0);
-            // Test out-of-order raise/lower.
-            let g1 = TprGuard::raise(8);
-            assert_eq!(raw_get_tpr(), 8);
-            let g2 = TprGuard::raise(9);
-            assert_eq!(raw_get_tpr(), 9);
-            drop(g1);
-            assert_eq!(raw_get_tpr(), 9);
-            drop(g2);
-            assert_eq!(raw_get_tpr(), 0);
-        }
+        assert_eq!(raw_get_tpr(), 0);
+        // Test in-order raise/lower.
+        let g1 = TprGuard::raise(8);
+        assert_eq!(raw_get_tpr(), 8);
+        let g2 = TprGuard::raise(9);
+        assert_eq!(raw_get_tpr(), 9);
+        drop(g2);
+        assert_eq!(raw_get_tpr(), 8);
+        drop(g1);
+        assert_eq!(raw_get_tpr(), 0);
+        // Test out-of-order raise/lower.
+        let g1 = TprGuard::raise(8);
+        assert_eq!(raw_get_tpr(), 8);
+        let g2 = TprGuard::raise(9);
+        assert_eq!(raw_get_tpr(), 9);
+        drop(g1);
+        assert_eq!(raw_get_tpr(), 9);
+        drop(g2);
+        assert_eq!(raw_get_tpr(), 0);
     }
 }

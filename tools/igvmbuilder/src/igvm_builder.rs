@@ -225,11 +225,6 @@ impl IgvmBuilder {
             GuestFwInfoBlock::default()
         };
 
-        let suppress_svsm_interrupts_on_snp = match self.options.hypervisor {
-            Hypervisor::Qemu | Hypervisor::Vanadium => 1,
-            _ => 0,
-        };
-
         let has_qemu_testdev = match self.options.hypervisor {
             Hypervisor::Qemu | Hypervisor::Vanadium => 1,
             _ => 0,
@@ -275,10 +270,10 @@ impl IgvmBuilder {
             kernel_min_size: self.gpa_map.kernel_min_size,
             kernel_max_size: self.gpa_map.kernel_max_size,
             use_alternate_injection: u8::from(self.options.alt_injection),
-            suppress_svsm_interrupts_on_snp,
             has_qemu_testdev,
             has_fw_cfg_port,
             has_test_iorequests,
+            _reserved: Default::default(),
         })
     }
 

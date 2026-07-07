@@ -461,10 +461,6 @@ impl BootParams<'_> {
         self.boot_param_block.use_alternate_injection != 0
     }
 
-    pub fn suppress_svsm_interrupts_on_snp(&self) -> bool {
-        self.boot_param_block.suppress_svsm_interrupts_on_snp != 0
-    }
-
     pub fn has_qemu_testdev(&self) -> bool {
         self.boot_param_block.has_qemu_testdev != 0
     }

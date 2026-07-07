@@ -106,16 +106,12 @@ impl From<PageValidateOp> for PvalidateOp {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct SnpPlatform {
-    can_use_interrupts: bool,
-}
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SnpPlatform {}
 
 impl SnpPlatform {
-    pub fn new(suppress_svsm_interrupts: bool) -> Self {
-        Self {
-            can_use_interrupts: !suppress_svsm_interrupts,
-        }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
@@ -409,10 +405,6 @@ impl SvsmPlatform for SnpPlatform {
 
     fn query_apic_registration_state(&self) -> bool {
         APIC_EMULATION_REG_COUNT.load(Ordering::Relaxed) > 0
-    }
-
-    fn use_interrupts(&self) -> bool {
-        self.can_use_interrupts
     }
 
     fn is_external_interrupt(&self, _vector: usize) -> bool {

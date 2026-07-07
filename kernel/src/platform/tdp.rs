@@ -45,11 +45,11 @@ use bootdefs::platform::SvsmPlatformType;
 static GHCI_IO_DRIVER: GHCIIOPort = GHCIIOPort::new();
 static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct TdpPlatform {}
 
 impl TdpPlatform {
-    pub fn new(_suppress_svsm_interrupts: bool) -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }
@@ -214,10 +214,6 @@ impl SvsmPlatform for TdpPlatform {
 
     fn query_apic_registration_state(&self) -> bool {
         false
-    }
-
-    fn use_interrupts(&self) -> bool {
-        true
     }
 
     fn is_external_interrupt(&self, vector: usize) -> bool {

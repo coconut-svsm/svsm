@@ -4,7 +4,6 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::cpu::ipi::wait_for_ipi_block;
 use crate::cpu::percpu::{PERCPU_AREAS, this_cpu};
 use crate::protocols::apic::apic_protocol_request;
 use crate::protocols::core::core_protocol_request;
@@ -110,10 +109,6 @@ fn request_loop_main(cpu_index: usize) {
     set_affinity(cpu_index);
 
     log::info!("Launching request-processing task on CPU {cpu_index}");
-
-    // Suppress the use of IPIs before entering the guest, and ensure that all
-    // other CPUs have done the same.
-    wait_for_ipi_block();
 
     let mut output = RequestOutput::new();
 
