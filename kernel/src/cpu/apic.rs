@@ -643,6 +643,15 @@ impl LocalApic {
         }
     }
 
+    pub fn configure_all_vectors(&mut self, allowed: bool) {
+        if allowed {
+            self.allowed_irr[0] |= 1 << 31;
+            self.allowed_irr[1..].fill(u32::MAX);
+        } else {
+            self.allowed_irr.fill(0);
+        }
+    }
+
     fn signal_one_host_interrupt(&mut self, vector: u8, level_sensitive: bool) -> bool {
         let index = (vector >> 5) as usize;
         let mask = 1 << (vector & 31);

@@ -1163,6 +1163,13 @@ impl PerCpu {
         Ok(())
     }
 
+    pub fn configure_apic_all_vectors(&self, allowed: bool) -> Result<(), SvsmError> {
+        self.guest_apic_mut()
+            .ok_or(SvsmError::Apic(ApicError::Disabled))?
+            .configure_all_vectors(allowed);
+        Ok(())
+    }
+
     fn svsm_tr_segment(&self) -> hyperv::HvSegmentRegister {
         hyperv::HvSegmentRegister {
             selector: SVSM_TSS,
