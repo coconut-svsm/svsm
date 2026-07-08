@@ -78,12 +78,6 @@ impl ConsoleFile {
     }
 }
 
-impl Default for ConsoleFile {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl File for ConsoleFile {
     fn read(&self, _buf: &mut [u8], _offset: usize) -> Result<usize, SvsmError> {
         Ok(0)

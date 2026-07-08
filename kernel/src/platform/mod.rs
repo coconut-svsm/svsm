@@ -339,12 +339,6 @@ impl SvsmPlatformCell {
     }
 }
 
-impl Default for SvsmPlatformCell {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 pub fn init_platform_type(platform_type: SvsmPlatformType) {
     SVSM_PLATFORM_TYPE.init(platform_type).unwrap();
 }

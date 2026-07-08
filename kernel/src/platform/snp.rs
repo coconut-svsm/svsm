@@ -106,7 +106,7 @@ impl From<PageValidateOp> for PvalidateOp {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct SnpPlatform {}
 
 impl SnpPlatform {

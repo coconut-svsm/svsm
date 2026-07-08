@@ -59,12 +59,6 @@ impl NativePlatform {
     }
 }
 
-impl Default for NativePlatform {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl SvsmPlatform for NativePlatform {
     #[cfg(test)]
     fn platform_type(&self) -> SvsmPlatformType {
