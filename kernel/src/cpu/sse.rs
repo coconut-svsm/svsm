@@ -5,13 +5,13 @@
 // Author: Vasant Karasulli <vkarasulli@suse.de>
 
 use crate::cpu::control_regs::{cr0_sse_enable, cr4_osfxsr_enable, cr4_xsave_enable};
+use crate::cpu::features::{Feature, cpu_has_feat};
 use crate::platform::cpuid;
 use core::arch::asm;
 use core::arch::x86_64::{_xgetbv, _xsetbv};
 use core::sync::atomic::{AtomicU64, Ordering};
-
-use super::features::{Feature, cpu_has_feat};
-
+use cpufeature::CpuidFeature;
+use cpufeature::leaves::XSAVE_SZ;
 const XCR0_X87_ENABLE: u64 = 0x1;
 const XCR0_SSE_ENABLE: u64 = 0x2;
 const XCR0_YMM_ENABLE: u64 = 0x4;
@@ -75,7 +75,11 @@ pub fn xsave_area_size() -> u32 {
         if xcr0 & (1u64 << bit) == 0 {
             continue;
         }
-        let Some(result) = cpuid(0xd, bit) else {
+        let feature = CpuidFeature {
+            subleaf: bit,
+            ..XSAVE_SZ
+        };
+        let Some(result) = cpuid(&feature) else {
             log::warn!("FP feature {bit:#x} enabled but not present in CPUID");
             continue;
         };

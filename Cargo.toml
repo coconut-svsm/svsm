@@ -106,6 +106,8 @@ virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers.git", rev =
 zerocopy = { version = "0.8.2", features = ["derive"] }
 zeroize = { version = "1.8.2", default-features = false }
 
+cpufeature = { git = "https://github.com/coconut-svsm/cpufeature.git", rev = "0182d61954372552fe2a40477340e949471a49ee" }
+
 # Verus repos
 verus_builtin = { version = "=0.0.0-2026-04-12-0118", default-features = false }
 verus_builtin_macros = { version = "=0.0.0-2026-04-12-0118", features = ["vpanic"], default-features = false }
