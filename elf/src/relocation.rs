@@ -163,12 +163,6 @@ impl Elf64X86RelocProcessor {
     }
 }
 
-impl Default for Elf64X86RelocProcessor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Elf64RelocProcessor for Elf64X86RelocProcessor {
     /// Applies a relocation operation for x86_64 ELF files.
     ///
