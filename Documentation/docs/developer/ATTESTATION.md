@@ -247,10 +247,12 @@ launching the proxy. The supported backend attestation protocols include:
 
 SVSM communicates with the attestation proxy using one of two transport methods:
 
-- **vsock**: When the `vsock` feature is enabled, SVSM will first try to use vsock for communication with the host proxy
-  using port `1995`. If it fails, SVSM will try again using the serial port.
+- **vsock** (default): SVSM uses vsock for communication with the host proxy on
+  port `1995`.
 
-- **Serial port**: If vsock is not available, SVSM uses the COM3 serial port for communication with the attestation proxy.
+- **Serial port** (testing only): When the `attest-serial` feature is enabled,
+  SVSM falls back to the COM3 serial port if the vsock connection fails. This
+  is intended for testing purposes only.
 
 ## Try for yourself
 
@@ -267,8 +269,8 @@ SEV-SNP machine with an SVSM-enabled kernel.
     ```shell
     git clone https://github.com/coconut-svsm/svsm.git
     # ... build OVMF, qemu, SVSM IGVM, etc...
-    FW_FILE=... make FEATURES=attest                       # serial transport
-    FW_FILE=... make FEATURES=attest,vsock,virtio-drivers  # vsock transport (with serial fallback)
+    FW_FILE=... make FEATURES=attest,vsock,virtio-drivers                # vsock transport (default)
+    FW_FILE=... make FEATURES=attest,vsock,attest-serial,virtio-drivers  # vsock with serial fallback (testing)
     ```
 
 2. Clone and run the `kbs-test` server used for testing. Supply the following
@@ -327,10 +329,11 @@ SEV-SNP machine with an SVSM-enabled kernel.
 
 4. Run a guest with SVSM
 
-    SVSM will use vsock for communication if the feature is enabled, otherwise it
-    falls back to the COM3 serial port (see [Transport Methods](#transport-methods)).
-    The attestation proxy will need to be configured correctly to ensure proper communication
-    according to the transport used.
+    SVSM uses vsock for communication by default. If the `attest-serial` feature
+    is enabled, it falls back to the COM3 serial port when vsock fails (see
+    [Transport Methods](#transport-methods)). The attestation proxy will need to
+    be configured correctly to ensure proper communication according to the
+    transport used.
 
     * **vsock**
       ```shell
