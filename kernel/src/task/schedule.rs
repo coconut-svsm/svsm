@@ -37,6 +37,7 @@ extern crate alloc;
 use super::tasks::TASK_ACTIVE_OFFSET;
 use super::tasks::TASK_CUR_CPU_OFFSET;
 use super::tasks::TaskExitStatus;
+use super::tasks::TaskWaitListAdapter;
 use super::{
     INITIAL_TASK_ID, KernelThreadStartInfo, Task, TaskListAdapter, TaskPointer, TaskRunListAdapter,
 };
@@ -281,7 +282,7 @@ impl TaskList {
     /// # Safety
     /// The caller must ensure that `task` is already a member of this task
     /// list.
-    unsafe fn terminate(&mut self, task: TaskPointer) -> Option<TaskPointer> {
+    unsafe fn terminate(&mut self, task: TaskPointer) -> LinkedList<TaskWaitListAdapter> {
         // Set the task state as terminated. If the task being terminated is the
         // current task then the task context will still need to be in scope until
         // the next schedule() has completed. Schedule will keep a reference to this
@@ -291,7 +292,7 @@ impl TaskList {
         let mut cursor = unsafe { self.list().cursor_mut_from_ptr(task.as_ref()) };
         cursor.remove();
 
-        // Inform the caller about any task that may need to be woken.
+        // Inform the caller about any tasks that may need to be woken.
         wakeup
     }
 }
@@ -432,11 +433,11 @@ fn current_task_terminated() {
     // SAFETY: the scheduler guarantees that `current_task` always points to a
     // valid task, and every task has its pointer pushed into the global task
     // list during its creation.
-    let wakeup = unsafe { TASKLIST.lock().terminate(task_node.clone()) };
+    let mut wakeup = unsafe { TASKLIST.lock().terminate(task_node.clone()) };
 
-    // If another thread must be woken as a result of the termination, then
-    // schedule it now.
-    if let Some(wake_task) = wakeup {
+    // Wake all tasks that were waiting for this task to terminate, scheduling
+    // each on the current runqueue.
+    while let Some(wake_task) = wakeup.pop_front() {
         rq.prepare_run_task(wake_task);
     }
 }
@@ -902,11 +903,13 @@ const CONTEXT_SWITCH_RESTORE_TOKEN: VirtAddr = SVSM_CONTEXT_SWITCH_SHADOW_STACK.
 mod test {
     extern crate alloc;
     use super::KernelThreadStartInfo;
+    use super::schedule;
     use super::set_affinity;
     use super::start_kernel_task;
     use super::wait_for_termination;
     use crate::cpu::percpu::{PERCPU_AREAS, this_cpu};
     use alloc::string::String;
+    use core::sync::atomic::AtomicBool;
     use core::sync::atomic::AtomicU32;
     use core::sync::atomic::Ordering;
 
@@ -958,6 +961,93 @@ mod test {
         // Wait again for the task to terminate.  This should return
         // immediately.
         wait_for_termination(task);
+    }
+
+    static MULTI_WAITER_COUNTER: AtomicU32 = AtomicU32::new(0);
+    static MULTI_WAITER_WAITING_COUNTER: AtomicU32 = AtomicU32::new(0);
+    static MULTI_WAITER_TARGET_RELEASED: AtomicBool = AtomicBool::new(false);
+    const MULTI_WAITER_TASK_INCREMENT: u32 = 10;
+
+    fn multi_waiter_target(_: usize) {
+        let current_cpu = this_cpu().get_cpu_index();
+        let target_cpu = PERCPU_AREAS.len() - 1;
+        set_affinity(if current_cpu == target_cpu {
+            0
+        } else {
+            target_cpu
+        });
+
+        while !MULTI_WAITER_TARGET_RELEASED.load(Ordering::Acquire) {
+            core::hint::spin_loop();
+        }
+
+        MULTI_WAITER_COUNTER.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn waiting_task(target_id: usize) {
+        // Look up the target task by id and wait for it to terminate.
+        let task = super::TASKLIST
+            .lock()
+            .get_task(target_id as u32)
+            .expect("Failed to find multi-waiter target task");
+        super::preemption_checks();
+        let guard = task
+            .wait_for_exit()
+            .expect("Multi-waiter target terminated before waiter blocked");
+        MULTI_WAITER_WAITING_COUNTER.fetch_add(1, Ordering::Release);
+        super::select_new_task(false, Some(guard));
+        MULTI_WAITER_COUNTER.fetch_add(MULTI_WAITER_TASK_INCREMENT, Ordering::Relaxed);
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_wait_for_termination_multiple_waiters() {
+        MULTI_WAITER_COUNTER.store(0, Ordering::Relaxed);
+        MULTI_WAITER_WAITING_COUNTER.store(0, Ordering::Relaxed);
+        MULTI_WAITER_TARGET_RELEASED.store(false, Ordering::Relaxed);
+
+        if PERCPU_AREAS.len() < 2 {
+            return;
+        }
+
+        // Start the task that will be waited on.
+        let target = start_kernel_task(
+            KernelThreadStartInfo::new(multi_waiter_target, 0),
+            String::from("multi-waiter target"),
+        )
+        .expect("Failed to start target task");
+        let target_id = target.get_task_id() as usize;
+
+        // Start two waiter tasks that each wait on the same target task.
+        let waiter1 = start_kernel_task(
+            KernelThreadStartInfo::new(waiting_task, target_id),
+            String::from("waiter 1"),
+        )
+        .expect("Failed to start waiter 1");
+
+        let waiter2 = start_kernel_task(
+            KernelThreadStartInfo::new(waiting_task, target_id),
+            String::from("waiter 2"),
+        )
+        .expect("Failed to start waiter 2");
+
+        while MULTI_WAITER_WAITING_COUNTER.load(Ordering::Acquire) < 2 {
+            schedule();
+        }
+
+        // Wait for the target task from this task too, ensuring it has
+        // terminated before we check results.
+        MULTI_WAITER_TARGET_RELEASED.store(true, Ordering::Release);
+        wait_for_termination(target);
+        wait_for_termination(waiter1);
+        wait_for_termination(waiter2);
+
+        // Both waiter tasks must have run: multi_waiter_target adds 1,
+        // each waiting_task adds MULTI_WAITER_TASK_INCREMENT.
+        assert_eq!(
+            MULTI_WAITER_COUNTER.load(Ordering::Relaxed),
+            1 + (MULTI_WAITER_TASK_INCREMENT * 2)
+        );
     }
 
     #[test]

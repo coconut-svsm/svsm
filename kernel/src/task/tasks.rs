@@ -47,7 +47,7 @@ use crate::mm::{
 use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::{MemoryRegion, is_aligned};
-use intrusive_collections::{LinkedListAtomicLink, intrusive_adapter};
+use intrusive_collections::{LinkedList, LinkedListAtomicLink, intrusive_adapter};
 
 use super::WaitQueue;
 use super::schedule::complete_task_switch;
@@ -349,6 +349,9 @@ pub struct Task {
     /// Link to scheduler run queue
     runlist_link: LinkedListAtomicLink,
 
+    /// Link to wait queue
+    waitlist_link: LinkedListAtomicLink,
+
     /// Objects shared among threads within the same process
     objs: Arc<RWLock<BTreeMap<ObjHandle, Arc<dyn Obj>>>>,
 
@@ -378,6 +381,7 @@ pub type TaskPointer = Arc<Task>;
 
 intrusive_adapter!(pub TaskRunListAdapter = TaskPointer: Task { runlist_link: LinkedListAtomicLink });
 intrusive_adapter!(pub TaskListAdapter = TaskPointer: Task { list_link: LinkedListAtomicLink });
+intrusive_adapter!(pub TaskWaitListAdapter = TaskPointer: Task { waitlist_link: LinkedListAtomicLink });
 
 impl PartialEq for Task {
     fn eq(&self, other: &Self) -> bool {
@@ -529,6 +533,7 @@ impl Task {
             rootdir: args.rootdir,
             list_link: LinkedListAtomicLink::default(),
             runlist_link: LinkedListAtomicLink::default(),
+            waitlist_link: LinkedListAtomicLink::default(),
             objs: objtree,
             wait_queue: SpinLockIrqSafe::new(WaitQueue::new()),
             exit_status: AtomicU32::new(TaskExitStatus::default().into()),
@@ -626,11 +631,11 @@ impl Task {
         self.sched_state.set_state(TaskState::RUNNING);
     }
 
-    pub fn set_task_terminated(&self) -> Option<TaskPointer> {
+    pub fn set_task_terminated(&self) -> LinkedList<TaskWaitListAdapter> {
         self.sched_state
             .panic_on_idle("Trying to terminate idle task")
             .set_state(TaskState::TERMINATED);
-        self.wait_queue.lock().wakeup()
+        self.wait_queue.lock().wakeup(true)
     }
 
     pub fn set_task_blocked(&self) {
