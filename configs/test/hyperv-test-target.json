@@ -35,6 +35,17 @@
     },
     "firmware": {},
     "fs": {
-        "modules": {}
+        "modules": {
+            "uapi_tester": {
+                "path": "/test/uapi_tester",
+                "type": "test",
+                "toolchain": "nightly",
+                "no_default_features": true,
+                "env": {
+                    "RUSTDOC": "true",
+                    "LINK_TEST": "1"
+                }
+            }
+        }
     }
 }

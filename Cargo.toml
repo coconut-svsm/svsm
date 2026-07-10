@@ -30,6 +30,8 @@ members = [
     "user/lib",
     # Init user-space module
     "user/init",
+    # Test user-space module
+    "user/uapi_tester",
     # Release version identifier
     "release",
     # crate for verification stubs
@@ -64,6 +66,7 @@ syscall = { path = "syscall" }
 packit = { path = "packit" }
 userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
+uapi_tester = { path = "user/uapi_tester" }
 release = { path = "release" }
 
 # crates.io

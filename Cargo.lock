@@ -2330,6 +2330,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
+name = "uapi_tester"
+version = "0.1.0"
+dependencies = [
+ "test",
+ "userlib",
+]
+
+[[package]]
 name = "ucs2"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2427,6 +2435,7 @@ name = "userlib"
 version = "0.1.0"
 dependencies = [
  "syscall",
+ "test",
 ]
 
 [[package]]

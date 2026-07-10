@@ -157,7 +157,7 @@ endif
 	touch ${FS_BIN}
 
 clippy:
-	${CARGO} clippy ${CLIPPY_OPTIONS} --workspace --exclude svsm --exclude stage1 --exclude svsm-fuzz -- ${CLIPPY_ARGS}
+	${CARGO} clippy ${CLIPPY_OPTIONS} --workspace --exclude svsm --exclude stage1 --exclude svsm-fuzz --exclude uapi_tester -- ${CLIPPY_ARGS}
 	RUSTFLAGS="--cfg fuzzing" ${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm-fuzz -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm --target x86_64-unknown-none -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --package bldr --target x86_64-unknown-none -- ${CLIPPY_ARGS}
