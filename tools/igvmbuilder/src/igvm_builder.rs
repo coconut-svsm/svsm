@@ -58,7 +58,8 @@ pub static COMPATIBILITY_MASK: PlatformMask = PlatformMask::new();
 const IGVM_GENERAL_PARAMS_PA: u32 = 0;
 const IGVM_MEMORY_MAP_PA: u32 = 1;
 const IGVM_MADT_PA: u32 = 2;
-const IGVM_PARAMETER_COUNT: u32 = 3;
+const IGVM_COMMAND_LINE_PA: u32 = 3;
+const IGVM_PARAMETER_COUNT: u32 = 4;
 
 const _: () = assert!(size_of::<BootParamBlock>() as u64 <= PAGE_SIZE_4K);
 const _: () = assert!(size_of::<InitialGuestContext>() as u64 <= PAGE_SIZE_4K);
@@ -259,11 +260,14 @@ impl IgvmBuilder {
                 .gpa_map
                 .boot_param_layout
                 .get_param_size(BootParamType::Madt),
+            command_line_offset: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_offset(BootParamType::CommandLine),
             guest_context_offset: self
                 .gpa_map
                 .boot_param_layout
                 .get_param_size(BootParamType::GuestContext),
-            debug_serial_port: self.options.get_port_address(),
             firmware: fw_info,
             vmsa_in_kernel_range: self.gpa_map.vmsa_in_kernel_range as u8,
             kernel_base: self.gpa_map.kernel.get_start(),
@@ -513,6 +517,14 @@ impl IgvmBuilder {
             number_of_bytes: self
                 .gpa_map
                 .boot_param_layout
+                .get_param_size(BootParamType::CommandLine) as u64,
+            parameter_area_index: IGVM_COMMAND_LINE_PA,
+            initial_data: vec![],
+        });
+        self.directives.push(IgvmDirectiveHeader::ParameterArea {
+            number_of_bytes: self
+                .gpa_map
+                .boot_param_layout
                 .get_param_size(BootParamType::General) as u64,
             parameter_area_index: IGVM_GENERAL_PARAMS_PA,
             initial_data: vec![],
@@ -530,6 +542,11 @@ impl IgvmBuilder {
         self.directives
             .push(IgvmDirectiveHeader::Madt(IGVM_VHS_PARAMETER {
                 parameter_area_index: IGVM_MADT_PA,
+                byte_offset: 0,
+            }));
+        self.directives
+            .push(IgvmDirectiveHeader::CommandLine(IGVM_VHS_PARAMETER {
+                parameter_area_index: IGVM_COMMAND_LINE_PA,
                 byte_offset: 0,
             }));
         self.directives
@@ -555,6 +572,16 @@ impl IgvmBuilder {
                     .get_param_gpa(image_layout.boot_params_gpa, BootParamType::Madt),
                 compatibility_mask: COMPATIBILITY_MASK.get(),
                 parameter_area_index: IGVM_MADT_PA,
+            },
+        ));
+        self.directives.push(IgvmDirectiveHeader::ParameterInsert(
+            IGVM_VHS_PARAMETER_INSERT {
+                gpa: self
+                    .gpa_map
+                    .boot_param_layout
+                    .get_param_gpa(image_layout.boot_params_gpa, BootParamType::CommandLine),
+                compatibility_mask: COMPATIBILITY_MASK.get(),
+                parameter_area_index: IGVM_COMMAND_LINE_PA,
             },
         ));
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
