@@ -369,10 +369,28 @@ return_user:
 	// Put user-mode specific return code here
 	jmp	return_all_paths
 
-.globl return_new_task
-return_new_task:
-	call	setup_user_task
-	jmp	default_return
+.globl thread_entry_asm
+thread_entry_asm:
+	// Call common thread setup function
+	call complete_new_thread
+
+	// Move thread fn and start parameter
+	movq %r15, %rsi
+	movq %r14, %rdi
+
+	// Move pointer to X86ExceptionContext to %rdx - Only present and used
+	// for user-tasks
+	movq %rsp, %rdx
+	addq $16, %rdx
+
+	// Fetch thread entry function pointer - do not touch stack pointer to
+	// keep stack alignment
+	movq (%rsp), %rax
+	call *%rax
+
+	// Skip to return addr
+	addq $8, %rsp
+	ret
 
 // #DE Divide-by-Zero-Error Exception (Vector 0)
 default_entry_no_ist	name=de		handler=terminate			error_code=0	vector=0

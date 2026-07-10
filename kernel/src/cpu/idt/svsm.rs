@@ -51,7 +51,7 @@ pub fn load_static_idt() {
 }
 
 unsafe extern "C" {
-    pub fn return_new_task();
+    pub fn thread_entry_asm();
     pub fn default_return();
     fn asm_entry_de();
     fn asm_entry_db();

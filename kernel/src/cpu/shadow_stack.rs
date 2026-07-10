@@ -97,7 +97,9 @@ pub enum ShadowStackInit {
         /// The address of the first instruction that will be executed by the task.
         entry_return: usize,
         /// The address of the function that's executed when the task exits.
-        exit_return: Option<usize>,
+        exit_return: usize,
+        /// Whether there is an iret frame on the bottom of the stack.
+        iret_frame: bool,
     },
     /// A shadow stack to be used during context switches.
     ///
@@ -110,64 +112,69 @@ pub enum ShadowStackInit {
     Exception,
 }
 
+struct ShadowStackInitializer<'a> {
+    page: &'a PageRef,
+    top_of_stack: VirtAddr,
+    stack_ptr: usize,
+}
+
+impl<'a> ShadowStackInitializer<'a> {
+    fn new(page: &'a PageRef, top_of_stack: VirtAddr) -> Self {
+        Self {
+            page,
+            top_of_stack,
+            stack_ptr: PAGE_SIZE,
+        }
+    }
+
+    fn push(&mut self, value: usize) {
+        let buf = value.to_ne_bytes();
+        self.stack_ptr -= buf.len();
+        self.page.write(self.stack_ptr, &buf);
+    }
+
+    fn push_token(&mut self, offset: usize, mask: usize) -> VirtAddr {
+        let token_offset = PAGE_SIZE - self.stack_ptr + size_of::<usize>();
+        let token_addr = self.top_of_stack - token_offset;
+        let token = (token_addr + offset).bits() | mask;
+        self.push(token);
+        token_addr
+    }
+}
+
 pub fn init_shadow_stack(
     page: &PageRef,
     top_of_sstack: VirtAddr,
     init: ShadowStackInit,
 ) -> (Option<VirtAddr>, VirtAddr) {
     // Initialize the shadow stack.
-    let mut chunk = [0; 24];
-    let (base_token_addr, ssp) = match init {
+    let mut shadow_stack = ShadowStackInitializer::new(page, top_of_sstack);
+    match init {
         ShadowStackInit::Normal {
             entry_return,
             exit_return,
+            iret_frame,
         } => {
-            // If exit return is empty, then this thread will be used as a
-            // user task stack.  In that case, place a busy token at the
-            // base of the shadow stack.
-            let base_token_addr = top_of_sstack - 8;
-            let base_token = match exit_return {
-                Some(addr) => addr,
-                None => base_token_addr.bits() + BUSY,
+            let base_token_addr = match iret_frame {
+                true => Some(shadow_stack.push_token(0, BUSY)),
+                false => Some(top_of_sstack - 8),
             };
 
-            let (token_bytes, rip_bytes) = chunk.split_at_mut(8);
+            shadow_stack.push(exit_return);
+            shadow_stack.push(entry_return);
 
-            // Create a shadow stack restore token.
-            let token_addr = top_of_sstack - 24;
-            let token = (token_addr + 8).bits() + MODE_64BIT;
-            token_bytes.copy_from_slice(&token.to_ne_bytes());
+            let token_addr = shadow_stack.push_token(size_of::<usize>(), MODE_64BIT);
 
-            let (entry_bytes, base_bytes) = rip_bytes.split_at_mut(8);
-            entry_bytes.copy_from_slice(&entry_return.to_ne_bytes());
-            base_bytes.copy_from_slice(&base_token.to_ne_bytes());
-
-            (Some(base_token_addr), token_addr)
+            (base_token_addr, token_addr)
         }
         ShadowStackInit::ContextSwitch => {
-            let (_, token_bytes) = chunk.split_at_mut(16);
-
-            // Create a shadow stack restore token.
-            let token_addr = top_of_sstack - 8;
-            let token = (token_addr + 8).bits() + MODE_64BIT;
-            token_bytes.copy_from_slice(&token.to_ne_bytes());
-
+            let token_addr = shadow_stack.push_token(size_of::<usize>(), MODE_64BIT);
             (None, token_addr)
         }
         ShadowStackInit::Exception => {
-            let (_, token_bytes) = chunk.split_at_mut(16);
-
-            // Create a supervisor shadow stack token.
-            let token_addr = top_of_sstack - 8;
-            let token = token_addr.bits();
-            token_bytes.copy_from_slice(&token.to_ne_bytes());
-
+            let token_addr = shadow_stack.push_token(0, 0);
             (None, token_addr)
         }
         ShadowStackInit::Init => (None, top_of_sstack - 8),
-    };
-
-    page.write(PAGE_SIZE - chunk.len(), &chunk);
-
-    (base_token_addr, ssp)
+    }
 }

@@ -39,6 +39,7 @@ use super::tasks::TASK_CUR_CPU_OFFSET;
 use super::tasks::TaskExitStatus;
 use super::{
     INITIAL_TASK_ID, KernelThreadStartInfo, Task, TaskListAdapter, TaskPointer, TaskRunListAdapter,
+    UserExecInfo,
 };
 use crate::address::{Address, VirtAddr};
 use crate::cpu::IrqGuard;
@@ -60,6 +61,7 @@ use crate::fs::Directory;
 use crate::locking::SpinLock;
 use crate::mm::SVSM_CONTEXT_SWITCH_SHADOW_STACK;
 use crate::platform::SVSM_PLATFORM;
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::arch::global_asm;
@@ -366,12 +368,12 @@ pub fn start_kernel_thread(start_info: KernelThreadStartInfo) -> Result<TaskPoin
 ///
 /// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
 pub fn create_user_task(
-    user_entry: usize,
+    info: Box<UserExecInfo>,
     root: Arc<dyn Directory>,
     name: String,
 ) -> Result<TaskPointer, SvsmError> {
     let cpu = this_cpu();
-    Task::create_user(cpu, user_entry, root, name)
+    Task::create_user(cpu, info, root, name)
 }
 
 /// Finished user-space task creation by putting the task on the global

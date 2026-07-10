@@ -10,15 +10,29 @@ use super::TaskPointer;
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::fs::{Directory, open_read};
-use crate::mm::USER_MEM_END;
 use crate::mm::vm::VMFileMappingFlags;
+use crate::mm::{USER_MEM_END, mmap_user};
 use crate::task::{create_user_task, current_task, finish_user_task, schedule};
 use crate::types::PAGE_SIZE;
 use crate::utils::align_up;
+use alloc::boxed::Box;
 use alloc::sync::Arc;
 use elf::{Elf64File, Elf64PhdrFlags};
 
 use alloc::string::String;
+
+#[derive(Debug)]
+pub struct UserExecInfo {
+    binary: String,
+}
+
+impl UserExecInfo {
+    pub fn new(b: &str) -> Self {
+        Self {
+            binary: String::from(b),
+        }
+    }
+}
 
 fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
     let mut vm_flags = VMFileMappingFlags::Fixed;
@@ -44,20 +58,22 @@ fn task_name(binary: &str) -> String {
     }
 }
 
-/// Loads and executes an ELF binary in user-mode.
+/// Loads and executes an user-mode ELF binary into the current tasks address
+/// space.
 ///
 /// # Arguments
 ///
-/// * binary: Path to file in the file-system
+/// * info: Instance of [`UserExecInfo`] describing the user-mode task.
 ///
 /// # Returns
 ///
 /// [`Ok(TaskPointer)`] on success, [`Err(SvsmError)`] on failure.
-pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<TaskPointer, SvsmError> {
-    let fh = open_read(binary)?;
+pub fn exec(info: UserExecInfo) -> Result<u64, SvsmError> {
+    let fh = open_read(&info.binary)?;
     let file_size = fh.size();
 
     let current_task = current_task();
+
     let vstart = current_task.mmap_kernel_guard(
         VirtAddr::new(0),
         Some(&fh),
@@ -65,6 +81,7 @@ pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<TaskPointer, 
         file_size,
         VMFileMappingFlags::Read,
     )?;
+
     // SAFETY: `vstart` has just been mapped using `file_size` as the size,
     // so it is safe to create a slice of the same size.
     let buf = unsafe { vstart.to_slice::<u8>(file_size) };
@@ -73,8 +90,6 @@ pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<TaskPointer, 
     let alloc_info = elf_bin.image_load_vaddr_alloc_info();
     let virt_base = alloc_info.range.vaddr_begin;
     let entry = elf_bin.get_entry(virt_base);
-
-    let new_task = create_user_task(entry.try_into().unwrap(), root, task_name(binary))?;
 
     for seg in elf_bin.image_load_segment_iter(virt_base) {
         let virt_start = VirtAddr::from(seg.vaddr_range.vaddr_begin);
@@ -93,16 +108,16 @@ pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<TaskPointer, 
             let start_aligned = virt_start.page_align();
             let offset = file_offset - virt_start.page_offset();
             let size = file_size + virt_start.page_offset();
-            new_task.mmap_user(start_aligned, Some(&fh), offset, size, flags)?;
+            mmap_user(start_aligned, Some(&fh), offset, size, flags)?;
 
             let size_aligned = align_up(size, PAGE_SIZE);
             if size_aligned < len {
                 let start_anon = start_aligned.const_add(size_aligned);
                 let remaining_len = len - size_aligned;
-                new_task.mmap_user(start_anon, None, 0, remaining_len, flags)?;
+                mmap_user(start_anon, None, 0, remaining_len, flags)?;
             }
         } else {
-            new_task.mmap_user(virt_start, None, 0, len, flags)?;
+            mmap_user(virt_start, None, 0, len, flags)?;
         }
     }
 
@@ -113,7 +128,24 @@ pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<TaskPointer, 
     let user_stack_size: usize = 64 * 1024;
     let stack_flags: VMFileMappingFlags = VMFileMappingFlags::Fixed | VMFileMappingFlags::Write;
     let stack_addr = USER_MEM_END - user_stack_size;
-    new_task.mmap_user(stack_addr, None, 0, user_stack_size, stack_flags)?;
+    mmap_user(stack_addr, None, 0, user_stack_size, stack_flags)?;
+
+    Ok(entry)
+}
+
+/// Starts a new task and sets it up for loading and executing a user-mode
+/// binary.
+///
+/// # Arguments
+///
+/// * binary: Path to file in the file-system
+///
+/// # Returns
+///
+/// [`Ok(TaskPointer)`] on success, [`Err(SvsmError)`] on failure.
+pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<TaskPointer, SvsmError> {
+    let info = Box::new(UserExecInfo::new(binary));
+    let new_task = create_user_task(info, root, task_name(binary))?;
 
     finish_user_task(new_task.clone());
     schedule();

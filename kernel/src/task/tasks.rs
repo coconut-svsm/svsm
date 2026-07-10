@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use alloc::boxed::Box;
 use alloc::collections::btree_map::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -21,9 +22,8 @@ use core::sync::atomic::Ordering;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::IrqGuard;
 use crate::cpu::ShadowStackInit;
-use crate::cpu::X86ExceptionContext;
 use crate::cpu::features::{Feature, cpu_has_feat};
-use crate::cpu::idt::svsm::return_new_task;
+use crate::cpu::idt::svsm::{default_return, thread_entry_asm};
 use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::irqs_enable;
 use crate::cpu::irqs_enabled;
@@ -33,6 +33,7 @@ use crate::cpu::percpu::this_cpu;
 use crate::cpu::shadow_stack::init_shadow_stack;
 use crate::cpu::sse::sse_restore_context;
 use crate::cpu::sse::xsave_area_size;
+use crate::cpu::{X86ExceptionContext, X86InterruptFrame};
 use crate::error::SvsmError;
 use crate::fs::{Directory, FileHandle, opendir, stdout_open};
 use crate::locking::RWLock;
@@ -45,16 +46,18 @@ use crate::mm::{
     mappings::create_anon_mapping, mappings::create_file_mapping,
 };
 use crate::syscall::{Obj, ObjError, ObjHandle};
-use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
+use crate::types::{SVSM_USER_CPL, SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::{MemoryRegion, is_aligned};
 use intrusive_collections::{LinkedListAtomicLink, intrusive_adapter};
 
-use super::WaitQueue;
+use super::exec::exec;
 use super::schedule::complete_task_switch;
 use super::schedule::terminate;
 use super::task_mm::{TaskKernelMapping, TaskMM};
+use super::{UserExecInfo, WaitQueue};
 
 pub const INITIAL_TASK_ID: u32 = 1;
+pub const EFLAGS_INIT: usize = 2;
 
 /// This trait is used to describe a type that can be used as the start
 /// parameter for a kernel thread.  The thread start path requires that all
@@ -128,7 +131,7 @@ impl KernelThreadStartInfo {
 #[derive(Debug)]
 enum ThreadStartInfo {
     Kernel(KernelThreadStartInfo),
-    User(usize),
+    User(*const UserExecInfo),
 }
 
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
@@ -259,6 +262,36 @@ pub struct TaskContext {
     pub regs: X86TaskSwitchRegs,
     pub ret_addr: u64,
 }
+
+#[repr(C)]
+#[derive(Default, Debug, Clone, Copy)]
+struct KernelTaskContext {
+    pub task_context: TaskContext,
+    pub thread_routine: u64,
+    pub exit_addr: u64,
+}
+
+#[repr(C)]
+#[derive(Default, Debug, Clone, Copy)]
+struct UserTaskContext {
+    pub task_context: TaskContext,
+    pub thread_routine: u64,
+    pub exit_addr: u64,
+    pub excp_context: X86ExceptionContext,
+}
+
+// To ensure stack frames are 16b-aligned, ret_addr must be 16b-aligned
+// so that (%rsp + 8) is 16b-aligned after the ret instruction in
+// switch_context
+const _: () = assert!(
+    ((size_of::<KernelTaskContext>() - offset_of!(KernelTaskContext, task_context.ret_addr)) % 16)
+        - 8
+        == 0
+);
+const _: () = assert!(
+    ((size_of::<UserTaskContext>() - offset_of!(UserTaskContext, task_context.ret_addr)) % 16) - 8
+        == 0
+);
 
 #[repr(C)]
 struct TaskSchedState {
@@ -448,11 +481,10 @@ impl Task {
 
         // Determine which kernel-mode entry/exit routines will be used for
         // this task.
-        let (entry_return, exit_return) = match args.start_info {
-            ThreadStartInfo::User(_) => (return_new_task as *const () as usize, None),
-            ThreadStartInfo::Kernel(ref info) => {
-                (info.start_routine, Some(task_exit as *const () as usize))
-            }
+        let entry_return = thread_entry_asm as *const () as usize;
+        let (exit_return, iret_frame) = match args.start_info {
+            ThreadStartInfo::User(_) => (default_return as *const () as usize, true),
+            ThreadStartInfo::Kernel(_) => (task_exit as *const () as usize, false),
         };
 
         let mut shadow_stack_offset = VirtAddr::null();
@@ -476,6 +508,7 @@ impl Task {
                 ShadowStackInit::Normal {
                     entry_return,
                     exit_return,
+                    iret_frame,
                 },
             );
 
@@ -490,7 +523,7 @@ impl Task {
 
         // Call the correct stack creation routine for this task.
         let (stack, raw_bounds, rsp_offset) = match args.start_info {
-            ThreadStartInfo::User(entry) => Self::allocate_utask_stack(cpu, entry, xsa_addr)?,
+            ThreadStartInfo::User(info_ptr) => Self::allocate_utask_stack(cpu, info_ptr, xsa_addr)?,
             ThreadStartInfo::Kernel(ref info) => Self::allocate_ktask_stack(
                 cpu,
                 info.entry,
@@ -552,7 +585,7 @@ impl Task {
 
     pub fn create_user(
         cpu: &PerCpu,
-        user_entry: usize,
+        info: Box<UserExecInfo>,
         root: Arc<dyn Directory>,
         name: String,
     ) -> Result<TaskPointer, SvsmError> {
@@ -562,14 +595,23 @@ impl Task {
         unsafe {
             vm_user_range.initialize_lazy()?;
         }
+
+        // Destroy the Box and get the pointer to the raw data
+        let info_ptr = Box::into_raw(info);
+
         let create_args = CreateTaskArguments {
-            start_info: ThreadStartInfo::User(user_entry),
+            start_info: ThreadStartInfo::User(info_ptr),
             name,
             vm_user_range: Some(vm_user_range),
             rootdir: root,
             thread_of: None,
         };
-        Self::create_common(cpu, create_args)
+        Self::create_common(cpu, create_args).inspect_err(|_| {
+            // In error case, make sure info gets freed
+            // SAFETY: info_ptr was created above from a Box and not
+            // dropped in the create_common call-path.
+            drop(unsafe { Box::from_raw(info_ptr) });
+        })
     }
 
     /// Create a new thread for an existing task.
@@ -691,13 +733,41 @@ impl Task {
         Ok(())
     }
 
-    fn allocate_stack_common() -> Result<(Mapping, MemoryRegion<VirtAddr>), SvsmError> {
+    fn allocate_stack_common<T>(
+        cpu: &PerCpu,
+        context: &T,
+    ) -> Result<(Mapping, MemoryRegion<VirtAddr>, usize), SvsmError>
+    where
+        T: Sized + Copy,
+    {
         let stack = VMKernelStack::new()?;
         let bounds = stack.bounds(VirtAddr::from(0u64));
 
         let mapping = Arc::new(stack);
+        let percpu_mapping = cpu.new_mapping(mapping.clone())?;
 
-        Ok((mapping, bounds))
+        // We need to setup a context on the stack that matches the stack layout
+        // defined in switch_context below.
+        let stack_tos = percpu_mapping.virt_addr() + bounds.end().bits();
+
+        // Make space for the task termination handler
+        let stack_offset = size_of::<T>();
+        let stack_ptr = stack_tos
+            .checked_sub(stack_offset)
+            .unwrap()
+            .as_mut_ptr::<T>();
+
+        // Make sure there is room for T
+        debug_assert!(
+            (percpu_mapping.virt_addr() + bounds.start().bits()) <= VirtAddr::from(stack_ptr)
+        );
+
+        // 'Push' the task frame onto the stack
+        //
+        // SAFETY: We ensure that T can be written to valid memory.
+        unsafe { stack_ptr.write(*context) };
+
+        Ok((mapping, bounds, stack_offset))
     }
 
     fn allocate_ktask_stack(
@@ -707,127 +777,49 @@ impl Task {
         xsa_addr: usize,
         start_parameter: usize,
     ) -> Result<(Mapping, MemoryRegion<VirtAddr>, usize), SvsmError> {
-        let (mapping, bounds) = Task::allocate_stack_common()?;
+        let task_context = KernelTaskContext {
+            task_context: TaskContext {
+                regs: X86TaskSwitchRegs {
+                    rsi: xsa_addr,
+                    // Put these into callee-saved registers
+                    r14: entry,
+                    r15: start_parameter,
+                    ..Default::default()
+                },
+                ret_addr: thread_entry_asm as *const () as u64,
+            },
+            thread_routine: start_routine as u64,
+            exit_addr: task_exit as *const () as u64,
+        };
 
-        let percpu_mapping = cpu.new_mapping(mapping.clone())?;
-
-        // We need to setup a context on the stack that matches the stack layout
-        // defined in switch_context below.
-        let stack_tos = percpu_mapping.virt_addr() + bounds.end().bits();
-        // Make space for the task termination handler
-        let stack_offset = size_of::<u64>();
-        let stack_ptr = stack_tos
-            .checked_sub(stack_offset)
-            .unwrap()
-            .as_mut_ptr::<u8>();
-        // To ensure stack frames are 16b-aligned, ret_addr must be 16b-aligned
-        // so that (%rsp + 8) is 16b-aligned after the ret instruction in
-        // switch_context
-        debug_assert!(
-            VirtAddr::from(stack_ptr)
-                .checked_sub(8)
-                .unwrap()
-                .is_aligned(16)
-        );
-        // Make sure there is room for TaskContext
-        debug_assert!(
-            (percpu_mapping.virt_addr() + bounds.start().bits())
-                <= VirtAddr::from(stack_ptr)
-                    .checked_sub(size_of::<TaskContext>())
-                    .unwrap()
-        );
-
-        // 'Push' the task frame onto the stack
-        //
-        // SAFETY: we ensure that both `TaskContext` and the function pointer
-        // can be written to valid memory. The address storing the function
-        // pointer is always 8b-aligned.
-        unsafe {
-            let task_context = stack_ptr
-                .sub(size_of::<TaskContext>())
-                .cast::<TaskContext>();
-            // ret_addr
-            (*task_context).regs.rsi = entry;
-            // xsave area addr
-            (*task_context).regs.rdx = xsa_addr;
-            // start argument parameter.
-            (*task_context).regs.rcx = start_parameter;
-            (*task_context).ret_addr = start_routine as u64;
-            // Task termination handler for when entry point returns
-            stack_ptr.cast::<u64>().write(task_exit as *const () as u64);
-        }
-
-        Ok((mapping, bounds, stack_offset + size_of::<TaskContext>()))
+        Self::allocate_stack_common(cpu, &task_context)
     }
 
     fn allocate_utask_stack(
         cpu: &PerCpu,
-        user_entry: usize,
+        info_ptr: *const UserExecInfo,
         xsa_addr: usize,
     ) -> Result<(Mapping, MemoryRegion<VirtAddr>, usize), SvsmError> {
-        let (mapping, bounds) = Task::allocate_stack_common()?;
-        let iret_rflags: usize = 2 | EFLAGS_IF;
-
-        let percpu_mapping = cpu.new_mapping(mapping.clone())?;
-
-        // We need to setup a context on the stack that matches the stack layout
-        // defined in switch_context below.
-        let stack_tos = percpu_mapping.virt_addr() + bounds.end().bits();
-        // Make space for the IRET frame
-        let stack_offset = size_of::<X86ExceptionContext>();
-        let stack_ptr = stack_tos
-            .checked_sub(stack_offset)
-            .unwrap()
-            .as_mut_ptr::<u8>();
-        // return_new_task is asm code, so %rsp must be 16b-aligned after the
-        // ret instruction in switch_context to ensure stack frames are
-        // 16b-aligned
-        debug_assert!(VirtAddr::from(stack_ptr).is_aligned(16));
-        // Make sure there is room for TaskContext
-        debug_assert!(
-            (percpu_mapping.virt_addr() + bounds.start().bits())
-                <= VirtAddr::from(stack_ptr)
-                    .checked_sub(size_of::<TaskContext>())
-                    .unwrap()
-        );
-
-        // 'Push' the task frame onto the stack
-        //
-        // SAFETY: we ensure that both `X86ExceptionContext` and `TaskContext`
-        // can be written to valid memory.
-        unsafe {
-            // Setup IRQ return frame.  User-mode tasks always run with
-            // interrupts enabled.
-            let mut iret_frame = X86ExceptionContext::default();
-            iret_frame.frame.rip = user_entry;
-            iret_frame.frame.cs = (SVSM_USER_CS | 3).into();
-            iret_frame.frame.flags = iret_rflags;
-            iret_frame.frame.rsp = (USER_MEM_END - 8).into();
-            iret_frame.frame.ss = (SVSM_USER_DS | 3).into();
-            debug_assert!(is_aligned(iret_frame.frame.rsp + 8, 16));
-
-            // Copy IRET frame to stack
-            let stack_iret_frame = stack_ptr.cast::<X86ExceptionContext>();
-            *stack_iret_frame = iret_frame;
-
-            let task_context = TaskContext {
+        let task_context = UserTaskContext {
+            task_context: TaskContext {
                 regs: X86TaskSwitchRegs {
-                    rsi: xsa_addr, // XSAVE area addr
+                    rsi: xsa_addr,          // XSAVE area addr
+                    r14: info_ptr as usize, // New task launch info
                     ..Default::default()
                 },
-                ret_addr: VirtAddr::from(return_new_task as *const ())
-                    .bits()
-                    .try_into()
-                    .unwrap(),
-            };
+                ret_addr: thread_entry_asm as *const () as u64,
+            },
+            thread_routine: run_user_task as *const () as u64,
+            exit_addr: VirtAddr::from(default_return as *const ())
+                .bits()
+                .try_into()
+                .unwrap(),
+            // Setup IRQ return frame.  User-mode tasks always run with
+            // interrupts enabled.
+            excp_context: X86ExceptionContext::default(),
+        };
 
-            let stack_task_context = stack_ptr
-                .sub(size_of::<TaskContext>())
-                .cast::<TaskContext>();
-            *stack_task_context = task_context;
-        }
-
-        Ok((mapping, bounds, stack_offset + size_of::<TaskContext>()))
+        Self::allocate_stack_common(cpu, &task_context)
     }
 
     fn allocate_xsave_area() -> PageBox<[u8]> {
@@ -1057,23 +1049,14 @@ fn task_attach_console() {
         .expect("Failed to attach console");
 }
 
-/// Runs the first time a new task is scheduled, in the context of the new
-/// task. Any first-time initialization and setup work for a new task that
-/// needs to happen in its context must be done here.
-/// # Safety
-/// The caller is required to verify the correctness of the save area address.
+/// Finished the setup of a new thread by doing all setup work which needs to
+/// happen in the context of the new thread.
+///
+/// Right now this is mostly work done also in the switch_to() function after
+/// the task switch happened, as new threads do not go through this path when they
+/// first run.
 #[unsafe(no_mangle)]
-unsafe fn setup_user_task(prev: usize, xsa_addr: u64) {
-    // SAFETY: caller needs to make sure that the previous task pointer and
-    // xsa_addr are valid.
-    unsafe {
-        // Needs to be the first function called here.
-        setup_new_task_common(xsa_addr, complete_task_switch(prev));
-    }
-    task_attach_console();
-}
-
-unsafe fn setup_new_task_common(xsa_addr: u64, prev_task: Option<TaskPointer>) {
+unsafe fn complete_new_thread(prev: usize, xsa_addr: u64) {
     // Re-enable IRQs here, as they are still disabled from the
     // schedule()/sched_init() functions. After the context switch the IrqGuard
     // from the previous task is not dropped, which causes IRQs to stay
@@ -1082,6 +1065,9 @@ unsafe fn setup_new_task_common(xsa_addr: u64, prev_task: Option<TaskPointer>) {
     // subsequent task switches will go through schedule() and there the guard
     // is dropped, re-enabling IRQs.
     irqs_enable();
+
+    // SAFETY: the scheduler passes the correct pointer to the previous task.
+    let prev_task = unsafe { complete_task_switch(prev) };
 
     // Drop the previous task reference now that interrupts are reenabled.
     // This ensures that the task destructor will run with interrupts enabled.
@@ -1094,25 +1080,53 @@ unsafe fn setup_new_task_common(xsa_addr: u64, prev_task: Option<TaskPointer>) {
     }
 }
 
+/// Runs the first time a new task is scheduled, in the context of the new
+/// task. Any first-time initialization specific to user-tasks need to happen
+/// here.
+///
+/// # Arguments:
+///
+/// * `info_ptr` - Pointer to a UserExecInfo structure.
+/// * `_unused` - Unused parameter, is the start parameter for kernel tasks
+/// * `ctxt` - Mutable reference to a struct X86ExceptionContext which must be
+///   prepared for the return-to-user path.
+///
+/// # Safety
+///
+/// This is called from assembly code. The caller needs to ensure the
+/// parameters are passed correctly.
+#[unsafe(no_mangle)]
+unsafe fn run_user_task(info_ptr: *mut UserExecInfo, _unused: u64, ctxt: &mut X86ExceptionContext) {
+    // SAFETY: The raw pointer was extracted from a Box in
+    // allocate_utask_stack() to move ownership to a new process.
+    let info = unsafe { Box::from_raw(info_ptr) };
+
+    let entry = match exec(*info) {
+        Ok(e) => e,
+        Err(e) => {
+            log::error!("Failed to load ELF binary: {e:?}");
+            terminate(None);
+        }
+    };
+
+    ctxt.frame = X86InterruptFrame {
+        rip: entry as usize,
+        cs: (SVSM_USER_CS | SVSM_USER_CPL).into(),
+        flags: EFLAGS_INIT | EFLAGS_IF,
+        rsp: (USER_MEM_END - 8).into(),
+        ss: (SVSM_USER_DS | SVSM_USER_CPL).into(),
+    };
+
+    debug_assert!(is_aligned(ctxt.frame.rsp + 8, 16));
+
+    task_attach_console();
+}
+
 /// # Safety
 /// This function must only be invoked as a thread start function, and must
 /// be invoked according to the start parameter data type expected by the entry
 /// point.
-unsafe fn run_kernel_task<T: KernelThreadStartParameter>(
-    prev: usize,
-    entry: fn(T),
-    xsa_addr: u64,
-    start_parameter: usize,
-) {
-    // SAFETY: the scheduler passes the correct pointer to the previous task.
-    let prev_task = unsafe { complete_task_switch(prev) };
-
-    // SAFETY: the save area address is provided by the context switch assembly
-    // code.
-    unsafe {
-        setup_new_task_common(xsa_addr, prev_task);
-    }
-
+unsafe fn run_kernel_task<T: KernelThreadStartParameter>(entry: fn(T), start_parameter: usize) {
     // SAFETY: the `usize` start parameter was generated from an earlier call
     // to `KernelThreadStartParameter::to_usize` when the start argument was
     // prepared for use in the initial stack context, and therefore the safety
