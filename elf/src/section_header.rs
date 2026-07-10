@@ -16,7 +16,7 @@ use bitflags::bitflags;
 bitflags! {
     /// Flags associated with ELF64 section header (e.g.,
     /// writable, contains null-terminated string, etc.
-    #[derive(Debug)]
+    #[derive(Copy, Clone, Debug)]
     pub struct Elf64ShdrFlags : Elf64Xword {
         const WRITE            = 0x001;
         const ALLOC            = 0x002;
@@ -33,7 +33,7 @@ bitflags! {
 }
 
 /// An ELF64 section header
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Elf64Shdr {
     pub sh_name: Elf64Word,
     pub sh_type: Elf64Word,

@@ -249,8 +249,7 @@ unsafe fn copy_bytes(src: *const u8, dst: *mut u8, size: usize) -> Result<(), Sv
     // SAFETY: Safe as long as the function's safety requirements are met. Any
     // fault that might happen is handled via the exception handlers.
     unsafe {
-        asm!("1:cld
-                rep movsb
+        asm!("1: rep movsb
               2:
              .pushsection \"__exception_table\",\"a\"
              .balign 16

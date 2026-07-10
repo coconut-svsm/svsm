@@ -277,34 +277,29 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usiz
     let err = ctxt.error_code;
     let vaddr = VirtAddr::from(cr2);
 
-    if user_mode(ctxt) {
-        let kill_task: bool = if is_task_fault(vaddr) {
-            current_task()
-                .fault(vaddr, (err & PageFaultError::W.bits() as usize) != 0)
-                .is_err()
-        } else {
-            true
-        };
+    let resolved = if is_task_fault(vaddr) {
+        current_task()
+            .fault(vaddr, (err & PageFaultError::W.bits() as usize) != 0)
+            .is_ok()
+    } else {
+        this_cpu()
+            .handle_pf(vaddr, (err & PageFaultError::W.bits() as usize) != 0)
+            .is_ok()
+    };
 
-        if kill_task {
+    if !resolved {
+        if user_mode(ctxt) {
             log::error!(
                 "Unexpected user-mode page-fault at RIP {rip:#018x} CR2: {cr2:#018x} error code: {err:#018x} - Terminating task"
             );
             terminate(Some(TaskExitStatus::Exception));
+        } else if !handle_exception_table(ctxt) {
+            handle_debug_exception(ctxt, vector);
+            panic!(
+                "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
+                rip, cr2, err
+            );
         }
-    } else if this_cpu()
-        .handle_pf(
-            VirtAddr::from(cr2),
-            (err & PageFaultError::W.bits() as usize) != 0,
-        )
-        .is_err()
-        && !handle_exception_table(ctxt)
-    {
-        handle_debug_exception(ctxt, vector);
-        panic!(
-            "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
-            rip, cr2, err
-        );
     }
 }
 
