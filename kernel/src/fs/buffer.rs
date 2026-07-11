@@ -4,10 +4,14 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+extern crate alloc;
 use crate::address::VirtAddr;
+use crate::console::console_write;
 use crate::error::SvsmError;
 use crate::fs::FsError;
+use crate::fs::log_buffer::log_write;
 use crate::mm::{copy_from_user, copy_to_user};
+use alloc::string::String;
 use core::cmp;
 
 pub trait Buffer {
@@ -133,5 +137,102 @@ impl Buffer for UserBuffer {
 
     fn size(&self) -> usize {
         self.size
+    }
+}
+
+// With the value of 223 the Buffer struct will be exactly 256 bytes
+// large, avoiding memory waste due to internal fragmentation.
+const LINE_BUFFER_SIZE: usize = 223;
+
+#[derive(Debug)]
+pub struct LineBuffer {
+    prefix: String,
+    buffer: [u8; LINE_BUFFER_SIZE],
+    fill: usize,
+    is_console: bool,
+}
+
+impl LineBuffer {
+    pub fn new(component: String, is_console: bool) -> Self {
+        let mut prefix = String::from("[");
+        prefix.push_str(component.as_str());
+        prefix.push_str("] ");
+        Self {
+            prefix,
+            buffer: [0u8; LINE_BUFFER_SIZE],
+            fill: 0,
+            is_console,
+        }
+    }
+
+    fn push(&mut self, b: u8) -> Result<(), SvsmError> {
+        let newline: u8 = '\n'.try_into().unwrap();
+
+        if self.fill + 1 == LINE_BUFFER_SIZE {
+            self.buffer[self.fill] = newline;
+            self.fill += 1;
+            self.flush()?;
+        }
+
+        let index = self.fill;
+        self.buffer[index] = b;
+        self.fill += 1;
+        if b == newline {
+            self.flush()?;
+        }
+
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<(), SvsmError> {
+        if !self.is_console {
+            let _ = log_write(self.prefix.as_bytes())?;
+            let _ = log_write(&self.buffer[..self.fill])?;
+
+            #[cfg(feature = "enable-console-log")]
+            {
+                console_write(self.prefix.as_bytes());
+                console_write(&self.buffer[..self.fill]);
+            }
+        } else {
+            console_write(self.prefix.as_bytes());
+            console_write(&self.buffer[..self.fill]);
+        }
+        self.fill = 0;
+        Ok(())
+    }
+
+    pub fn linebuf_write(&mut self, buffer: &dyn Buffer) -> Result<usize, SvsmError> {
+        let len = buffer.size();
+        let mut offset: usize = 0;
+
+        while offset < len {
+            let mut kernel_buffer: [u8; 16] = [0u8; 16];
+            let read = buffer
+                .read_buffer(&mut kernel_buffer, offset)
+                .map_err(|_| SvsmError::LogError)?;
+            self.write_buffer(&kernel_buffer[0..read], 0)?;
+            offset += read;
+        }
+
+        Ok(offset)
+    }
+}
+
+impl Buffer for LineBuffer {
+    fn read_buffer(&self, _buf: &mut [u8], _offset: usize) -> Result<usize, SvsmError> {
+        Err(SvsmError::FileSystem(FsError::not_supported()))
+    }
+
+    fn write_buffer(&mut self, buf: &[u8], _offset: usize) -> Result<usize, SvsmError> {
+        for c in buf.iter() {
+            self.push(*c)?;
+        }
+
+        Ok(buf.len())
+    }
+
+    fn size(&self) -> usize {
+        0
     }
 }

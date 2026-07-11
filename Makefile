@@ -4,7 +4,7 @@ SVSM_ARGS += --features ${FEATURES}
 XBUILD_ARGS += -f ${FEATURES}
 endif
 
-FEATURES_TEST ?= vtpm,virtio-drivers,block,vsock,uefivars,secureboot
+FEATURES_TEST ?= vtpm,virtio-drivers,block,vsock,uefivars,secureboot,enable-console-log
 SVSM_ARGS_TEST += --no-default-features
 ifneq ($(FEATURES_TEST),)
 SVSM_ARGS_TEST += --features ${FEATURES_TEST}
@@ -31,6 +31,11 @@ OBJCOPY_ELF_ARGS := --strip-unneeded
 else
 TARGET_PATH=debug
 OBJCOPY_ELF_ARGS := --strip-debug
+endif
+
+ifeq ($(DISABLE_CONSOLE_LOG),)
+SVSM_ARGS += --features enable-console-log
+XBUILD_ARGS += -f enable-console-log
 endif
 
 ifdef OFFLINE

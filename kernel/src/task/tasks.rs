@@ -28,7 +28,6 @@ use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::irqs_enable;
 use crate::cpu::irqs_enabled;
 use crate::cpu::percpu::PerCpu;
-use crate::cpu::percpu::current_task;
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::shadow_stack::init_shadow_stack;
 use crate::cpu::sse::sse_restore_context;
@@ -466,7 +465,7 @@ impl Task {
         cpu.populate_page_table(&mut pgtable);
 
         let (task_mm, objtree) = {
-            if let Some(parent_thread) = args.thread_of {
+            if let Some(ref parent_thread) = args.thread_of {
                 (parent_thread.mm.clone(), parent_thread.objs.clone())
             } else {
                 (
@@ -542,7 +541,7 @@ impl Task {
         // Stack frames should be 16b-aligned
         debug_assert!(bounds.end().is_aligned(16));
 
-        Ok(Arc::new(Task {
+        let task = Arc::new(Task {
             rsp: bounds
                 .end()
                 .checked_sub(rsp_offset)
@@ -565,7 +564,12 @@ impl Task {
             objs: objtree,
             wait_queue: SpinLockIrqSafe::new(WaitQueue::new()),
             exit_status: AtomicU32::new(TaskExitStatus::default().into()),
-        }))
+        });
+
+        if args.thread_of.is_none() {
+            task.attach_stdout();
+        }
+        Ok(task)
     }
 
     pub fn create(
@@ -1034,19 +1038,29 @@ impl Task {
             .cloned()
             .ok_or(ObjError::NotFound.into())
     }
+
+    fn attach_stdout(&self) {
+        let name = if self.name == "idle" {
+            String::from("SVSM")
+        } else {
+            self.name.clone()
+        };
+
+        let (fh_console, fh_log) = stdout_open(name);
+
+        let oh_console = ObjHandle::new(0);
+        self.add_obj_at(fh_console, oh_console)
+            .expect("Failed to attach console");
+
+        let oh_log = ObjHandle::new(1);
+        self.add_obj_at(fh_log, oh_log)
+            .expect("Failed to attach log");
+    }
 }
 
 pub fn is_task_fault(vaddr: VirtAddr) -> bool {
     (vaddr >= USER_MEM_START && vaddr < USER_MEM_END)
         || (vaddr >= SVSM_PERTASK_BASE && vaddr < SVSM_PERTASK_END)
-}
-
-fn task_attach_console() {
-    let file_handle = stdout_open();
-    let obj_handle = ObjHandle::new(0);
-    current_task()
-        .add_obj_at(file_handle, obj_handle)
-        .expect("Failed to attach console");
 }
 
 /// Finished the setup of a new thread by doing all setup work which needs to
@@ -1118,8 +1132,6 @@ unsafe fn run_user_task(info_ptr: *mut UserExecInfo, _unused: u64, ctxt: &mut X8
     };
 
     debug_assert!(is_aligned(ctxt.frame.rsp + 8, 16));
-
-    task_attach_console();
 }
 
 /// # Safety

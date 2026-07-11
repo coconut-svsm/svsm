@@ -147,6 +147,8 @@ pub enum SvsmError {
     Vsock(VsockError),
     /// Errors related to I/O operations.
     Io(IoError),
+    /// Errors related to LogBuffer
+    LogError,
 }
 
 impl From<IoError> for SvsmError {

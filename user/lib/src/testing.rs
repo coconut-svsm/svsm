@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
 
-use crate::println;
+use crate::{log_msg, print, println};
 use test::ShouldPanic;
 
 pub fn svsm_usermodule_test_runner(test_cases: &[&test::TestDescAndFn]) {
