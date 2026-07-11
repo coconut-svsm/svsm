@@ -6,13 +6,11 @@
 
 #![cfg_attr(all(not(test), target_os = "none"), no_std)]
 
-pub mod console;
 pub mod locking;
-pub mod log_buffer;
+pub mod logging;
 
-pub use console::*;
 pub use locking::*;
-pub use log_buffer::*;
+pub use logging::*;
 pub use syscall::*;
 
 #[cfg(all(feature = "test_runner", not(test), target_os = "none"))]
