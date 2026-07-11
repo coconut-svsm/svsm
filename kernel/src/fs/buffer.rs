@@ -6,13 +6,14 @@
 
 extern crate alloc;
 use crate::address::VirtAddr;
+#[cfg(feature = "enable-console-log")]
 use crate::console::console_write;
 use crate::error::SvsmError;
 use crate::fs::FsError;
 use crate::fs::log_buffer::log_write;
 use crate::mm::{copy_from_user, copy_to_user};
 use alloc::string::String;
-use core::cmp;
+use core::{cmp, mem};
 
 pub trait Buffer {
     /// Copy data from the buffer into a slice
@@ -140,20 +141,21 @@ impl Buffer for UserBuffer {
     }
 }
 
-// With the value of 223 the Buffer struct will be exactly 256 bytes
+// With the value of 224 the Buffer struct will be exactly 256 bytes
 // large, avoiding memory waste due to internal fragmentation.
-const LINE_BUFFER_SIZE: usize = 223;
+const LINE_BUFFER_SIZE: usize = 224;
 
 #[derive(Debug)]
 pub struct LineBuffer {
     prefix: String,
     buffer: [u8; LINE_BUFFER_SIZE],
     fill: usize,
-    is_console: bool,
 }
 
+const _: () = assert!(mem::size_of::<LineBuffer>() == 256);
+
 impl LineBuffer {
-    pub fn new<S: AsRef<str>>(component: S, is_console: bool) -> Self {
+    pub fn new<S: AsRef<str>>(component: S) -> Self {
         let mut prefix = String::from("[");
         prefix.push_str(component.as_ref());
         prefix.push_str("] ");
@@ -161,7 +163,6 @@ impl LineBuffer {
             prefix,
             buffer: [0u8; LINE_BUFFER_SIZE],
             fill: 0,
-            is_console,
         }
     }
 
@@ -185,16 +186,11 @@ impl LineBuffer {
     }
 
     fn flush(&mut self) -> Result<(), SvsmError> {
-        if !self.is_console {
-            let _ = log_write(self.prefix.as_bytes())?;
-            let _ = log_write(&self.buffer[..self.fill])?;
+        let _ = log_write(self.prefix.as_bytes())?;
+        let _ = log_write(&self.buffer[..self.fill])?;
 
-            #[cfg(feature = "enable-console-log")]
-            {
-                console_write(self.prefix.as_bytes());
-                console_write(&self.buffer[..self.fill]);
-            }
-        } else {
+        #[cfg(feature = "enable-console-log")]
+        {
             console_write(self.prefix.as_bytes());
             console_write(&self.buffer[..self.fill]);
         }

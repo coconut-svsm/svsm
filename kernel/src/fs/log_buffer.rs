@@ -36,9 +36,9 @@ struct LogFile {
 }
 
 impl LogFile {
-    fn new<S: AsRef<str>>(component: S, is_console: bool) -> Self {
+    fn new<S: AsRef<str>>(component: S) -> Self {
         Self {
-            lb: SpinLock::new(LineBuffer::new(component, is_console)),
+            lb: SpinLock::new(LineBuffer::new(component)),
         }
     }
 }
@@ -69,15 +69,11 @@ impl File for LogFile {
     }
 }
 
-pub fn stdout_open(taskname: &str) -> (Arc<dyn Obj>, Arc<dyn Obj>) {
-    let console_file: Arc<dyn File> = Arc::new(LogFile::new(taskname, true));
-    let log_file: Arc<dyn File> = Arc::new(LogFile::new(taskname, false));
+pub fn stdout_open(taskname: &str) -> Arc<dyn Obj> {
+    let log_file: Arc<dyn File> = Arc::new(LogFile::new(taskname));
 
     // Stdout is write-only.
-    (
-        Arc::new(FsObj::new_file(FileHandle::new(&console_file, false, true))),
-        Arc::new(FsObj::new_file(FileHandle::new(&log_file, false, true))),
-    )
+    Arc::new(FsObj::new_file(FileHandle::new(&log_file, false, true)))
 }
 
 #[cfg(all(test, test_in_svsm))]
