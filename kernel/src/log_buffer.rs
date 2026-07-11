@@ -28,7 +28,7 @@ impl LogBuffer {
 impl fmt::Write for LogBuffer {
     /// Writes all bytes from the slice to the log buffer
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        let obj_handle = ObjHandle::new(1);
+        let obj_handle = ObjHandle::new(0);
         let buf = SliceRefBuffer::new(s.as_bytes());
         let fs = obj_get(obj_handle).map_err(print_warning).unwrap();
         let fs = fs
