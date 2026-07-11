@@ -978,7 +978,11 @@ mod test {
         });
 
         while !MULTI_WAITER_TARGET_RELEASED.load(Ordering::Acquire) {
-            core::hint::spin_loop();
+            if PERCPU_AREAS.len() > 1 {
+                core::hint::spin_loop();
+            } else {
+                schedule();
+            }
         }
 
         MULTI_WAITER_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -1005,10 +1009,6 @@ mod test {
         MULTI_WAITER_COUNTER.store(0, Ordering::Relaxed);
         MULTI_WAITER_WAITING_COUNTER.store(0, Ordering::Relaxed);
         MULTI_WAITER_TARGET_RELEASED.store(false, Ordering::Relaxed);
-
-        if PERCPU_AREAS.len() < 2 {
-            return;
-        }
 
         // Start the task that will be waited on.
         let target = start_kernel_task(
