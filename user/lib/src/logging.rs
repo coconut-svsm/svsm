@@ -5,10 +5,8 @@
 // Author: Vasant Karasulli <vkarasulli@suse.de>
 
 use crate::SpinLock;
-use crate::console_print;
 use core::fmt;
 use log::{Level, LevelFilter, Metadata, Record};
-use syscall::SysCallError;
 use syscall::write_log;
 
 #[derive(Debug, Default)]
@@ -20,13 +18,10 @@ impl LogWriter {
     }
 }
 
-fn print_warning(_e: SysCallError) {
-    console_print(format_args!("ERROR: logging failed\n"));
-}
-
 impl fmt::Write for LogWriter {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        let _ = write_log(s.as_bytes()).map_err(print_warning);
+        // Ignore any errors from log writing.
+        let _ = write_log(s.as_bytes());
         Ok(())
     }
 }
