@@ -15,6 +15,8 @@ pub use locking::*;
 pub use log_buffer::*;
 pub use syscall::*;
 
+pub use log;
+
 #[cfg(all(feature = "test_runner", not(test), target_os = "none"))]
 pub mod testing;
 #[cfg(all(feature = "test_runner", not(test), target_os = "none"))]
@@ -26,6 +28,7 @@ macro_rules! declare_main {
         const _: () = {
             #[unsafe(export_name = "_start")]
             pub extern "C" fn launch_module() -> ! {
+                $crate::install_logger();
                 let main_fn: fn() -> u32 = $path;
                 let ret = main_fn();
                 $crate::exit(ret);
