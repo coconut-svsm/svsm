@@ -99,8 +99,11 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
         // SAFETY: The address is valid, mapped by `map_global_range_4k_shared`, and verified
         // to be VirtIOHeader-aligned by the guard above.
         // The memory region has the same lifetime of the MmioSlot structure which will be consumed by the driver.
-        // Note: QEMU places each MMIO slot on its own page for us, thus mmio_size = PAGE_SIZE.
-        let Ok(transport) = (unsafe { MmioTransport::new(header, PAGE_SIZE) }) else {
+        // TODO: Currently the hypervisor does not advertise the size of the mmio space (header + config space).
+        //       The size will be provided by the device tree. For now, let's just make sure we don't go past
+        //       the boundaries of the allocated space.
+        let Ok(transport) = (unsafe { MmioTransport::new(header, mem.size() - page_offset) })
+        else {
             // Currently QEMU advertises _all_ slots, regardless they are empty or not.
             log::debug!("MmioSlots: {addr:x} empty");
             continue;
