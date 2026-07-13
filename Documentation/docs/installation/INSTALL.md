@@ -274,18 +274,6 @@ repository. This is the file which needs to be passed to QEMU.
 The project also contains a number of unit-tests that can be run by following
 the instructions in the [TESTING.md](../developer/TESTING.md) document.
 
-Different (non-QEMU) hypervisors may provide the ACPI tables and ACPI RSDP at
-different paths. If this is the case, they can be provided as environment
-variables, e.g.
-
-```shell
-ACPI_RSDP_PATH=path/to/acpi/rsdp ACPI_TABLES_PATH=path/to/acpi/tables FW_FILE=/path/to/firmware/OVMF.fd make
-```
-
-This should only be necessary if using an alternate hypervisor and if SVSM panics
-with an error such as `Failed to load ACPI tables: FwCfg(FileNotFound)`. The default
-values are `etc/acpi/rsdp` and `etc/acpi/tables`, respectively.
-
 Putting it all together
 -----------------------
 
