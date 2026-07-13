@@ -231,11 +231,6 @@ impl IgvmBuilder {
             _ => 0,
         };
 
-        let has_fw_cfg_port = match self.options.hypervisor {
-            Hypervisor::Qemu | Hypervisor::Vanadium => 1,
-            _ => 0,
-        };
-
         let has_test_iorequests = match self.options.hypervisor {
             Hypervisor::Qemu => 1,
             _ => 0,
@@ -280,7 +275,6 @@ impl IgvmBuilder {
             kernel_max_size: self.gpa_map.kernel_max_size,
             use_alternate_injection: u8::from(self.options.alt_injection),
             has_qemu_testdev,
-            has_fw_cfg_port,
             has_test_iorequests,
             _reserved: Default::default(),
         })
