@@ -138,9 +138,6 @@ pub struct BootParamBlock {
     /// Indicates whether SVSM can assume that the qemu testdev device exists to assist testing.
     pub has_qemu_testdev: u8,
 
-    /// Indicates whether SVSM should use an IO port to read the qemu FwCfg.
-    pub has_fw_cfg_port: u8,
-
     /// Indicates whether SVSM can use "IORequest"s to assist with testing.
     pub has_test_iorequests: u8,
 
@@ -148,7 +145,7 @@ pub struct BootParamBlock {
     /// range.
     pub vmsa_in_kernel_range: u8,
 
-    pub _reserved: u8,
+    pub _reserved: [u8; 2],
 
     /// Metadata containing information about the firmware image embedded in the
     /// IGVM file.
