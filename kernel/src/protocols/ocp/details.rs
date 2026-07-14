@@ -25,6 +25,8 @@ struct OcpSourceFlags {
 /// Type of data the OCP source contains.
 pub enum OcpSourceType {
     StaticString = 0,
+    Integer = 1,
+    String = 2,
 }
 
 /// OCP source details structure.
