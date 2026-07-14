@@ -9,18 +9,22 @@
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
+use alloc::format;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 use crate::{
     address::{Address, PhysAddr},
     locking::RWLock,
-    mm::{GuestPtr, PerCPUPageMappingGuard, valid_phys_region},
+    mm::{GuestPtr, PerCPUPageMappingGuard, guestmem::copy_slice_to_guest, valid_phys_region},
     protocols::{RequestParams, errors::SvsmReqError},
     types::PAGE_SIZE,
     utils::MemoryRegion,
 };
+
 use bitfield_struct::bitfield;
 use core::{fmt::Debug, mem};
+use release::COCONUT_VERSION;
 use zerocopy::{Immutable, IntoBytes};
 
 const OCP_SOURCE_NAME_LEN: usize = 112;
@@ -381,4 +385,85 @@ pub fn ocp_protocol_request(request: u32, params: &mut RequestParams) -> Result<
         SVSM_OCP_WRITE => ocp_write_request(params),
         _ => Err(SvsmReqError::unsupported_call()),
     }
+}
+
+#[derive(Debug)]
+struct OcpSvsmObject {
+    ocp_source_entries: Vec<OcpSource>,
+    details: OcpObjectDetails,
+}
+
+impl OcpSvsmObject {
+    const fn new(category: OcpObjectType, sup_index: u32) -> Self {
+        Self {
+            ocp_source_entries: Vec::new(),
+            details: OcpObjectDetails {
+                category,
+                index: sup_index,
+                count: 0,
+            },
+        }
+    }
+
+    fn add_source(&mut self, source: OcpSource) {
+        self.ocp_source_entries.push(source);
+        self.details.count += 1;
+    }
+}
+
+impl OcpObjectOperations for OcpSvsmObject {
+    fn read(
+        &self,
+        offset: u32,
+        gpa: PhysAddr,
+        size: u32,
+        sub_index: u32,
+    ) -> Result<u32, SvsmReqError> {
+        let bytes_read = match sub_index {
+            0 => {
+                // fixme: heap allocation
+                let version_str = format!("{COCONUT_VERSION}\0");
+                let version_bytes = version_str.as_bytes();
+                let len = version_bytes.len();
+
+                if offset as usize >= len {
+                    return Ok(0);
+                }
+
+                let end = (offset as usize + size as usize).min(len);
+
+                let bytes_to_copy = end - offset as usize;
+
+                let version_slice = &version_bytes[offset as usize..end];
+
+                copy_slice_to_guest(version_slice, gpa)?;
+
+                bytes_to_copy as u32
+            }
+            _ => {
+                return Err(SvsmReqError::invalid_parameter());
+            }
+        };
+
+        Ok(bytes_read)
+    }
+
+    fn get_object_sources(&self) -> &[OcpSource] {
+        self.ocp_source_entries.as_slice()
+    }
+
+    fn get_object_details(&self) -> &OcpObjectDetails {
+        &self.details
+    }
+}
+
+pub fn add_svsm_object() {
+    // TODO: get first free index from an atomic counter?
+
+    let mut svsm_obj = OcpSvsmObject::new(OcpObjectType::Svsm, 0);
+
+    let svsm_version = OcpSource::new(0, 0, false, "svsm_version", OcpSourceType::StaticString);
+    svsm_obj.add_source(svsm_version);
+
+    add_ocp_object(0, Arc::new(svsm_obj));
 }
