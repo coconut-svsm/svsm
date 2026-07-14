@@ -23,6 +23,7 @@ use crate::{
 };
 
 use bitfield_struct::bitfield;
+use core::sync::atomic::{AtomicU32, Ordering};
 use core::{fmt::Debug, mem};
 use release::COCONUT_VERSION;
 use zerocopy::{Immutable, IntoBytes};
@@ -59,6 +60,7 @@ struct OcpSourceFlags {
 /// Type of data the OCP source contains.
 pub enum OcpSourceType {
     StaticString = 0,
+    Integer = 1,
 }
 
 /// OCP source entry structure.
@@ -391,6 +393,7 @@ pub fn ocp_protocol_request(request: u32, params: &mut RequestParams) -> Result<
 struct OcpSvsmObject {
     ocp_source_entries: Vec<OcpSource>,
     details: OcpObjectDetails,
+    state: AtomicU32,
 }
 
 impl OcpSvsmObject {
@@ -402,6 +405,7 @@ impl OcpSvsmObject {
                 index: sup_index,
                 count: 0,
             },
+            state: AtomicU32::new(0),
         }
     }
 
@@ -440,12 +444,42 @@ impl OcpObjectOperations for OcpSvsmObject {
 
                 bytes_to_copy as u32
             }
+            1 => {
+                // simplified read implementation for testing purposes
+                let state = self.state.load(Ordering::Acquire);
+                let state_bytes = state.to_le_bytes();
+
+                copy_slice_to_guest(&state_bytes, gpa)?;
+
+                4
+            }
             _ => {
                 return Err(SvsmReqError::invalid_parameter());
             }
         };
 
         Ok(bytes_read)
+    }
+
+    fn write(
+        &self,
+        _offset: u32,
+        _gpa: PhysAddr,
+        _size: u32,
+        sub_index: u32,
+    ) -> Result<u32, SvsmReqError> {
+        let bytes_written = match sub_index {
+            1 => {
+                // simplified write implementation for testing purposes
+                let current_state = self.state.load(Ordering::Acquire);
+                self.state.store(current_state + 1, Ordering::Release);
+                4
+            }
+            _ => {
+                return Err(SvsmReqError::invalid_parameter());
+            }
+        };
+        Ok(bytes_written)
     }
 
     fn get_object_sources(&self) -> &[OcpSource] {
@@ -464,6 +498,9 @@ pub fn add_svsm_object() {
 
     let svsm_version = OcpSource::new(0, 0, false, "svsm_version", OcpSourceType::StaticString);
     svsm_obj.add_source(svsm_version);
+
+    let write_source = OcpSource::new(0, 1, true, "write_source", OcpSourceType::Integer);
+    svsm_obj.add_source(write_source);
 
     add_ocp_object(0, Arc::new(svsm_obj));
 }
