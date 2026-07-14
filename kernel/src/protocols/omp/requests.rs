@@ -38,8 +38,10 @@ static OMP_OBJECTS: RWLock<Vec<Arc<dyn OmpObject>>> = RWLock::new(Vec::new());
 
 /// Adds an OMP object to the global list if there is not already one with the same name.
 pub fn add_omp_object(object: Arc<dyn OmpObject>) -> bool {
+    #[cfg(not(feature = "omp-test"))]
     let new_obj_name = object.get_name();
     let mut objects = OMP_OBJECTS.lock_write();
+    #[cfg(not(feature = "omp-test"))]
     for obj in objects.iter() {
         if obj.get_name() == new_obj_name {
             return false;
