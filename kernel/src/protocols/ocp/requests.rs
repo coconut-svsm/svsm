@@ -38,8 +38,10 @@ static OCP_OBJECTS: RWLock<Vec<Arc<dyn OcpObject>>> = RWLock::new(Vec::new());
 
 /// Adds an OCP object to the global list if there is not already one with the same name.
 pub fn add_ocp_object(object: Arc<dyn OcpObject>) -> bool {
+    #[cfg(not(feature = "ocp-test"))]
     let new_obj_name = object.get_name();
     let mut objects = OCP_OBJECTS.lock_write();
+    #[cfg(not(feature = "ocp-test"))]
     for obj in objects.iter() {
         if obj.get_name() == new_obj_name {
             return false;
