@@ -1,10 +1,10 @@
-FEATURES ?= vtpm
+FEATURES ?= vtpm,ocp-test
 ifneq ($(FEATURES),)
 SVSM_ARGS += --features ${FEATURES}
 XBUILD_ARGS += -f ${FEATURES}
 endif
 
-FEATURES_TEST ?= vtpm,virtio-drivers,block,vsock,uefivars,secureboot,enable-console-log,attest,observability
+FEATURES_TEST ?= vtpm,virtio-drivers,block,vsock,uefivars,secureboot,enable-console-log,attest,observability,ocp-test
 SVSM_ARGS_TEST += --no-default-features
 ifneq ($(FEATURES_TEST),)
 SVSM_ARGS_TEST += --features ${FEATURES_TEST}
