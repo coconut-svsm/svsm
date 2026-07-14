@@ -90,3 +90,15 @@ const SVSM_OCP_WRITE: u32 = 3;
 * **R9**: offset of the source where to start write to
 
 **note**: For now, buffer size is limited to 4096 bytes.
+
+## Available sources
+
+### Version
+
+This is a simple source that can only be read. It provides
+information on the current SVSM version.
+
+### Log Buffer
+
+This source allows the user to read the information logged
+by SVSM during its runtime.
