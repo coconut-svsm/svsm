@@ -6,18 +6,19 @@
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
 use super::*;
-use anyhow::{Context, bail};
-use base64::{
-    Engine,
-    prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD},
-};
+use anyhow::{Context, anyhow};
+use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use kbs_types::*;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use serde_json::json;
+use sha2::{Digest, Sha384};
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct KbsProtocol;
+#[derive(Clone, Debug, Default)]
+pub struct KbsProtocol {
+    original_nonce: Option<String>,
+}
 
 #[derive(Deserialize, Debug)]
 struct TokenResponse {
@@ -25,6 +26,28 @@ struct TokenResponse {
 }
 
 impl AttestationProtocol for KbsProtocol {
+    fn fetch_secret(
+        &self,
+        http: &mut HttpClient,
+        req: &SecretRequest,
+        token: &str,
+    ) -> anyhow::Result<reqwest::blocking::Response> {
+        match req {
+            SecretRequest::KbsResource { resource_id } => http
+                .cli
+                .get(format!("{}/kbs/v0/resource/{}", http.url, resource_id))
+                .header("Authorization", format!("Bearer {token}"))
+                .send()
+                .context("unable to GET from KBS resource endpoint"),
+            SecretRequest::Pkcs11Unwrap { wrapped_key } => http
+                .cli
+                .get(format!("{}/kbs/v0/pkcs11/wrap-key", http.url))
+                .header("Authorization", format!("Bearer {token}"))
+                .body(wrapped_key.clone())
+                .send()
+                .context("unable to unwrap via PKCS11 plugin"),
+        }
+    }
     /// KBS servers usually want two components hashed into attestation evidence: the public
     /// components of the TEE key, and a nonce provided in the KBS challenge that is fetched
     /// from the server's /auth endpoint. These must be hased in order.
@@ -60,21 +83,36 @@ impl AttestationProtocol for KbsProtocol {
         let challenge: Challenge =
             serde_json::from_str(&text).context("unable to convert KBS /auth response to JSON")?;
 
-        // Challenge nonce is a base64-encoded byte vector. Inform SVSM of this so it could
-        // decode the bytes and hash them into the TEE evidence.
-        let params = vec![
-            NegotiationParam::EcPublicKeyBytes,
-            NegotiationParam::Challenge,
-        ];
+        self.original_nonce = Some(challenge.nonce.clone());
 
-        let resp = NegotiationResponse {
-            challenge: BASE64_STANDARD
-                .decode(challenge.nonce)
-                .context("unable to decode challenge nonce from base64")?,
-            params,
-        };
+        let mut runtime_data = serde_json::Map::new();
+        runtime_data.insert("additional-evidence".to_string(), json!(""));
+        runtime_data.insert("nonce".to_string(), json!(challenge.nonce));
 
-        Ok(resp)
+        let mut key_map = serde_json::Map::new();
+        key_map.insert("alg".to_string(), json!("ECDH-ES+A256KW"));
+        key_map.insert("crv".to_string(), json!("P-521"));
+        key_map.insert("kty".to_string(), json!("EC"));
+        key_map.insert(
+            "x".to_string(),
+            json!(BASE64_URL_SAFE_NO_PAD.encode(&request.key.x)),
+        );
+        key_map.insert(
+            "y".to_string(),
+            json!(BASE64_URL_SAFE_NO_PAD.encode(&request.key.y)),
+        );
+
+        runtime_data.insert("tee-pubkey".to_string(), json!(key_map));
+
+        let json_bytes = serde_json::to_vec(&runtime_data)?;
+
+        let mut hasher = Sha384::new();
+        hasher.update(&json_bytes);
+        let hash_result = hasher.finalize();
+
+        Ok(NegotiationResponse {
+            challenge: hash_result.to_vec(),
+        })
     }
 
     /// With the serialized TEE evidence and key, complete the attestation. Serialize the evidence
@@ -92,7 +130,7 @@ impl AttestationProtocol for KbsProtocol {
         let attestation = Attestation {
             init_data: None,
             runtime_data: RuntimeData {
-                nonce: BASE64_STANDARD.encode(request.challenge),
+                nonce: self.original_nonce.take().unwrap_or_default(),
                 tee_pubkey: request.key.into(),
             },
             tee_evidence: CompositeEvidence {
@@ -136,11 +174,15 @@ impl AttestationProtocol for KbsProtocol {
         //
         // TODO: Further modify this backend to support the KBS module's PKCS11 plugin.
         // With this, wrapped secrets can be POSTed to the PKCS11 plugin for unwrapping.
-        let http_resp = http
-            .cli
-            .get(format!("{}/kbs/v0/resource/default/sample/test", http.url))
-            .send()
-            .context("unable to POST to KBS /attest endpoint")?;
+
+        let secret_request = request
+            .secret_request
+            .unwrap_or(SecretRequest::KbsResource {
+                resource_id: "default/sample/test".to_string(),
+            });
+
+        // Fetch secret using the resolved strategy (KBS resource / pkcs11 plugin)
+        let http_resp = self.fetch_secret(http, &secret_request, &token_resp.token)?;
 
         // Unsuccessful attempt at retrieving secret.
         if http_resp.status() != StatusCode::OK {
@@ -218,33 +260,32 @@ fn unwrap_epk(resp: &Response) -> anyhow::Result<EcP256PublicKey> {
 #[serde(untagged)]
 enum KbsEvidence {
     Snp {
-        #[serde(rename = "snp-report")]
-        snp_report: String,
-        #[serde(rename = "certs-buf")]
-        certs_buf: Option<String>,
+        #[serde(rename = "attestation_report")]
+        snp_report: sev::firmware::guest::AttestationReport,
+        #[serde(rename = "cert_chain")]
+        certs_buf: Option<Vec<u8>>,
     },
 }
 
 impl TryFrom<&AttestationRequest> for KbsEvidence {
     type Error = anyhow::Error;
-
-    // At the moment, only SEV-SNP evidence is allowed. However, preserve the following match
-    // statement to describe how other TEE architectures would serialize AttestationEvidence.
-    #[allow(irrefutable_let_patterns)]
     fn try_from(data: &AttestationRequest) -> anyhow::Result<Self> {
         match data.tee {
             Tee::Snp => {
                 let AttestationEvidence::Snp {
                     ref report,
-                    ref certs_buf,
-                } = data.evidence
-                else {
-                    bail!("invalid SEV-SNP evidence")
-                };
+                    certs_buf: _,
+                } = data.evidence;
+
+                use sev::parser::Decoder;
+                let mut reader = std::io::Cursor::new(&report[..]);
+                let report_struct =
+                    sev::firmware::guest::AttestationReport::decode(&mut reader, ())
+                        .context("unable to decode AttestationReport using sev::parser::Decoder")?;
 
                 Ok(Self::Snp {
-                    snp_report: BASE64_STANDARD.encode(report),
-                    certs_buf: certs_buf.clone().map(|certs| BASE64_STANDARD.encode(certs)),
+                    snp_report: report_struct,
+                    certs_buf: None,
                 })
             }
             _ => Err(anyhow!("invalid TEE")),

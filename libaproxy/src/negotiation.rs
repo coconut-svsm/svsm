@@ -18,15 +18,7 @@ pub struct NegotiationRequest {
     /// Version of the attestation protocol, represented as semver (MAJOR.MINOR.PATCH).
     pub version: (u32, u32, u32),
     pub tee: kbs_types::Tee,
-}
-
-/// A parameter that must be hashed into the negotiation hash.
-#[derive(Serialize, Deserialize, Debug)]
-pub enum NegotiationParam {
-    /// Hash the challenge returned from attestation server.
-    Challenge,
-    /// Hash the EC public key's `Elliptic-Curve-Point-to-Octet-String` encoding.
-    EcPublicKeyBytes,
+    pub key: EcP256PublicKey,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -37,6 +29,4 @@ pub struct NegotiationResponse {
         deserialize_with = "deserialize_base64"
     )]
     pub challenge: Vec<u8>,
-    /// Parameters to be hashed in the specific order defined by the array
-    pub params: Vec<NegotiationParam>,
 }

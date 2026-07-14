@@ -33,7 +33,6 @@ use cocoon_tpm_utils_common::{
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
-use sha2::{Digest, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
 // TODO: Make the IO port configurable/discoverable or drop the support entirely.
@@ -128,6 +127,19 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
 }
 
 impl AttestationDriver<'_> {
+    /// Extracts the public key coordinates as a TPM ECC point from the internal `EccKey`.
+    fn get_tpm_pub_key(&self) -> Result<TpmsEccPoint<'static>, AttestationError> {
+        let curve =
+            Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
+
+        let curve_ops = curve.curve_ops().map_err(AttestationError::Crypto)?;
+
+        self.ecc
+            .pub_key()
+            .to_tpms_ecc_point(&curve_ops)
+            .map_err(AttestationError::Crypto)
+    }
+
     /// Attest SVSM's launch state by communicating with the attestation proxy.
     pub fn attest(&mut self) -> Result<SecretSlice, SvsmError> {
         let negotiation = self.negotiation()?;
@@ -139,9 +151,12 @@ impl AttestationDriver<'_> {
     /// that should be included in attestation evidence (e.g. through SEV-SNP's REPORT_DATA
     /// mechanism).
     fn negotiation(&mut self) -> Result<NegotiationResponse, AttestationError> {
+        let pub_key = self.get_tpm_pub_key()?;
+
         let request = NegotiationRequest {
             version: (0, 1, 0), // Only version supported at present.
             tee: self.tee,
+            key: (self.ecc.pub_key().get_curve_id(), &pub_key).into(),
         };
 
         self.write(request)?;
@@ -154,22 +169,16 @@ impl AttestationDriver<'_> {
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
     fn attestation(&mut self, n: NegotiationResponse) -> Result<SecretSlice, AttestationError> {
-        let curve =
-            Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
+        let pub_key = self.get_tpm_pub_key()?;
 
-        let pub_key = self
-            .ecc
-            .pub_key()
-            .to_tpms_ecc_point(&curve.curve_ops().map_err(AttestationError::Crypto)?)
-            .map_err(AttestationError::Crypto)?;
-
-        let evidence = evidence(&self.tee, hash(&n, &pub_key)?)?;
+        let evidence = evidence(&self.tee, prepare_report_data(&n)?)?;
 
         let req = AttestationRequest {
             tee: self.tee,
             evidence,
             challenge: n.challenge.clone(),
             key: (self.ecc.pub_key().get_curve_id(), &pub_key).into(),
+            secret_request: None,
         };
 
         self.write(req)?;
@@ -397,26 +406,9 @@ fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<AttestationEvidence, Attestation
     Ok(evidence)
 }
 
-/// Hash the negotiation parameters from the attestation server for inclusion in the
-/// attestation evidence.
-fn hash(
-    n: &NegotiationResponse,
-    pub_key: &TpmsEccPoint<'static>,
-) -> Result<Vec<u8>, AttestationError> {
-    let mut sha = Sha512::new();
-
-    for p in &n.params {
-        match p {
-            NegotiationParam::Challenge => {
-                sha.update(&n.challenge);
-            }
-            #[allow(irrefutable_let_patterns)]
-            NegotiationParam::EcPublicKeyBytes => {
-                sha.update(&*pub_key.x.buffer);
-                sha.update(&*pub_key.y.buffer);
-            }
-        }
-    }
-
-    try_to_vec(&sha.finalize()).or(Err(AttestationError::VecAlloc))
+/// Take 48 byte negotiation challenge nonce from aproxy into 64 byte array required for the TEE attestation evidence report
+fn prepare_report_data(n: &NegotiationResponse) -> Result<Vec<u8>, AttestationError> {
+    let mut report_data = [0u8; 64];
+    report_data[..48].copy_from_slice(&n.challenge);
+    Ok(report_data.to_vec())
 }
