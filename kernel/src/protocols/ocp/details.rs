@@ -10,6 +10,7 @@ use zerocopy::{Immutable, IntoBytes};
 
 const OCP_SOURCE_NAME_LEN: usize = 112;
 pub const OCP_SOURCE_ENTRY_SIZE: usize = 128;
+pub const OCP_SOURCE_DETAILS_SIZE: usize = 12;
 
 #[bitfield(u32)]
 #[derive(IntoBytes, Immutable)]
@@ -72,6 +73,36 @@ impl OcpSourceDetails {
     }
 }
 
+#[repr(u32)]
+#[derive(Debug, IntoBytes, Immutable)]
+/// Type of objects the SVSM contains.
+pub enum OcpObjectType {
+    Svsm = 0,
+}
+
+#[repr(C)]
+#[derive(Debug, IntoBytes, Immutable)]
+pub struct OcpObjectDetails {
+    sup_index: u32,
+    category: OcpObjectType,
+    count: u32,
+}
+
+impl OcpObjectDetails {
+    pub fn new(category: OcpObjectType, sup_index: u32) -> Self {
+        OcpObjectDetails {
+            sup_index,
+            category,
+            count: 0,
+        }
+    }
+
+    pub fn increase_count(&mut self) {
+        // todo: mut shouldn't be here
+        self.count += 1;
+    }
+}
+
 const _: () = assert!(
     mem::offset_of!(OcpSourceDetails, sup_index) == 0x00
         && mem::offset_of!(OcpSourceDetails, sub_index) == 0x04
@@ -79,4 +110,11 @@ const _: () = assert!(
         && mem::offset_of!(OcpSourceDetails, flags) == 0x0C
         && mem::offset_of!(OcpSourceDetails, name) == 0x10
         && mem::size_of::<OcpSourceDetails>() == OCP_SOURCE_ENTRY_SIZE
+);
+
+const _: () = assert!(
+    mem::offset_of!(OcpObjectDetails, sup_index) == 0x00
+        && mem::offset_of!(OcpObjectDetails, category) == 0x04
+        && mem::offset_of!(OcpObjectDetails, count) == 0x08
+        && mem::size_of::<OcpObjectDetails>() == OCP_SOURCE_DETAILS_SIZE
 );
