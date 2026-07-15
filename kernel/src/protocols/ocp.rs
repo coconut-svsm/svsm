@@ -12,6 +12,7 @@ use zerocopy::{Immutable, IntoBytes};
 
 const OCP_SOURCE_NAME_LEN: usize = 112;
 const OCP_SOURCE_ENTRY_SIZE: usize = 128;
+const OCP_SOURCE_DETAILS_SIZE: usize = 12;
 
 #[bitfield(u32)]
 #[derive(IntoBytes, Immutable)]
@@ -82,3 +83,18 @@ const _: () = assert!(
         && mem::offset_of!(OcpSource, name) == 0x10
         && mem::size_of::<OcpSource>() == OCP_SOURCE_ENTRY_SIZE
 );
+
+#[repr(u32)]
+#[derive(Debug, IntoBytes, Immutable)]
+/// Type of objects the SVSM contains.
+pub enum OcpObjectType {
+    Svsm = 0,
+}
+
+#[repr(C)]
+#[derive(Debug, IntoBytes, Immutable)]
+pub struct OcpObjectDetails {
+    category: OcpObjectType,
+    index: u32,
+    count: u32,
+}
