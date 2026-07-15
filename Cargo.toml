@@ -9,6 +9,7 @@ members = [
     "boot/bootimg",
     "boot/defs",
     "cpuarch",
+    "paging",
     # binary targets
     "stage1",
     "kernel",
@@ -55,6 +56,7 @@ bldr = { path = "boot/bldr" }
 bootdefs = { path = "boot/defs" }
 bootimg = { path = "boot/bootimg" }
 cpuarch = { path = "cpuarch" }
+paging = { path = "paging" }
 test = { path = "test" }
 svsm = { path = "kernel" }
 elf = { path = "elf" }
@@ -139,6 +141,7 @@ missing_debug_implementations = { level = "deny", priority = 50 }
 single_use_lifetimes = { level = "warn", priority = 125 }
 trivial-numeric-casts = { level = "deny", priority = 10 }
 unsafe_op_in_unsafe_fn = { level = "deny", priority = 2 }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(verus_only)'] }
 
 [workspace.lints.clippy]
 await_holding_lock = "warn"

@@ -1583,6 +1583,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "paging"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "verify_external",
+ "verify_proof",
+ "verus_stub",
+ "vstd",
+ "zerocopy",
+]
+
+[[package]]
 name = "pastey"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2092,6 +2104,7 @@ dependencies = [
  "libtcgtpm",
  "log",
  "packit",
+ "paging",
  "release",
  "rustc-demangle",
  "rustc_version",
