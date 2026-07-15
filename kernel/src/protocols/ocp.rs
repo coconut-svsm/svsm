@@ -6,7 +6,12 @@
 
 //! OCP protocol implementation (SVSM draft spec).
 
-use crate::{address::PhysAddr, protocols::errors::SvsmReqError};
+extern crate alloc;
+
+use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
+
+use crate::{address::PhysAddr, locking::RWLock, protocols::errors::SvsmReqError};
 use bitfield_struct::bitfield;
 use core::{fmt::Debug, mem};
 use zerocopy::{Immutable, IntoBytes};
@@ -122,4 +127,23 @@ pub trait OcpObjectOperations: Debug + Send + Sync {
     }
     fn get_object_details(&self) -> &OcpObjectDetails;
     fn get_object_sources(&self) -> &[OcpSource];
+}
+
+static OCP_SOURCES: RWLock<BTreeMap<u32, Arc<dyn OcpObjectOperations>>> =
+    RWLock::new(BTreeMap::new());
+
+pub fn add_ocp_object(sup_index: u32, source: Arc<dyn OcpObjectOperations>) {
+    //todo: return error when index is already taken or
+    //todo: implement a way to get the first free index
+    //      similar to get first free port in VsockDriver?
+    //      I need to do it before adding the source as each
+    //      entry should have that index inside
+
+    let mut map = OCP_SOURCES.lock_write();
+
+    if map.contains_key(&sup_index) {
+        panic!("Super index already defined");
+    }
+
+    let _ = map.insert(sup_index, source);
 }
