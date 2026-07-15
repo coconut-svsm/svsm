@@ -75,12 +75,19 @@ pub struct AttestServicesOp {
 }
 
 impl AttestServicesOp {
-    pub fn check_valid(&self) -> Result<(), SvsmReqError> {
+    fn check_valid(&self) -> Result<(), SvsmReqError> {
         if !self.is_reserved_clear() {
             Err(SvsmReqError::invalid_parameter())
         } else {
             Ok(())
         }
+    }
+
+    /// Read from guest memory and validate the request
+    pub fn try_from_guest(paddr: PhysAddr) -> Result<Self, SvsmReqError> {
+        let ops = read_from_guest::<Self>(paddr).map_err(|_| SvsmReqError::invalid_parameter())?;
+        ops.check_valid()?;
+        Ok(ops)
     }
 
     /// Checks if reserved fields are all set to zero
@@ -261,13 +268,19 @@ pub struct AttestSingleServiceOp {
 }
 
 impl AttestSingleServiceOp {
-    /// Checks whether this is a valid request
-    pub fn check_valid(&self) -> Result<(), SvsmReqError> {
+    fn check_valid(&self) -> Result<(), SvsmReqError> {
         if self.is_reserved_clear() && self.is_manifest_version_valid() {
             Ok(())
         } else {
             Err(SvsmReqError::invalid_parameter())
         }
+    }
+
+    /// Read from guest memory and validate the request
+    pub fn try_from_guest(paddr: PhysAddr) -> Result<Self, SvsmReqError> {
+        let ops = read_from_guest::<Self>(paddr).map_err(|_| SvsmReqError::invalid_parameter())?;
+        ops.check_valid()?;
+        Ok(ops)
     }
 
     /// Checks if reserved fields are all set to zero
@@ -487,10 +500,7 @@ fn attest_single_vtpm(
 fn attest_multiple_services(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
 
-    let attest_op =
-        read_from_guest::<AttestServicesOp>(gpa).map_err(|_| SvsmReqError::invalid_parameter())?;
-
-    attest_op.check_valid()?;
+    let attest_op = AttestServicesOp::try_from_guest(gpa)?;
 
     // Attest multiple services is expected to return a GUID table (mixed endian ordering) of the
     // enumerated active services' attestation manifest. A service that does not have its own
@@ -521,10 +531,7 @@ fn attest_single_service_handler(params: &mut RequestParams) -> Result<(), SvsmR
     // Get the gpa of Attest Single Service Operation structure
     let gpa = PhysAddr::from(params.rcx);
 
-    let attest_op = read_from_guest::<AttestSingleServiceOp>(gpa)
-        .map_err(|_| SvsmReqError::invalid_parameter())?;
-
-    attest_op.check_valid()?;
+    let attest_op = AttestSingleServiceOp::try_from_guest(gpa)?;
 
     // Extract the GUID from the Attest Single Service Operation structure.
     // The GUID is used to determine the specific service to be attested.
