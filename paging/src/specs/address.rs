@@ -4,7 +4,7 @@
 //
 // Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
 //
-use crate::utils::util::{
+use crate::util::{
     align_down_integer_ens, align_up_integer_ens, proof_align_down, proof_align_up,
 };
 use verify_external::convert::{exists_into, forall_into};
@@ -26,7 +26,7 @@ pub broadcast group sign_extend_proof {
 }
 
 pub broadcast group address_align_proof {
-    crate::types::group_types_proof,
+    crate::sizes::group_types_proof,
     verify_proof::bits::lemma_bit_usize_and_mask_is_mod,
     proof_align_up,
     proof_align_down,
@@ -52,7 +52,8 @@ broadcast use vaddr_impl_proof;
 
 /// Define a broadcast function and its related spec function calls in a inner
 /// module to avoid cyclic self-reference
-mod address_spec { include!("address_inner.verus.rs");  }
+#[path = "address_inner.rs"]
+mod address_spec;
 
 pub use address_spec::*;
 

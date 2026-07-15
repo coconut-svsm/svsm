@@ -38,6 +38,7 @@ use crate::virtio::VirtioError;
 #[cfg(feature = "vsock")]
 use crate::vsock::VsockError;
 use elf::ElfError;
+use paging::traits::PagingError;
 use syscall::SysCallError;
 
 /// Errors related to I/O operations.
@@ -142,6 +143,8 @@ pub enum SvsmError {
     TeeAttestation(AttestationError),
     /// Errors related to ImmutAfterInitCell
     ImmutAfterInit(ImmutAfterInitError),
+    /// Errors from the paging crate
+    Paging(PagingError),
     /// Errors related to vsock.
     #[cfg(feature = "vsock")]
     Vsock(VsockError),
@@ -160,6 +163,12 @@ impl From<IoError> for SvsmError {
 impl From<ElfError> for SvsmError {
     fn from(err: ElfError) -> Self {
         Self::Elf(err)
+    }
+}
+
+impl From<PagingError> for SvsmError {
+    fn from(err: PagingError) -> Self {
+        Self::Paging(err)
     }
 }
 

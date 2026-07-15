@@ -1,0 +1,23 @@
+[package]
+name = "paging"
+version = "0.1.0"
+edition.workspace = true
+description = "Generic page table structures for Rust OS projects"
+
+[dependencies]
+bitflags.workspace = true
+zerocopy.workspace = true
+verus_stub.workspace = true
+verify_proof = { workspace = true, optional = true }
+verify_external = { workspace = true, optional = true }
+vstd = { workspace = true, optional = true }
+
+[features]
+default = []
+verus = ["verify_proof/verus", "verify_external/verus", "vstd", "verus_stub/disable"]
+
+[package.metadata.verus]
+verify = true
+
+[lints]
+workspace = true

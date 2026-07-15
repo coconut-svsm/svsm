@@ -4,9 +4,8 @@
 //
 // Author: Carlos López <carlos.lopez@suse.com>
 
-use crate::mm::virt_to_phys;
-use crate::types::{PAGE_SHIFT, PAGE_SIZE};
-use crate::utils::{align_down, align_up, is_aligned};
+use crate::sizes::{PAGE_SHIFT, PAGE_SIZE};
+use crate::util::{align_down, align_up, is_aligned};
 
 use core::fmt;
 use core::ops;
@@ -17,8 +16,8 @@ use verus_stub::*;
 
 use zerocopy::FromBytes;
 
-#[cfg(verus_keep_ghost)]
-include!("address.verus.rs");
+#[cfg(verus_only)]
+include!("specs/address.rs");
 
 // The backing type to represent an address;
 type InnerAddr = usize;
@@ -597,20 +596,5 @@ impl Address for VirtAddr {
         self.bits()
             .checked_sub(off)
             .map(|addr| sign_extend(addr).into())
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct VirtPhysPair {
-    pub vaddr: VirtAddr,
-    pub paddr: PhysAddr,
-}
-
-impl VirtPhysPair {
-    pub fn new(vaddr: VirtAddr) -> Self {
-        Self {
-            vaddr,
-            paddr: virt_to_phys(vaddr),
-        }
     }
 }

@@ -3,6 +3,9 @@
 // Copyright (c) Microsoft Corporation
 //
 // Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
+use super::PAGE_SIZE;
+use verus_stub::*;
+
 verus! {
 
 pub broadcast group group_types_proof {
