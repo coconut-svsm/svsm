@@ -40,6 +40,6 @@ macro_rules! declare_main {
 #[cfg(all(not(test), target_os = "none"))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
-    println!("Panic: {}", info);
+    log::error!("Panic: {}", info);
     exit(!0);
 }
