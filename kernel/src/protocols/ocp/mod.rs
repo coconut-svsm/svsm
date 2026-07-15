@@ -8,3 +8,6 @@
 
 pub mod api;
 pub mod details;
+pub mod map;
+
+pub use map::{add_ocp_object, get_first_free_index, get_object};
