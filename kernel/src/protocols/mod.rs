@@ -8,6 +8,7 @@ pub mod apic;
 pub mod attest;
 pub mod core;
 pub mod errors;
+#[cfg(feature = "observability")]
 pub mod omp;
 #[cfg(feature = "uefivars")]
 pub mod uefivars;
