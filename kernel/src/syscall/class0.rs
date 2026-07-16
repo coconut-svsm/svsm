@@ -31,7 +31,7 @@ pub fn sys_exec(file: usize, root: usize, _flags: usize) -> Result<u64, SysCallE
     let file_str = user_file_ptr.read_c_string()?;
     let root_str = user_root_ptr.read_c_string()?;
     let real_root = find_dir(current_task().rootdir(), &root_str)?;
-    let tid = exec_user(&file_str, real_root)?;
+    let tid = exec_user(file_str, real_root)?;
 
     Ok(tid.get_task_id().into())
 }
