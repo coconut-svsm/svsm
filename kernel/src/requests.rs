@@ -15,6 +15,7 @@ use crate::protocols::attest::attest_protocol_request;
 use crate::protocols::{
     RequestOutput, RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
 };
+#[cfg(feature = "observability")]
 use crate::protocols::{SVSM_OBSERVABILITY_CONFIGURATION_PROTOCOL, ocp::ocp_protocol_request};
 #[cfg(all(feature = "uefivars", not(test)))]
 use crate::protocols::{SVSM_UEFI_MM_PROTOCOL, uefivars::uefi_mm_protocol_request};
@@ -85,6 +86,7 @@ fn request_loop_once(
         SVSM_APIC_PROTOCOL => apic_protocol_request(request, params),
         #[cfg(all(feature = "uefivars", not(test)))]
         SVSM_UEFI_MM_PROTOCOL => uefi_mm_protocol_request(request, params),
+        #[cfg(feature = "observability")]
         SVSM_OBSERVABILITY_CONFIGURATION_PROTOCOL => ocp_protocol_request(request, params),
         _ => Err(SvsmReqError::unsupported_protocol()),
     }
