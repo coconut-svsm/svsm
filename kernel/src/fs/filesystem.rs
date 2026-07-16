@@ -415,8 +415,7 @@ where
     let mut current_dir = dir;
 
     for item in path_items {
-        let dir_name = FileName::from(item);
-        let dir_entry = current_dir.lookup_entry(&dir_name)?;
+        let dir_entry = current_dir.lookup_entry(item)?;
         current_dir = match dir_entry {
             DirEntry::File(_) => return Err(SvsmError::FileSystem(FsError::file_not_found())),
             DirEntry::Directory(dir) => dir,
@@ -507,10 +506,10 @@ pub fn open_root(
     write: bool,
 ) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
-    let file_name = FileName::from(path_items.next_back().unwrap());
+    let file_name = path_items.next_back().unwrap();
     let current_dir = walk_path(root_dir, path_items)?;
 
-    let dir_entry = current_dir.lookup_entry(&file_name)?;
+    let dir_entry = current_dir.lookup_entry(file_name)?;
 
     match dir_entry {
         DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::file_not_found())),
@@ -713,11 +712,11 @@ pub fn mkdir(path: &str) -> Result<(), SvsmError> {
 /// value if successful,  [`SvsmError`] otherwise.
 pub fn unlink_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
-    let entry_name = FileName::from(path_items.next_back().unwrap());
+    let entry_name = path_items.next_back().unwrap();
     let dir = walk_path(root_dir, path_items)?;
 
-    match dir.lookup_entry(&entry_name)? {
-        DirEntry::File(_) => dir.unlink(&entry_name),
+    match dir.lookup_entry(entry_name)? {
+        DirEntry::File(_) => dir.unlink(entry_name),
         DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::is_dir())),
     }
 }
@@ -754,14 +753,14 @@ pub fn unlink(path: &str) -> Result<(), SvsmError> {
 /// in progress.
 pub fn rmdir_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
-    let entry_name = FileName::from(path_items.next_back().unwrap());
+    let entry_name = path_items.next_back().unwrap();
     let dir = walk_path(root_dir, path_items)?;
 
-    match dir.lookup_entry(&entry_name)? {
+    match dir.lookup_entry(entry_name)? {
         DirEntry::File(_) => Err(SvsmError::FileSystem(FsError::is_file())),
         DirEntry::Directory(target) => {
             target.prepare_remove()?;
-            dir.unlink(&entry_name)
+            dir.unlink(entry_name)
         }
     }
 }

@@ -17,6 +17,7 @@ use crate::mm::PageRef;
 use packit::PackItError;
 
 pub type FileName = String;
+pub type FileNameRef<'a> = &'a str;
 
 /// Represents the type of error occurred
 /// while doing SVSM filesystem operations.
@@ -204,7 +205,7 @@ pub trait Directory: Debug + Send + Sync {
     /// [`Result<DirEntry, SvsmError>`]: A [`Result`] containing the [`DirEntry`]
     /// corresponding to the entry being looked up in the directory if present, or
     /// an [`SvsmError`] if not present.
-    fn lookup_entry(&self, name: &FileName) -> Result<DirEntry, SvsmError>;
+    fn lookup_entry(&self, name: FileNameRef<'_>) -> Result<DirEntry, SvsmError>;
 
     /// Used to create a new file in the directory.
     ///
@@ -240,7 +241,7 @@ pub trait Directory: Debug + Send + Sync {
     ///
     /// [`Result<(), SvsmError>`]: A [`Result`] containing the empty
     /// value on success, or an [`SvsmError`] on failure
-    fn unlink(&self, name: &FileName) -> Result<(), SvsmError>;
+    fn unlink(&self, name: FileNameRef<'_>) -> Result<(), SvsmError>;
 }
 
 /// Represents a directory entry which could
