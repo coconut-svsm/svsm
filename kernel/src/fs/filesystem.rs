@@ -930,7 +930,7 @@ mod tests {
 
         // Check if it appears in the listing
         let root_list = list_dir("").unwrap();
-        assert!(root_list.contains(&FileName::from("test1")));
+        assert!(root_list.iter().any(|f| f == "test1"));
 
         // Try again - should succeed now
         create("test1/file1").unwrap();
@@ -949,7 +949,7 @@ mod tests {
 
         // Check if it appears in the listing
         let root_list = list_dir("").unwrap();
-        assert!(root_list.contains(&FileName::from("test1")));
+        assert!(root_list.iter().any(|f| f == "test1"));
 
         // Try creating again as file - should fail
         create("test1").unwrap_err();
@@ -965,8 +965,8 @@ mod tests {
 
         // Check if it is removed from the listing
         let root_list = list_dir("").unwrap();
-        assert!(!root_list.contains(&FileName::from("test1")));
-        assert!(root_list.contains(&FileName::from("test2")));
+        assert!(!root_list.iter().any(|f| f == "test1"));
+        assert!(root_list.iter().any(|f| f == "test2"));
 
         // Cleanup
         rmdir("test2").unwrap();
@@ -988,14 +988,14 @@ mod tests {
 
         // Check if it appears in the listing
         let list = list_dir("test1/").unwrap();
-        assert_eq!(list, [FileName::from("test2")]);
+        assert_eq!(list, ["test2"]);
 
         // Try again - should succeed now
         create("test1/test2/file1").unwrap();
 
         // Check if it appears in the listing
         let list = list_dir("test1/test2/").unwrap();
-        assert_eq!(list, [FileName::from("file1")]);
+        assert_eq!(list, ["file1"]);
 
         // Cleanup
         unlink("test1/test2/file1").unwrap();
@@ -1017,7 +1017,7 @@ mod tests {
 
         // Check if they appears in the listing
         let list = list_dir("test1").unwrap();
-        assert_eq!(list, [FileName::from("file1"), FileName::from("file2")]);
+        assert_eq!(list, ["file1", "file2"]);
 
         // Unlink non-existent file
         unlink("test2").unwrap_err();
@@ -1027,7 +1027,7 @@ mod tests {
 
         // Check if it is removed from the listing
         let list = list_dir("test1").unwrap();
-        assert_eq!(list, [FileName::from("file2")]);
+        assert_eq!(list, ["file2"]);
 
         // Cleanup
         unlink("test1/file2").unwrap();

@@ -558,7 +558,7 @@ mod tests {
             .expect("Failed to create directory");
 
         let list = ram_dir.list();
-        assert_eq!(list, [f_name.clone(), d_name.clone()]);
+        assert_eq!(list, [f_name.as_str(), d_name.as_str()]);
 
         let entry = ram_dir
             .lookup_entry(&f_name)
