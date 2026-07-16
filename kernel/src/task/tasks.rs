@@ -1041,9 +1041,9 @@ impl Task {
 
     fn attach_stdout(&self) {
         let name = if self.name == "idle" {
-            String::from("SVSM")
+            "SVSM"
         } else {
-            self.name.clone()
+            self.name.as_str()
         };
 
         let (fh_console, fh_log) = stdout_open(name);

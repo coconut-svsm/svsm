@@ -153,9 +153,9 @@ pub struct LineBuffer {
 }
 
 impl LineBuffer {
-    pub fn new(component: String, is_console: bool) -> Self {
+    pub fn new<S: AsRef<str>>(component: S, is_console: bool) -> Self {
         let mut prefix = String::from("[");
-        prefix.push_str(component.as_str());
+        prefix.push_str(component.as_ref());
         prefix.push_str("] ");
         Self {
             prefix,

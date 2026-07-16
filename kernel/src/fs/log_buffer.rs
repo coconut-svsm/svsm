@@ -11,8 +11,8 @@ use crate::error::SvsmError;
 use crate::fs::*;
 use crate::locking::SpinLock;
 use crate::syscall::Obj;
-use alloc::string::String;
 use alloc::sync::Arc;
+
 pub fn initialize_log_buffer() -> Result<usize, SvsmError> {
     mkdir("Log").map_err(|_| SvsmError::LogError)?;
     let _handle = create("Log/logfile").map_err(|_| SvsmError::LogError)?;
@@ -36,7 +36,7 @@ struct LogFile {
 }
 
 impl LogFile {
-    fn new(component: String, is_console: bool) -> Self {
+    fn new<S: AsRef<str>>(component: S, is_console: bool) -> Self {
         Self {
             lb: SpinLock::new(LineBuffer::new(component, is_console)),
         }
@@ -69,9 +69,9 @@ impl File for LogFile {
     }
 }
 
-pub fn stdout_open(taskname: String) -> (Arc<dyn Obj>, Arc<dyn Obj>) {
-    let console_file: Arc<dyn File> = Arc::new(LogFile::new(taskname.clone(), true));
-    let log_file: Arc<dyn File> = Arc::new(LogFile::new(taskname.clone(), false));
+pub fn stdout_open(taskname: &str) -> (Arc<dyn Obj>, Arc<dyn Obj>) {
+    let console_file: Arc<dyn File> = Arc::new(LogFile::new(taskname, true));
+    let log_file: Arc<dyn File> = Arc::new(LogFile::new(taskname, false));
 
     // Stdout is write-only.
     (
@@ -84,6 +84,7 @@ pub fn stdout_open(taskname: String) -> (Arc<dyn Obj>, Arc<dyn Obj>) {
 mod tests {
     use super::*;
     use crate::task::{KernelThreadStartInfo, start_kernel_task, wait_for_termination};
+    use alloc::string::String;
 
     fn log_reset() -> Result<usize, SvsmError> {
         let handle = open_write("Log/logfile").map_err(|_| SvsmError::LogError)?;
