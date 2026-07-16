@@ -51,11 +51,11 @@ fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
 
 /// Returns the name of the binary file without preceeding directories. This is
 /// used as the official task name.
-fn task_name(binary: &str) -> String {
+fn task_name(binary: &str) -> &str {
     let mut items = binary.split('/').filter(|x| !x.is_empty());
     match items.nth_back(0) {
-        Some(p) => String::from(p),
-        None => String::from("unknown"),
+        Some(p) => p,
+        None => "unknown",
     }
 }
 

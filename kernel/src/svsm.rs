@@ -7,8 +7,6 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
-extern crate alloc;
-
 use bootdefs::kernel_launch::KernelLaunchInfo;
 use bootdefs::platform::SvsmPlatformType;
 use core::arch::global_asm;
@@ -76,7 +74,6 @@ use svsm::virtio::probe_mmio_slots;
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
-use alloc::string::String;
 use release::COCONUT_VERSION;
 
 #[cfg(feature = "attest")]
@@ -583,7 +580,7 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         }
         let _ = start_kernel_task(
             KernelThreadStartInfo::new(test_in_svsm_task, 0),
-            String::from("SVSM test task"),
+            "SVSM test task",
         );
     }
 
@@ -602,7 +599,7 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         if SVSM_PLATFORM.start_svsm_request_loop() {
             start_kernel_task(
                 KernelThreadStartInfo::new(request_loop_start, 0),
-                String::from("request-loop on CPU 0"),
+                "request-loop on CPU 0",
             )
             .expect("Failed to launch request loop task");
         }

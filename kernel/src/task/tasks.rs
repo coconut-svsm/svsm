@@ -8,7 +8,6 @@ extern crate alloc;
 
 use alloc::boxed::Box;
 use alloc::collections::btree_map::BTreeMap;
-use alloc::string::String;
 use alloc::sync::Arc;
 use core::fmt;
 use core::mem::offset_of;
@@ -367,7 +366,7 @@ pub struct Task {
     sched_state: TaskSchedState,
 
     /// User-visible name of task
-    name: String,
+    name: Arc<str>,
 
     /// ID of the task
     id: u32,
@@ -445,7 +444,7 @@ struct CreateTaskArguments {
     start_info: ThreadStartInfo,
 
     // The name of the task.
-    name: String,
+    name: Arc<str>,
 
     // For a user task, supplies the `VMR` that will represent the user-mode
     // address space.
@@ -575,7 +574,7 @@ impl Task {
     pub fn create(
         cpu: &PerCpu,
         start_info: KernelThreadStartInfo,
-        name: String,
+        name: Arc<str>,
     ) -> Result<TaskPointer, SvsmError> {
         let create_args = CreateTaskArguments {
             start_info: ThreadStartInfo::Kernel(start_info),
@@ -591,7 +590,7 @@ impl Task {
         cpu: &PerCpu,
         info: Box<UserExecInfo>,
         root: Arc<dyn Directory>,
-        name: String,
+        name: Arc<str>,
     ) -> Result<TaskPointer, SvsmError> {
         let vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER)?;
         // SAFETY: the user address range is fully aligned to top-level paging
@@ -635,7 +634,7 @@ impl Task {
     pub fn create_thread(
         cpu: &PerCpu,
         start_info: KernelThreadStartInfo,
-        name: String,
+        name: Arc<str>,
         thread: TaskPointer,
     ) -> Result<TaskPointer, SvsmError> {
         let create_args = CreateTaskArguments {
@@ -652,7 +651,7 @@ impl Task {
         self.stack_bounds
     }
 
-    pub fn get_task_name(&self) -> &String {
+    pub fn get_task_name(&self) -> &Arc<str> {
         &self.name
     }
 
@@ -1040,10 +1039,10 @@ impl Task {
     }
 
     fn attach_stdout(&self) {
-        let name = if self.name == "idle" {
+        let name = if &*self.name == "idle" {
             "SVSM"
         } else {
-            self.name.as_str()
+            &self.name
         };
 
         let (fh_console, fh_log) = stdout_open(name);
@@ -1155,9 +1154,7 @@ fn task_exit() {
 
 #[cfg(all(test, test_in_svsm))]
 mod tests {
-    extern crate alloc;
     use crate::task::{KernelThreadStartInfo, start_kernel_task, wait_for_termination};
-    use alloc::string::String;
     use core::arch::asm;
     use core::arch::global_asm;
 
@@ -1248,7 +1245,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_fpu_context_switch() {
-        let task1 = start_kernel_task(KernelThreadStartInfo::new(task1, 1), String::from("task1"))
+        let task1 = start_kernel_task(KernelThreadStartInfo::new(task1, 1), "task1")
             .expect("Failed to launch request processing task");
 
         wait_for_termination(task1);
@@ -1262,7 +1259,7 @@ mod tests {
             asm!("call test_fpu", options(att_syntax));
         }
 
-        let task2 = start_kernel_task(KernelThreadStartInfo::new(task2, 2), String::from("task2"))
+        let task2 = start_kernel_task(KernelThreadStartInfo::new(task2, 2), "task2")
             .expect("Failed to launch request processing task");
 
         wait_for_termination(task2);

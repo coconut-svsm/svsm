@@ -62,7 +62,6 @@ use crate::locking::SpinLock;
 use crate::mm::SVSM_CONTEXT_SWITCH_SHADOW_STACK;
 use crate::platform::SVSM_PLATFORM;
 use alloc::boxed::Box;
-use alloc::string::String;
 use alloc::sync::Arc;
 use core::arch::global_asm;
 use core::mem::offset_of;
@@ -306,16 +305,17 @@ pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 /// # Arguments
 ///
 /// * entry: The function to run as the new tasks main function
+/// * name: The name for the task
 ///
 /// # Returns
 ///
 /// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
-pub fn start_kernel_task(
+pub fn start_kernel_task<S: Into<Arc<str>>>(
     start_info: KernelThreadStartInfo,
-    name: String,
+    name: S,
 ) -> Result<TaskPointer, SvsmError> {
     let cpu = this_cpu();
-    let task = Task::create(cpu, start_info, name)?;
+    let task = Task::create(cpu, start_info, name.into())?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
@@ -363,17 +363,18 @@ pub fn start_kernel_thread(start_info: KernelThreadStartInfo) -> Result<TaskPoin
 /// # Arguments
 ///
 /// * user_entry: The user-space entry point.
+/// * name: The name for the task
 ///
 /// # Returns
 ///
 /// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
-pub fn create_user_task(
+pub fn create_user_task<S: Into<Arc<str>>>(
     info: Box<UserExecInfo>,
     root: Arc<dyn Directory>,
-    name: String,
+    name: S,
 ) -> Result<TaskPointer, SvsmError> {
     let cpu = this_cpu();
-    Task::create_user(cpu, info, root, name)
+    Task::create_user(cpu, info, root, name.into())
 }
 
 /// Finished user-space task creation by putting the task on the global
@@ -902,13 +903,11 @@ const CONTEXT_SWITCH_RESTORE_TOKEN: VirtAddr = SVSM_CONTEXT_SWITCH_SHADOW_STACK.
 
 #[cfg(all(test, test_in_svsm))]
 mod test {
-    extern crate alloc;
     use super::KernelThreadStartInfo;
     use super::set_affinity;
     use super::start_kernel_task;
     use super::wait_for_termination;
     use crate::cpu::percpu::{PERCPU_AREAS, this_cpu};
-    use alloc::string::String;
     use core::sync::atomic::AtomicU32;
     use core::sync::atomic::Ordering;
 
@@ -930,7 +929,7 @@ mod test {
         // Start a task that will immediately terminate.
         start_kernel_task(
             KernelThreadStartInfo::new(empty_task, 0),
-            String::from("test termination task"),
+            "test termination task",
         )
         .expect("Failed to start test termination task");
     }
@@ -945,7 +944,7 @@ mod test {
         // and will then terminate.
         let task = start_kernel_task(
             KernelThreadStartInfo::new(empty_task, 1),
-            String::from("test termination task"),
+            "test termination task",
         )
         .expect("Failed to start test termination task");
 
