@@ -11,7 +11,7 @@ env:
   # IGVM C wrapper might require a different Rust version than SVSM
   RUST_VERSION_IGVM: 1.84.1
   QEMU_REPO: https://github.com/coconut-svsm/qemu.git
-  QEMU_REF: svsm-igvm
+  QEMU_REF: svsm
   IGVM_REPO: https://github.com/microsoft/igvm.git
   IGVM_REF: igvm-v0.3.4
 
