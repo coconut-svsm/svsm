@@ -8,7 +8,7 @@
 extern crate alloc;
 
 use crate::{
-    crypto::SecretSlice,
+    crypto::{SecretSlice, get_svsm_rng},
     error::SvsmError,
     greq::{pld_report::*, services::get_regular_report},
     io::{DEFAULT_IO_DRIVER, Read, Write},
@@ -21,15 +21,10 @@ use aes_gcm::{AeadInPlace, Aes256Gcm, KeyInit, Nonce, aead::generic_array::Gener
 use aes_kw::{KeyInit as _, KwAes256};
 use alloc::{string::ToString, vec::Vec};
 use cocoon_tpm_crypto::{
-    CryptoError, EmptyCryptoIoSlices,
+    CryptoError,
     ecc::{EccKey, curve::Curve, ecdh::ecdh_c_1_1_cdh_compute_z},
-    rng::{self, HashDrbg, RngCore as _, X86RdSeedRng},
 };
-use cocoon_tpm_tpm2_interface::{self as tpm2_interface, TpmEccCurve, TpmiAlgHash, TpmsEccPoint};
-use cocoon_tpm_utils_common::{
-    alloc::try_alloc_zeroizing_vec,
-    io_slices::{self, IoSlicesIterCommon as _},
-};
+use cocoon_tpm_tpm2_interface::{TpmEccCurve, TpmsEccPoint};
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
@@ -330,27 +325,8 @@ impl From<AttestationError> for SvsmError {
 /// Generate a key used to establish a secure channel between the confidential guest and
 /// attestation server.
 fn sc_key_generate(curve: &Curve) -> Result<EccKey, CryptoError> {
-    let mut rng = {
-        let mut rdseed = X86RdSeedRng::instantiate().map_err(|_| CryptoError::RngFailure)?;
-        let mut hash_drbg_entropy =
-            try_alloc_zeroizing_vec(HashDrbg::min_seed_entropy_len(TpmiAlgHash::Sha256))?;
-
-        rdseed.generate::<_, EmptyCryptoIoSlices>(
-            io_slices::SingletonIoSliceMut::new(hash_drbg_entropy.as_mut_slice())
-                .map_infallible_err(),
-            None,
-        )?;
-
-        rng::HashDrbg::instantiate(
-            tpm2_interface::TpmiAlgHash::Sha256,
-            &hash_drbg_entropy,
-            None,
-            Some(b"SVSM attestation RNG"),
-        )
-    }?;
-
+    let mut rng = get_svsm_rng()?;
     let curve_ops = curve.curve_ops()?;
-
     EccKey::generate(&curve_ops, &mut rng, None)
 }
 
