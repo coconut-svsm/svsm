@@ -435,8 +435,8 @@ fn current_task_terminated() {
     // list during its creation.
     let mut wakeup = unsafe { TASKLIST.lock().terminate(task_node.clone()) };
 
-    // Wake all tasks that were waiting for this task to terminate, scheduling
-    // each on the current runqueue.
+    // Remove each task from the wakeup list before making it runnable so it
+    // can immediately join another wait queue.
     while let Some(wake_task) = wakeup.pop_front() {
         rq.prepare_run_task(wake_task);
     }
@@ -963,9 +963,11 @@ mod test {
         wait_for_termination(task);
     }
 
+    #[cfg(test)]
     static MULTI_WAITER_COUNTER: AtomicU32 = AtomicU32::new(0);
     static MULTI_WAITER_WAITING_COUNTER: AtomicU32 = AtomicU32::new(0);
     static MULTI_WAITER_TARGET_RELEASED: AtomicBool = AtomicBool::new(false);
+    // Distinguishes each waiter from the target task's single increment.
     const MULTI_WAITER_TASK_INCREMENT: u32 = 10;
 
     fn multi_waiter_target(_: usize) {
@@ -1034,9 +1036,10 @@ mod test {
         while MULTI_WAITER_WAITING_COUNTER.load(Ordering::Acquire) < 2 {
             schedule();
         }
+        assert_eq!(MULTI_WAITER_WAITING_COUNTER.load(Ordering::Acquire), 2);
 
-        // Wait for the target task from this task too, ensuring it has
-        // terminated before we check results.
+        // Both waiters have joined the target's wait queue, so allow the
+        // target to terminate before this task waits for it too.
         MULTI_WAITER_TARGET_RELEASED.store(true, Ordering::Release);
         wait_for_termination(target);
         wait_for_termination(waiter1);

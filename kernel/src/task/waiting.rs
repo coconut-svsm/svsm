@@ -29,18 +29,11 @@ impl WaitQueue {
         self.waiters.push_back(current_task);
     }
 
-    /// Wake waiting tasks. If `wake_all` is false, only the head waiter is
-    /// removed. Returns the removed waiters so the caller can schedule each
-    /// one.
+    /// Wake all waiting tasks. Returns the waiters so the caller can unlink
+    /// and schedule each one.
     pub fn wakeup(&mut self, wake_all: bool) -> LinkedList<TaskWaitListAdapter> {
-        if wake_all {
-            self.waiters.take()
-        } else {
-            let mut waiters = LinkedList::new(TaskWaitListAdapter::new());
-            if let Some(task) = self.waiters.pop_front() {
-                waiters.push_back(task);
-            }
-            waiters
-        }
+        assert!(wake_all);
+
+        self.waiters.take()
     }
 }
