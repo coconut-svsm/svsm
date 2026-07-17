@@ -288,11 +288,11 @@ impl<T> FracPerm<T> {
             0 < n < old(self).shares(),
         ensures
             ret@ == old(self)@,
-            self@ == old(self)@,
-            self.id() == old(self).id(),
-            self.total() == old(self).total(),
+            final(self)@ == old(self)@,
+            final(self).id() == old(self).id(),
+            final(self).total() == old(self).total(),
             ret.id() == old(self).id(),
-            ret.shares() + self.shares() == old(self).shares(),
+            ret.shares() + final(self).shares() == old(self).shares(),
             ret.shares() == n,
             ret.total() == old(self).total(),
     {
@@ -316,11 +316,11 @@ impl<T> FracPerm<T> {
             other.valid(),
             old(self).id() == other.id(),
         ensures
-            self@ == old(self)@,
-            self.shares() == old(self).shares() + other.shares(),
-            self.total() == old(self).total(),
-            self.id() == old(self).id(),
-            self.valid(),
+            final(self)@ == old(self)@,
+            final(self).shares() == old(self).shares() + other.shares(),
+            final(self).total() == old(self).total(),
+            final(self).id() == old(self).id(),
+            final(self).valid(),
     {
         use_type_invariant(&*self);
         use_type_invariant(&other);
@@ -337,11 +337,11 @@ impl<T> FracPerm<T> {
             !old(self).valid(),
             old(self).shares() == old(self).total(),
         ensures
-            self.valid(),
-            self@ == Some(v),
-            self.id() == old(self).id(),
-            self.shares() == old(self).shares(),
-            self.total() == old(self).total(),
+            final(self).valid(),
+            final(self)@ == Some(v),
+            final(self).id() == old(self).id(),
+            final(self).shares() == old(self).shares(),
+            final(self).total() == old(self).total(),
     {
         use_type_invariant(&*self);
         let tracked mut perm = FracPerm::empty(self.total());
@@ -375,10 +375,10 @@ impl<T> FracPerm<T> {
             old(self).shares() == old(self).total(),
         ensures
             Some(ret) == old(self)@,
-            self.id() == old(self).id(),
-            !self.valid(),
-            self.shares() == old(self).total(),
-            self.total() == old(self).total(),
+            final(self).id() == old(self).id(),
+            !final(self).valid(),
+            final(self).shares() == old(self).total(),
+            final(self).total() == old(self).total(),
     {
         use_type_invariant(&*self);
         let tracked mut perm = FracPerm::empty(self.total());

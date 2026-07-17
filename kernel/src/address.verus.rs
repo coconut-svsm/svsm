@@ -9,7 +9,7 @@ use crate::utils::util::{
 };
 use verify_external::convert::{exists_into, forall_into};
 use verify_external::hw_spec::SpecVAddrImpl;
-use vstd::raw_ptr::{ptr_from_data, ptr_mut_from_data, PtrData};
+use vstd::raw_ptr::{PtrData, ptr_from_data, ptr_mut_from_data};
 use vstd::set_lib::set_int_range;
 use vstd::std_specs::cmp::PartialOrdSpec;
 use vstd::std_specs::convert::{FromSpec, IntoSpec};
@@ -298,22 +298,22 @@ impl SpecVAddrImpl for VirtAddr {
     #[verifier(opaque)]
     open spec fn region_to_dom(&self, size: nat) -> Set<int> {
         if self.is_canonical() {
-            Set::new(
+            Set::<int>::range(0, usize::MAX + 1).filter(
                 |v: int|
                     exists|addr: VirtAddr|
-                        addr@ == v && v <= usize::MAX && addr.is_canonical() && self.offset()
-                            <= addr.offset() < self.offset() + size,
+                        addr@ == v && addr.is_canonical() && self.offset() <= addr.offset()
+                            < self.offset() + size,
             )
         } else {
             Set::empty()
         }
     }
 
-    #[verus_verify(spinoff_prover)]
+    #[verifier(spinoff_prover)]
     proof fn lemma_unique(v1: &Self, v2: &Self) {
     }
 
-    #[verus_verify(spinoff_prover)]
+    #[verifier(spinoff_prover)]
     proof fn lemma_vaddr_region_len(&self, size: nat)
         ensures
             self.is_canonical() ==> self.region_to_dom(size).len() > 0,
@@ -329,14 +329,14 @@ impl SpecVAddrImpl for VirtAddr {
         vstd::set_lib::lemma_len_subset(self.region_to_dom(1), self.region_to_dom(size));
     }
 
-    #[verus_verify(spinoff_prover)]
+    #[verifier(spinoff_prover)]
     proof fn lemma_valid_small_size(&self, size1: nat, size2: nat) {
         reveal(<VirtAddr as SpecVAddrImpl>::region_to_dom);
     }
 }
 
 impl VirtAddr {
-    #[verus_verify(spinoff_prover)]
+    #[verifier(spinoff_prover)]
     pub proof fn lemma_region_to_dom_merge(self, size1: nat, vaddr2: VirtAddr, size2: nat)
         requires
             self.is_canonical() && vaddr2.is_canonical(),

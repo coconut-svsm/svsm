@@ -238,7 +238,7 @@ impl MemoryRegionPerms {
         let info = self.info;
         &&& info.is_readonly_allocator_shares()
         &&& self.npages() == info.npages()
-        &&& info@.dom() =~= Set::new(|idx| 0 <= idx < self.npages())
+        &&& info@.dom() =~= Set::range(0, self.npages())
         &&& self.wf_base_ptr()
     }
 

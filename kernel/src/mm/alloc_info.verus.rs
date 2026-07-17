@@ -12,7 +12,7 @@
 // shared status.
 use verify_proof::frac_ptr::tracked_map_merge_right_shares;
 use verify_proof::frac_ptr::tracked_map_shares;
-use verify_proof::set::{lemma_set_usize_range, set_usize_range};
+use verify_proof::set::{group_set_usize, lemma_set_usize_range, set_usize_range};
 use vstd::raw_ptr::PtrData;
 
 verus! {
@@ -182,7 +182,7 @@ impl PageInfoDb {
         let end = unit_start + (1usize << order);
         &&& end <= usize::MAX + 1
         &&& !reserved.dom().is_empty()
-        &&& reserved.dom() =~= Set::new(|k| unit_start <= k < end)
+        &&& reserved.dom() =~= set_usize_range(unit_start, end)
         &&& item.is_head()
     }
 
@@ -678,10 +678,19 @@ impl PageInfoDb {
     {
         reveal(PageInfoDb::restrict);
         self.lemma_restrict(i);
-        lemma_set_usize_range(i, i + self@[i].size());
-        broadcast use lemma_set_usize_range;
+        broadcast use group_set_usize;
 
+        lemma_set_usize_range(i, i + self@[i].size());
         self.lemma_remove(i);
+        let removed = self.remove(i);
+        assert forall|idx: usize| #![trigger removed@[idx]] removed@.dom().contains(idx) implies {
+            &&& removed@[idx] == self@[idx]
+            &&& removed@[idx].is_head() ==> removed.restrict(idx).wf_unit()
+        } by {
+            if removed@[idx].is_head() {
+                self.lemma_remove_restrict(i, idx);
+            }
+        }
     }
 
     #[verifier(spinoff_prover)]
@@ -743,7 +752,7 @@ impl PageInfoDb {
         requires
             order < MAX_ORDER,
             unit_start + (1usize << order) <= usize::MAX + 1,
-            reserved.dom() =~= Set::new(|k| unit_start <= k < unit_start + (1usize << order)),
+            reserved.dom() =~= set_usize_range(unit_start, unit_start + (1usize << order)),
             reserved[unit_start].is_head(),
             reserved[unit_start].order() == order,
             PageInfoDb::new_unit_requires(reserved, id, unit_start, order),
@@ -766,13 +775,13 @@ impl PageInfoDb {
             old(self).dom().contains(idx),
             old(self).is_head(idx),
         ensures
-            old(self).ens_split(*self, unit),
-            self@ == old(self)@.remove_keys(unit@.dom()),
-            self.id() == old(self).id(),
-            self.npages() == old(self).npages() - old(self)@[idx].size(),
+            old(self).ens_split(*final(self), unit),
+            final(self)@ == old(self)@.remove_keys(unit@.dom()),
+            final(self).id() == old(self).id(),
+            final(self).npages() == old(self).npages() - old(self)@[idx].size(),
             unit.is_unit(),
             unit.unit_start() == idx,
-            old(self).ens_add_nr_pages(*self, unit),
+            old(self).ens_add_nr_pages(*final(self), unit),
     {
         use_type_invariant(&*self);
         reveal(PageInfoDb::restrict);
@@ -805,17 +814,19 @@ impl PageInfoDb {
             old(unit).is_unit(),
             old(unit).id().ptr_data == old(self).id().ptr_data,
         ensures
-            unit.is_unit(),
-            unit.npages() == old(unit).npages(),
-            unit.unit_start() == old(unit).unit_start(),
-            unit.id() == old(unit).id().update_shares(
+            final(unit).is_unit(),
+            final(unit).npages() == old(unit).npages(),
+            final(unit).unit_start() == old(unit).unit_start(),
+            final(unit).id() == old(unit).id().update_shares(
                 old(unit).id().shares + old(self).id().shares,
             ),
-            unit.unit_head()@ == old(unit).unit_head()@.update_shares(unit.id().shares),
-            forall|order: usize| #[trigger] old(unit).nr_page(order) == unit.nr_page(order),
-            self@ == old(self)@.remove_keys(unit@.dom()),
-            self.id() == old(self).id(),
-            old(self).ens_add_unit_nr_pages(*self, unit.order()),
+            final(unit).unit_head()@ == old(unit).unit_head()@.update_shares(
+                final(unit).id().shares,
+            ),
+            forall|order: usize| #[trigger] old(unit).nr_page(order) == final(unit).nr_page(order),
+            final(self)@ == old(self)@.remove_keys(final(unit)@.dom()),
+            final(self).id() == old(self).id(),
+            old(self).ens_add_unit_nr_pages(*final(self), final(unit).order()),
     {
         let idx = unit.unit_start();
         use_type_invariant(&*self);
@@ -850,7 +861,7 @@ impl PageInfoDb {
         requires
             order < MAX_ORDER,
             unit_start + (1usize << order) <= usize::MAX + 1,
-            reserved.dom() =~= Set::new(|k| unit_start <= k < unit_start + (1usize << order)),
+            reserved.dom() =~= set_usize_range(unit_start, unit_start + (1usize << order)),
             reserved[unit_start].is_head(),
             reserved[unit_start].order() == order,
             PageInfoDb::new_unit_requires(reserved, id, unit_start, order),
@@ -863,10 +874,10 @@ impl PageInfoDb {
             unit.unit_head()@ == reserved[unit_start]@.update_shares(unit.id().shares),
             unit.unit_start() == unit_start,
             unit.npages() == (1usize << order),
-            self.id() == old(self).id(),
-            self@.dom() == old(self)@.dom() + reserved.dom(),
-            self@ =~= old(self)@.union_prefer_right(self@.restrict(reserved.dom())),
-            self.ens_add_unit_nr_pages(*old(self), order),
+            final(self).id() == old(self).id(),
+            final(self)@.dom() == old(self)@.dom() + reserved.dom(),
+            final(self)@ =~= old(self)@.union_prefer_right(final(self)@.restrict(reserved.dom())),
+            final(self).ens_add_unit_nr_pages(*old(self), order),
     {
         let tracked mut info = PageInfoDb::tracked_new_unit(order, unit_start, id, reserved);
         self.tracked_insert_shares(&mut info);
@@ -881,17 +892,21 @@ impl PageInfoDb {
             old(self).dom().disjoint(old(unit).dom()),
             old(self).id() == old(unit).id().update_shares(old(self).id().shares),
         ensures
-            unit.is_unit(),
-            unit.unit_head()@ == old(unit).unit_head()@.update_shares(unit.id().shares),
-            unit.id() == old(unit).id().update_shares(
+            final(unit).is_unit(),
+            final(unit).unit_head()@ == old(unit).unit_head()@.update_shares(
+                final(unit).id().shares,
+            ),
+            final(unit).id() == old(unit).id().update_shares(
                 (old(unit).id().shares - old(self).id().shares) as nat,
             ),
-            unit.unit_start() == old(unit).unit_start(),
-            self.id() == old(self).id(),
-            self@.dom() == old(self)@.dom() + old(unit)@.dom(),
-            self@ =~= old(self)@.union_prefer_right(self@.restrict(unit@.dom())),
-            forall|order: usize| #[trigger] old(unit).nr_page(order) == unit.nr_page(order),
-            self.ens_add_unit_nr_pages(*old(self), unit.order()),
+            final(unit).unit_start() == old(unit).unit_start(),
+            final(self).id() == old(self).id(),
+            final(self)@.dom() == old(self)@.dom() + old(unit)@.dom(),
+            final(self)@ =~= old(self)@.union_prefer_right(
+                final(self)@.restrict(final(unit)@.dom()),
+            ),
+            forall|order: usize| #[trigger] old(unit).nr_page(order) == final(unit).nr_page(order),
+            final(self).ens_add_unit_nr_pages(*old(self), final(unit).order()),
     {
         use_type_invariant(&*unit);
         unit.tracked_unit_nr_pages();
@@ -912,16 +927,20 @@ impl PageInfoDb {
             old(self).is_unit(),
             0 < shares < old(self).id().shares,
         ensures
-            self.is_unit(),
-            self.unit_head()@ == old(self).unit_head()@.update_shares(self.id().shares),
+            final(self).is_unit(),
+            final(self).unit_head()@ == old(self).unit_head()@.update_shares(
+                final(self).id().shares,
+            ),
             unit.unit_head()@ == old(self).unit_head()@.update_shares(shares),
-            self.unit_start() == old(self).unit_start() == unit.unit_start(),
-            old(self).npages() == self.npages() == unit.npages(),
-            self.id() == old(self).id().update_shares((old(self).id().shares - shares) as nat),
+            final(self).unit_start() == old(self).unit_start() == unit.unit_start(),
+            old(self).npages() == final(self).npages() == unit.npages(),
+            final(self).id() == old(self).id().update_shares(
+                (old(self).id().shares - shares) as nat,
+            ),
             unit.is_unit(),
             unit.id() == old(self).id().update_shares(shares),
             forall|order: usize| #[trigger]
-                old(self).nr_page(order) == self.nr_page(order) == unit.nr_page(order),
+                old(self).nr_page(order) == final(self).nr_page(order) == unit.nr_page(order),
     {
         use_type_invariant(&*self);
         self.proof_unit_nr_page();

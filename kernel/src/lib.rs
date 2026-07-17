@@ -13,6 +13,11 @@
     reexport_test_harness_main = "kernel_tests_in_svsm"
 )]
 #![cfg_attr(verus_keep_ghost, feature(proc_macro_hygiene))]
+#![cfg_attr(verus_keep_ghost, verifier::allow(unknown_automatic_derive))]
+#![cfg_attr(
+    verus_keep_ghost,
+    allow(macro_expanded_macro_exports_accessed_by_absolute_paths)
+)]
 
 pub mod acpi;
 pub mod address;

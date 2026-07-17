@@ -20,10 +20,10 @@ use vstd::multiset::Multiset;
 
 tokenized_state_machine!(addr_unique {
     fields {
-        #[sharding(map)]
-        pub addr_to: Map<int, Option<InstanceId>>,
-        #[sharding(map)]
-        pub to_addr: Map<InstanceId, Option<int>>,
+        #[sharding(imap)]
+        pub addr_to: IMap<int, Option<InstanceId>>,
+        #[sharding(imap)]
+        pub to_addr: IMap<InstanceId, Option<int>>,
 
         #[sharding(multiset)]
         pub ptr_readers: Multiset<(int, InstanceId)>,
@@ -37,8 +37,8 @@ tokenized_state_machine!(addr_unique {
 
     #[invariant]
     pub fn dom_cover_all(&self) -> bool {
-        self.addr_to.dom() =~= Set::full() &&
-        self.to_addr.dom() =~= Set::full()
+        self.addr_to.dom() =~= ISet::full() &&
+        self.to_addr.dom() =~= ISet::full()
     }
 
     #[invariant]
@@ -70,15 +70,15 @@ tokenized_state_machine!(addr_unique {
 
     init!{
         empty() {
-            init addr_to = Map::new(|addr| true, |addr|None);
-            init to_addr = Map::new(|id| true, |addr|None);
+            init addr_to = IMap::new(|addr| true, |addr|None);
+            init to_addr = IMap::new(|id| true, |addr|None);
             init ptr_readers = Multiset::empty();
         }
     }
 
     #[inductive(empty)]
     fn empty_inductive(post: Self) {
-        assert(post.addr_to =~= Map::new(|addr| true, |addr|None));
+        assert(post.addr_to =~= IMap::new(|addr| true, |addr|None));
     }
 
     transition!{
@@ -346,9 +346,9 @@ impl<T> FracTypedPerm<T> {
             old(self).writable(),
         ensures
             Some(ret@) == old(self).points_to(),
-            ret.ptr() as int == self.addr(),
-            !self.valid(),
-            self@ == old(self)@.update_points_to(None),
+            ret.ptr() as int == final(self).addr(),
+            !final(self).valid(),
+            final(self)@ == old(self)@.update_points_to(None),
     {
         use_type_invariant(&*self);
         self.p.take()
@@ -360,7 +360,7 @@ impl<T> FracTypedPerm<T> {
             (val@.ptr as int) == old(self).addr(),
             !old(self).valid(),
         ensures
-            self@ === old(self)@.update_points_to(Some(val@)),
+            final(self)@ === old(self)@.update_points_to(Some(val@)),
     {
         use_type_invariant(&*self);
         use_type_invariant(&self.p);
@@ -382,7 +382,7 @@ impl<T> FracTypedPerm<T> {
             old(self).valid(),
             0 < shares < old(self).shares(),
         ensures
-            self@ === old(self)@.update_shares((old(self).shares() - shares) as nat),
+            final(self)@ === old(self)@.update_shares((old(self).shares() - shares) as nat),
             ret@ === old(self)@.update_shares(shares),
     {
         use_type_invariant(&*self);
@@ -404,7 +404,7 @@ impl<T> FracTypedPerm<T> {
             old(self).valid(),
             old(self).ptr() == other.ptr(),
         ensures
-            self@ === old(self)@.update_shares(old(self).shares() + other.shares()),
+            final(self)@ === old(self)@.update_shares(old(self).shares() + other.shares()),
             old(self).shares() + other.shares() <= old(self).total(),
     {
         use_type_invariant(&*self);
@@ -422,8 +422,8 @@ pub proof fn raw_perm_is_disjoint(tracked p1: &mut PointsToRaw, p2: &PointsToRaw
     requires
         old(p1).dom().len() > 0,
     ensures
-        *old(p1) == *p1,
-        p1.dom().disjoint(p2.dom()),
+        *old(p1) == *final(p1),
+        final(p1).dom().disjoint(p2.dom()),
 {
     admit();
 }
@@ -433,19 +433,18 @@ pub proof fn tracked_map_shares<Idx, T>(
     shares: nat,
 ) -> (tracked ret: Map<Idx, FracTypedPerm<T>>)
     requires
-        old(m).dom().finite(),
         shares > 0,
         forall|i|
             old(m).dom().contains(i) ==> shares < (#[trigger] old(m)[i]).shares() && old(
                 m,
             )[i].valid(),
     ensures
-        ret.dom() == m.dom(),
-        m.dom() == old(m).dom(),
+        ret.dom() == final(m).dom(),
+        final(m).dom() == old(m).dom(),
         forall|i: Idx|
-            #![trigger m[i]]
+            #![trigger final(m)[i]]
             #![trigger old(m)[i]]
-            m.contains_key(i) ==> m[i]@ == old(m)[i]@.update_shares(
+            final(m).contains_key(i) ==> final(m)[i]@ == old(m)[i]@.update_shares(
                 (old(m)[i].shares() - shares) as nat,
             ),
         forall|i: Idx|
@@ -466,16 +465,15 @@ pub proof fn _tracked_map_shares<Idx, T>(
         forall|i| #[trigger] s.contains(i) ==> old(m).contains_key(i),
         forall|i| s.contains(i) ==> (#[trigger] old(m)[i]).valid(),
         forall|i| s.contains(i) ==> shares < (#[trigger] old(m)[i]).shares(),
-        s.finite(),
     ensures
         forall|i: Idx|
-            #![trigger m[i]]
+            #![trigger final(m)[i]]
             #![trigger old(m)[i]]
-            s.contains(i) ==> m[i]@ == old(m)[i]@.update_shares(
+            s.contains(i) ==> final(m)[i]@ == old(m)[i]@.update_shares(
                 (old(m)[i].shares() - shares) as nat,
             ),
-        *m =~= old(m).union_prefer_right(m.restrict(s)),
-        m.dom() =~= old(m).dom(),
+        *final(m) =~= old(m).union_prefer_right(final(m).restrict(s)),
+        final(m).dom() =~= old(m).dom(),
         ret.dom() =~= s,
         forall|i: Idx| s.contains(i) ==> (#[trigger] ret[i])@ == old(m)[i]@.update_shares(shares),
     decreases s.len(),
@@ -503,19 +501,18 @@ pub proof fn tracked_map_merge_right_shares<Idx, T>(
 )
     requires
         right.dom().subset_of(old(m).dom()),
-        right.dom().finite(),
         forall|i|
             right.contains_key(i) ==> (#[trigger] old(m)[i]).valid() && old(m)[i].ptr()
                 == right[i].ptr(),
         forall|i| right.contains_key(i) ==> (#[trigger] right[i]).valid(),
     ensures
         forall|i: Idx|
-            #![trigger m[i]]
+            #![trigger final(m)[i]]
             #![trigger old(m)[i]]
-            old(m).contains_key(i) && right.contains_key(i) ==> m[i]@ == old(m)[i]@.update_shares(
+            old(m).contains_key(i) && right.contains_key(i) ==> final(m)[i]@ == old(m)[i]@.update_shares(
                 (old(m)[i].shares() + right[i].shares()) as nat,
             ),
-        m.dom() =~= old(m).dom(),
+        final(m).dom() =~= old(m).dom(),
     decreases right.dom().len(),
 {
     let s = right.dom();

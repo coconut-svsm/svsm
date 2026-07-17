@@ -26,7 +26,6 @@ pub trait SpecVAddrImpl {
             self.spec_int_addr().is_some(),
             size > 0,
         ensures
-            self.region_to_dom(size).finite(),
             self.region_to_dom(1).len() > 0 <==> self.region_to_dom(1).contains(
                 self.spec_int_addr().unwrap(),
             ),

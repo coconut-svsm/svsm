@@ -33,7 +33,7 @@ use verify_proof::frac_ptr::FracTypedPerm;
         old(perm).writable(),
         old(perm).valid(),
     ensures
-        perm@ == old(perm)@.update_value(vstd::simple_pptr::MemContents::Init(v)),
+        final(perm)@ == old(perm)@.update_value(vstd::simple_pptr::MemContents::Init(v)),
     opens_invariants none
     no_unwind
 )]
