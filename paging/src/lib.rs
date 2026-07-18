@@ -12,6 +12,7 @@
 pub mod address;
 pub mod pagetable;
 pub mod sizes;
+pub mod tlb;
 pub mod traits;
 pub mod util;
 pub mod x86_64;

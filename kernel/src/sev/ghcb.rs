@@ -7,7 +7,7 @@
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::msr::{SEV_GHCB, write_msr};
 use crate::cpu::percpu::this_cpu;
-use crate::cpu::{IrqGuard, X86GeneralRegs, flush_tlb_global_sync_page};
+use crate::cpu::{IrqGuard, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
@@ -158,8 +158,10 @@ impl GhcbPage {
         }
 
         // Map page unencrypted
-        this_cpu().get_pgtable().set_shared_4k(vaddr)?;
-        flush_tlb_global_sync_page(vaddr, PageSize::Regular);
+        this_cpu()
+            .get_pgtable()
+            .set_shared_4k(vaddr)?
+            .flush_tlb_global_sync();
 
         // SAFETY: all zeros is a valid representation for the GHCB.
         Ok(Self(page))
@@ -175,7 +177,8 @@ impl Drop for GhcbPage {
         this_cpu()
             .get_pgtable()
             .set_encrypted_4k(vaddr)
-            .expect("Could not re-encrypt page");
+            .expect("Could not re-encrypt page")
+            .flush_tlb_global_sync();
 
         // Unregister GHCB PA
         // SAFETY: mapping the GHCB at physical address 0 is safe.
