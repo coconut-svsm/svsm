@@ -821,6 +821,136 @@ impl<A: ArchPagingMeta, P: PagingHandler, L: PagingLevel> GenericPageTable<A, P,
         }
     }
 
+    /// Maps the half-open virtual range `[start, end)` using 4KB pages,
+    /// starting at physical address `phys`.
+    ///
+    /// # Returns
+    /// A result indicating success or failure ([`PagingError`]).
+    pub fn map_region_4k(
+        &mut self,
+        start: VirtAddr,
+        end: VirtAddr,
+        phys: PhysAddr,
+        flags: A::PTFlags,
+        shared: bool,
+    ) -> Result<(), PagingError> {
+        let mut vaddr = start;
+        while vaddr < end {
+            let offset = vaddr - start;
+            self.map_4k(vaddr, phys + offset, flags, shared)?;
+            vaddr = vaddr + PAGE_SIZE;
+        }
+        Ok(())
+    }
+
+    /// Unmaps the half-open virtual range `[start, end)` mapped with 4KB
+    /// pages.
+    pub fn unmap_region_4k(&mut self, start: VirtAddr, end: VirtAddr) {
+        let mut vaddr = start;
+        while vaddr < end {
+            self.unmap_4k(vaddr);
+            vaddr = vaddr + PAGE_SIZE;
+        }
+    }
+
+    /// Maps the half-open virtual range `[start, end)` using 2MB pages,
+    /// starting at physical address `phys`.
+    ///
+    /// # Returns
+    /// A result indicating success or failure ([`PagingError`]).
+    pub fn map_region_2m(
+        &mut self,
+        start: VirtAddr,
+        end: VirtAddr,
+        phys: PhysAddr,
+        flags: A::PTFlags,
+        shared: bool,
+    ) -> Result<(), PagingError> {
+        let mut vaddr = start;
+        while vaddr < end {
+            let offset = vaddr - start;
+            self.map_2m(vaddr, phys + offset, flags, shared)?;
+            vaddr = vaddr + PAGE_SIZE_2M;
+        }
+        Ok(())
+    }
+
+    /// Unmaps the half-open virtual range `[start, end)` mapped with 2MB
+    /// pages.
+    ///
+    /// The range must be 2MB-aligned and correspond to a set of huge mappings.
+    pub fn unmap_region_2m(&mut self, start: VirtAddr, end: VirtAddr) {
+        let mut vaddr = start;
+        while vaddr < end {
+            self.unmap_2m(vaddr);
+            vaddr = vaddr + PAGE_SIZE_2M;
+        }
+    }
+
+    /// Maps the half-open virtual range `[start, end)` to physical memory
+    /// starting at `phys`, preferring 2MB pages where alignment and size
+    /// allow and falling back to 4KB pages otherwise.
+    ///
+    /// # Returns
+    /// A result indicating success or failure ([`PagingError`]).
+    pub fn map_region(
+        &mut self,
+        start: VirtAddr,
+        end: VirtAddr,
+        phys: PhysAddr,
+        flags: A::PTFlags,
+    ) -> Result<(), PagingError> {
+        let mut vaddr = start;
+        let mut paddr = phys;
+
+        while vaddr < end {
+            if vaddr.is_aligned(PAGE_SIZE_2M)
+                && paddr.is_aligned(PAGE_SIZE_2M)
+                && vaddr + PAGE_SIZE_2M <= end
+                && self.map_2m(vaddr, paddr, flags, false).is_ok()
+            {
+                vaddr = vaddr + PAGE_SIZE_2M;
+                paddr = paddr + PAGE_SIZE_2M;
+                continue;
+            }
+
+            self.map_4k(vaddr, paddr, flags, false)?;
+            vaddr = vaddr + PAGE_SIZE;
+            paddr = paddr + PAGE_SIZE;
+        }
+
+        Ok(())
+    }
+
+    /// Unmaps the half-open virtual range `[start, end)`, clearing both 4KB
+    /// and 2MB leaf entries.
+    ///
+    /// Returns whether every page in the range was mapped (`true`) or not
+    /// (`false`). All mapped pages in the range are unmapped regardless.
+    pub fn unmap_region(&mut self, start: VirtAddr, end: VirtAddr) -> bool {
+        let mut vaddr = start;
+        let mut was_mapped = true;
+        while vaddr < end {
+            let mapping = self.walk_addr(vaddr);
+            match mapping.level {
+                PageLevel::Level0 => {
+                    mapping.entry.clear();
+                    vaddr = vaddr + PAGE_SIZE;
+                }
+                level if mapping.entry.present() && mapping.entry.huge() => {
+                    mapping.entry.clear();
+                    vaddr = vaddr + level.size();
+                }
+                _ => {
+                    was_mapped = false;
+                    vaddr = vaddr + PAGE_SIZE;
+                }
+            }
+        }
+
+        was_mapped
+    }
+
     /// Retrieves the physical address of a mapping.
     ///
     /// # Parameters
