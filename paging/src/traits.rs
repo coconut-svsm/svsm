@@ -6,6 +6,7 @@ use crate::{
     address::{Address, PhysAddr, VirtAddr},
     pagetable::ENTRY_COUNT,
     sizes::{PAGE_SIZE, PAGE_SIZE_1G, PAGE_SIZE_2M},
+    tlb::TlbFlush,
 };
 use bitflags::Flags;
 use zerocopy::FromBytes;
@@ -17,10 +18,10 @@ use zerocopy::FromBytes;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(usize)]
 pub enum PageLevel {
-    Level0 = 0,
-    Level1 = 1,
-    Level2 = 2,
-    Level3 = 3,
+    Level0 = 0, // 4K
+    Level1 = 1, // 2M
+    Level2 = 2, // 1G
+    Level3 = 3, // 512G
 }
 
 impl PageLevel {
@@ -92,8 +93,6 @@ pub enum PagingError {
 ///   for private (encrypted) mappings.
 /// * [`shared_pte_mask`](Self::shared_pte_mask) — bitmask ORed into PTEs
 ///   for shared (plaintext) mappings.
-/// * [`flush_tlb_global`](Self::flush_tlb_global) — flush the TLB on all
-///   CPUs; called after splitting or changing the encryption state of a page.
 ///
 /// # Default methods
 ///
@@ -110,6 +109,7 @@ pub enum PagingError {
 /// * `make_private_address` and `make_shared_address` must be idempotent.
 pub trait ArchPagingMeta: 'static + Copy {
     type PTFlags: GenericPageTableFlags;
+    type TlbFlushTok: TlbFlush;
 
     /// Returns the bitmask ORed into physical addresses for private
     /// (encrypted) page table entries.
@@ -122,12 +122,6 @@ pub trait ArchPagingMeta: 'static + Copy {
     /// Physical address mask.
     /// x64 supports 52-bit physical addresses, so the mask is usually 0x000f_ffff_ffff_f000.
     fn address_mask() -> usize;
-
-    /// Flush the TLB globally and synchronize across all CPUs.
-    ///
-    /// Called after modifying live PTEs (e.g., splitting a 2M page or
-    /// toggling the encryption state of a mapping).
-    fn flush_tlb_global();
 
     /// Returns a bitmask of PTEntryFlags that the hardware supports.
     ///

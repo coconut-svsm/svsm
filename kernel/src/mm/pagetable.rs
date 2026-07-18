@@ -7,9 +7,9 @@
 use crate::BIT_MASK;
 use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::control_regs::write_cr3;
-use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::idt::common::PageFaultError;
 use crate::cpu::registers::RFlags;
+use crate::cpu::{TlbFlushRange, TlbFlushScope};
 use crate::error::SvsmError;
 use crate::mm::{
     PGTABLE_LVL3_IDX_PTE_SELFMAP, PGTABLE_LVL3_IDX_SHARED, PageBox, phys_to_virt, virt_to_phys,
@@ -28,6 +28,7 @@ use cpuarch::x86::EFERFlags;
 use paging::pagetable::{
     ArchPagingMeta, GenericPageTable, PageLevel, PagingError, PagingHandler, SelfMap,
 };
+use paging::tlb::MayNeedFlush;
 use zerocopy::FromBytes;
 use zerocopy::FromZeros;
 
@@ -118,6 +119,7 @@ pub struct SvsmPaging;
 
 impl ArchPagingMeta for SvsmPaging {
     type PTFlags = PTEntryFlags;
+    type TlbFlushTok = TlbFlushScope;
 
     fn private_pte_mask() -> usize {
         private_pte_mask()
@@ -131,12 +133,63 @@ impl ArchPagingMeta for SvsmPaging {
         0x000f_ffff_ffff_f000
     }
 
-    fn flush_tlb_global() {
-        flush_tlb_global_sync();
-    }
-
     fn supported_flags() -> PTEntryFlags {
         *FEATURE_MASK
+    }
+}
+
+impl paging::tlb::TlbFlush for TlbFlushScope {
+    fn range(start: VirtAddr, end: VirtAddr, level: PageLevel) -> Self {
+        let page_size = match level {
+            PageLevel::Level0 => PageSize::Regular,
+            PageLevel::Level1 => PageSize::Huge,
+            _ => return TlbFlushScope::all(),
+        };
+        TlbFlushScope::range(MemoryRegion::new(start, end - start), page_size)
+    }
+
+    fn all() -> Self {
+        TlbFlushScope::all()
+    }
+
+    fn and(self, other: Self) -> Self {
+        match (self.range, other.range) {
+            (TlbFlushRange::All, _) | (_, TlbFlushRange::All) => TlbFlushScope::all(),
+            (
+                TlbFlushRange::Range {
+                    region: self_region,
+                    pgsize: self_pgsize,
+                },
+                TlbFlushRange::Range {
+                    region: other_region,
+                    pgsize: other_pgsize,
+                },
+            ) => {
+                let range = self_region.merge(&other_region);
+                let pgsize = if self_pgsize == PageSize::Regular && self_pgsize == other_pgsize {
+                    self_pgsize
+                } else {
+                    PageSize::Huge
+                };
+                TlbFlushScope::range(range, pgsize)
+            }
+        }
+    }
+
+    fn flush_tlb_global_sync(self) {
+        self.with_global(true).flush_all_cpus();
+    }
+
+    fn flush_tlb_ignore_global_sync(self) {
+        self.with_global(false).flush_all_cpus();
+    }
+
+    fn flush_tlb_global_percpu(self) {
+        self.with_global(true).flush_percpu();
+    }
+
+    fn flush_tlb_ignore_global_percpu(self) {
+        self.with_global(false).flush_percpu();
     }
 }
 
@@ -217,6 +270,8 @@ pub type Mapping<'a> = paging::pagetable::Mapping<'a, SvsmPaging>;
 
 /// A physical address within a page frame
 pub type PageFrame = paging::pagetable::PageFrame<SvsmPaging>;
+
+pub type SvsmMayNeedFlush = MayNeedFlush<TlbFlushScope>;
 
 trait PTEntryExt {
     /// Check if the page table entry has reserved bits set.
@@ -412,18 +467,6 @@ impl PageTable {
         Ok(pgtable)
     }
 
-    /// Splits a page into 4KB pages if it is part of a larger mapping.
-    ///
-    /// # Parameters
-    /// - `mapping`: The mapping to split.
-    ///
-    /// # Returns
-    /// A result indicating success or an error [`SvsmError`].
-    pub fn split_4k(mapping: Mapping<'_>) -> Result<(), SvsmError> {
-        SvsmPageTable::split_4k(mapping)?;
-        Ok(())
-    }
-
     /// Gets the physical address for a mapped `vaddr` or `None` if
     /// no such mapping exists.
     pub fn check_mapping(&mut self, vaddr: VirtAddr) -> Option<PhysAddr> {
@@ -481,9 +524,13 @@ impl PageTable {
     ///
     /// # Parameters
     /// - `vregion`: The virtual memory region to unmap.
-    pub fn unmap_region_4k(&mut self, vregion: MemoryRegion<VirtAddr>) {
+    pub fn unmap_region_4k(&mut self, vregion: MemoryRegion<VirtAddr>) -> SvsmMayNeedFlush {
         let (start, end) = (vregion.start(), vregion.end());
-        self.0.unmap_region_4k(start, end);
+        let flush = self.0.unmap_region_4k(start, end);
+        if let TlbFlushRange::Range { region, pgsize } = flush.scope().unwrap().range {
+            assert!(region.start() == start && region.end() == end && pgsize == PageSize::Regular);
+        }
+        flush
     }
 
     /// Maps a region of memory using 2MB pages.
@@ -510,9 +557,13 @@ impl PageTable {
 
     /// Unmaps a region `vregion` of 2MB pages. The region must be
     /// 2MB-aligned and correspond to a set of huge mappings.
-    pub fn unmap_region_2m(&mut self, vregion: MemoryRegion<VirtAddr>) {
+    pub fn unmap_region_2m(&mut self, vregion: MemoryRegion<VirtAddr>) -> SvsmMayNeedFlush {
         let (start, end) = (vregion.start(), vregion.end());
-        self.0.unmap_region_2m(start, end);
+        let flush = self.0.unmap_region_2m(start, end);
+        if let TlbFlushRange::Range { region, pgsize } = flush.scope().unwrap().range {
+            assert!(region.start() == start && region.end() == end && pgsize == PageSize::Huge);
+        }
+        flush
     }
 
     /// Maps a memory region to physical memory with specified flags.
@@ -536,23 +587,25 @@ impl PageTable {
     }
 
     /// Unmaps the virtual memory region `vregion`.
-    pub fn unmap_region(&mut self, vregion: MemoryRegion<VirtAddr>) {
-        if !self.0.unmap_region(vregion.start(), vregion.end()) {
+    pub fn unmap_region(&mut self, vregion: MemoryRegion<VirtAddr>) -> SvsmMayNeedFlush {
+        let (was_mapped, flush) = self.0.unmap_region(vregion.start(), vregion.end());
+        if !was_mapped {
             log::error!(
                 "Can't unmap - address not mapped in region {:#x}-{:#x}",
                 vregion.start(),
                 vregion.end()
             );
         }
+        flush
     }
 
     /// Populates this page table with the contents of the given subtree
     /// in `part`.
     ///
     /// Returns `true` if the PTE contents were updated.
-    pub fn populate_pgtbl_part(&mut self, part: &PageTablePart) -> bool {
+    pub fn populate_pgtbl_part(&mut self, part: &PageTablePart) -> (bool, SvsmMayNeedFlush) {
         let Some(paddr) = part.address() else {
-            return false;
+            return (false, SvsmMayNeedFlush::none());
         };
         let idx = part.index();
         let flags = PTEntryFlags::PRESENT
@@ -572,10 +625,14 @@ impl PageTable {
     /// expected.
     /// The caller must also ensure that the region start and size are 4k
     /// aligned.
+    ///
+    /// # Returns
+    /// The [`SvsmMayNeedFlush`] TLB-flush obligation for the now-stale
+    /// translations on success, or a [`SvsmError`] on failure.
     pub unsafe fn make_region_ro_4k(
         &mut self,
         region: MemoryRegion<VirtAddr>,
-    ) -> Result<(), SvsmError> {
+    ) -> Result<SvsmMayNeedFlush, SvsmError> {
         for page in region.iter_pages(PageSize::Regular) {
             match self.walk_addr(page) {
                 Mapping {
@@ -605,7 +662,11 @@ impl PageTable {
             }
         }
 
-        Ok(())
+        Ok(SvsmMayNeedFlush::new_range(
+            region.start(),
+            region.end(),
+            PageLevel::Level0,
+        ))
     }
 }
 
@@ -722,14 +783,17 @@ impl PageTablePart {
     ///
     /// # Returns
     ///
-    /// Returns a copy of the PTEntry that mapped the virtual address, if any.
+    /// A copy of the [`PTEntry`] that mapped the virtual address together with
+    /// the [`SvsmMayNeedFlush`] TLB-flush obligation for the now-stale translation,
+    /// or [`None`] if no leaf was mapped.
     ///
     /// # Panics
     ///
     /// This method panics when `vaddr` is not aligned to 4KiB.
-    pub fn unmap_4k(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
+    pub fn unmap_4k(&mut self, vaddr: VirtAddr) -> (Option<PTEntry>, SvsmMayNeedFlush) {
         assert!(PageTable::index::<3>(vaddr) == self.idx);
-        self.get_mut()?.unmap_4k(vaddr)
+        self.get_mut()
+            .map_or((None, SvsmMayNeedFlush::none()), |pt| pt.unmap_4k(vaddr))
     }
 
     /// Map a 2MiB page in the page table sub-tree
@@ -772,14 +836,17 @@ impl PageTablePart {
     ///
     /// # Returns
     ///
-    /// Returns a copy of the PTEntry that mapped the virtual address, if any.
+    /// A copy of the [`PTEntry`] that mapped the virtual address together with
+    /// the [`SvsmMayNeedFlush`] TLB-flush obligation for the now-stale translation,
+    /// or [`None`] if no huge leaf was mapped.
     ///
     /// # Panics
     ///
     /// This method panics when `vaddr` is not aligned to 2MiB.
-    pub fn unmap_2m(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
+    pub fn unmap_2m(&mut self, vaddr: VirtAddr) -> (Option<PTEntry>, SvsmMayNeedFlush) {
         assert!(PageTable::index::<3>(vaddr) == self.idx);
-        self.get_mut()?.unmap_2m(vaddr)
+        self.get_mut()
+            .map_or((None, SvsmMayNeedFlush::none()), |pt| pt.unmap_2m(vaddr))
     }
 }
 

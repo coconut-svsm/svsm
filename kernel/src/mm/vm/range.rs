@@ -5,10 +5,9 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, VirtAddr};
-use crate::cpu::{flush_tlb_global_percpu_range, flush_tlb_global_sync_range};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
-use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart};
+use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart, SvsmMayNeedFlush};
 use crate::mm::virt_from_idx;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE, PageSize};
 use crate::utils::{MemoryRegion, align_down, align_up};
@@ -130,12 +129,14 @@ impl VMR {
     /// # Arguments
     ///
     /// * `pgtbl` - A [`PageTable`] pointing to the target page-table
-    pub fn populate(&self, pgtbl: &mut PageTable) {
+    pub fn populate(&self, pgtbl: &mut PageTable) -> SvsmMayNeedFlush {
         let parts = self.pgtbl_parts.lock_read();
-
+        let mut need_flush = SvsmMayNeedFlush::none();
         for part in parts.iter() {
-            pgtbl.populate_pgtbl_part(part);
+            let (_, flush) = pgtbl.populate_pgtbl_part(part);
+            need_flush = flush.and(need_flush);
         }
+        need_flush
     }
 
     fn populate_addr(&self, pgtbl: &mut PageTable, vaddr: VirtAddr) -> Result<(), SvsmError> {
@@ -146,7 +147,9 @@ impl VMR {
 
         let idx = vaddr.to_pgtbl_idx::<3>() - vregion.start().to_pgtbl_idx::<3>();
         let parts = self.pgtbl_parts.lock_read();
-        if !pgtbl.populate_pgtbl_part(&parts[idx]) {
+        let (updated, flush) = pgtbl.populate_pgtbl_part(&parts[idx]);
+        flush.expect_no_flush();
+        if !updated {
             return Err(SvsmError::Mem);
         }
         Ok(())
@@ -241,13 +244,14 @@ impl VMR {
     /// # Arguments
     ///
     /// - `vmm` - Reference to a [`VMM`] instance to unmap from the page-table
-    fn unmap_vmm(&self, vmm: &VMM) {
+    fn unmap_vmm(&self, vmm: &VMM) -> SvsmMayNeedFlush {
         let rstart = self.virt_range().start();
         let (vmm_start, vmm_end) = vmm.range();
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
         let mapping = vmm.get_mapping();
         let page_size = mapping.page_size();
         let mut offset: usize = 0;
+        let mut flush = SvsmMayNeedFlush::none();
 
         while vmm_start + offset < vmm_end {
             let idx = PageTable::index::<3>(VirtAddr::from(vmm_start - rstart));
@@ -256,12 +260,14 @@ impl VMR {
                 PageSize::Huge => pgtbl_parts[idx].unmap_2m(vmm_start + offset),
             };
 
-            if result.is_some() {
+            if let (Some(_), f) = result {
                 mapping.unmap(offset);
+                flush = flush.and(f);
             }
 
             offset += usize::from(page_size);
         }
+        flush
     }
 
     fn do_insert(
@@ -272,7 +278,12 @@ impl VMR {
     ) -> Result<(), SvsmError> {
         let vmm = Box::new(VMM::new(start_pfn, mapping));
         if let Err(e) = self.map_vmm(&vmm) {
-            self.unmap_vmm(&vmm);
+            let flush = self.unmap_vmm(&vmm);
+            // SAFETY: We skip the TLB flush because the mapping failed due to an allocation error,
+            // caller guarantees that there is no one will touch the region?
+            unsafe {
+                flush.ignore();
+            }
             Err(e)
         } else {
             cursor.insert_before(vmm);
@@ -435,16 +446,11 @@ impl VMR {
 
         let mut cursor = tree.find_mut(&addr);
         let node = cursor.remove().ok_or(SvsmError::Mem)?;
-        self.unmap_vmm(&node);
-
-        let range = node.range();
-        let region = MemoryRegion::from_addresses(range.0, range.1);
-        let pgsize = node.get_mapping().page_size();
-
+        let flush = self.unmap_vmm(&node);
         if self.per_cpu {
-            flush_tlb_global_percpu_range(region, pgsize);
+            flush.flush_tlb_global_percpu();
         } else {
-            flush_tlb_global_sync_range(region, pgsize);
+            flush.flush_tlb_global_sync();
         }
 
         Ok(node)

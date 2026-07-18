@@ -616,7 +616,12 @@ pub unsafe fn update_task_percpu_page_tables(t: *const Task) {
     // SAFETY: the caller guarantees the correctness of the task pointer.
     let task = unsafe { &*t };
     let mut pt = task.page_table.lock();
-    this_cpu().populate_page_table(&mut pt);
+    let flush = this_cpu().populate_page_table(&mut pt);
+    // SAFETY: The caller guarantees that the task page table is not yet installed,
+    // so it is safe to ignore the flush obligation.
+    unsafe {
+        flush.ignore();
+    }
 }
 
 /// Perform a task switch and hand the CPU over to the next task on the
