@@ -5,7 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::BIT_MASK;
-use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::control_regs::write_cr3;
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::idt::common::PageFaultError;
@@ -15,7 +15,7 @@ use crate::mm::{
     PGTABLE_LVL3_IDX_PTE_SELFMAP, PGTABLE_LVL3_IDX_SHARED, PageBox, phys_to_virt, virt_to_phys,
 };
 use crate::platform::SvsmPlatform;
-use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
+use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use bitflags::bitflags;
@@ -472,10 +472,8 @@ impl PageTable {
         flags: PTEntryFlags,
         shared: bool,
     ) -> Result<(), SvsmError> {
-        for addr in vregion.iter_pages(PageSize::Regular) {
-            let offset = addr - vregion.start();
-            self.map_4k(addr, phys + offset, flags, shared)?;
-        }
+        let (start, end) = (vregion.start(), vregion.end());
+        self.0.map_region_4k(start, end, phys, flags, shared)?;
         Ok(())
     }
 
@@ -484,9 +482,8 @@ impl PageTable {
     /// # Parameters
     /// - `vregion`: The virtual memory region to unmap.
     pub fn unmap_region_4k(&mut self, vregion: MemoryRegion<VirtAddr>) {
-        for addr in vregion.iter_pages(PageSize::Regular) {
-            self.unmap_4k(addr);
-        }
+        let (start, end) = (vregion.start(), vregion.end());
+        self.0.unmap_region_4k(start, end);
     }
 
     /// Maps a region of memory using 2MB pages.
@@ -506,19 +503,16 @@ impl PageTable {
         flags: PTEntryFlags,
         shared: bool,
     ) -> Result<(), SvsmError> {
-        for addr in vregion.iter_pages(PageSize::Huge) {
-            let offset = addr - vregion.start();
-            self.map_2m(addr, phys + offset, flags, shared)?;
-        }
+        let (start, end) = (vregion.start(), vregion.end());
+        self.0.map_region_2m(start, end, phys, flags, shared)?;
         Ok(())
     }
 
     /// Unmaps a region `vregion` of 2MB pages. The region must be
     /// 2MB-aligned and correspond to a set of huge mappings.
     pub fn unmap_region_2m(&mut self, vregion: MemoryRegion<VirtAddr>) {
-        for addr in vregion.iter_pages(PageSize::Huge) {
-            self.unmap_2m(addr);
-        }
+        let (start, end) = (vregion.start(), vregion.end());
+        self.0.unmap_region_2m(start, end);
     }
 
     /// Maps a memory region to physical memory with specified flags.
@@ -536,51 +530,19 @@ impl PageTable {
         phys: PhysAddr,
         flags: PTEntryFlags,
     ) -> Result<(), SvsmError> {
-        let mut vaddr = region.start();
-        let end = region.end();
-        let mut paddr = phys;
-
-        while vaddr < end {
-            if vaddr.is_aligned(PAGE_SIZE_2M)
-                && paddr.is_aligned(PAGE_SIZE_2M)
-                && vaddr + PAGE_SIZE_2M <= end
-                && self.map_2m(vaddr, paddr, flags, false).is_ok()
-            {
-                vaddr = vaddr + PAGE_SIZE_2M;
-                paddr = paddr + PAGE_SIZE_2M;
-                continue;
-            }
-
-            self.map_4k(vaddr, paddr, flags, false)?;
-            vaddr = vaddr + PAGE_SIZE;
-            paddr = paddr + PAGE_SIZE;
-        }
-
+        let (start, end) = (region.start(), region.end());
+        self.0.map_region(start, end, phys, flags)?;
         Ok(())
     }
 
     /// Unmaps the virtual memory region `vregion`.
     pub fn unmap_region(&mut self, vregion: MemoryRegion<VirtAddr>) {
-        let mut vaddr = vregion.start();
-        let end = vregion.end();
-
-        while vaddr < end {
-            let mapping = self.walk_addr(vaddr);
-
-            match mapping.level {
-                PageLevel::Level0 => {
-                    mapping.entry.clear();
-                    vaddr = vaddr + PAGE_SIZE;
-                }
-                PageLevel::Level1 => {
-                    mapping.entry.clear();
-                    vaddr = vaddr + PAGE_SIZE_2M;
-                }
-                _ => {
-                    log::error!("Can't unmap - address not mapped {vaddr:#x}");
-                    vaddr = vaddr + PAGE_SIZE;
-                }
-            }
+        if !self.0.unmap_region(vregion.start(), vregion.end()) {
+            log::error!(
+                "Can't unmap - address not mapped in region {:#x}-{:#x}",
+                vregion.start(),
+                vregion.end()
+            );
         }
     }
 

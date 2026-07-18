@@ -2,7 +2,11 @@
 
 //! Generic paging traits and marker types.
 
-use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::{
+    address::{Address, PhysAddr, VirtAddr},
+    pagetable::ENTRY_COUNT,
+    sizes::{PAGE_SIZE, PAGE_SIZE_1G, PAGE_SIZE_2M},
+};
 use bitflags::Flags;
 use zerocopy::FromBytes;
 
@@ -27,6 +31,15 @@ impl PageLevel {
             Self::Level2 => Some(Self::Level1),
             Self::Level1 => Some(Self::Level0),
             Self::Level0 => None,
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            Self::Level0 => PAGE_SIZE,
+            Self::Level1 => PAGE_SIZE_2M,
+            Self::Level2 => PAGE_SIZE_1G,
+            Self::Level3 => ENTRY_COUNT * PAGE_SIZE_1G,
         }
     }
 }
