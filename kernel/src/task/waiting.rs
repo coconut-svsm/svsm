@@ -4,26 +4,36 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::tasks::TaskPointer;
+use intrusive_collections::LinkedList;
 
-#[derive(Debug, Default)]
+use super::tasks::{TaskPointer, TaskWaitListAdapter};
+
+/// A queue of tasks waiting for a single event. Multiple tasks may wait
+/// simultaneously.
+#[derive(Debug)]
 pub struct WaitQueue {
-    waiter: Option<TaskPointer>,
+    waiters: LinkedList<TaskWaitListAdapter>,
 }
 
 impl WaitQueue {
-    pub const fn new() -> Self {
-        Self { waiter: None }
+    pub fn new() -> Self {
+        Self {
+            waiters: LinkedList::new(TaskWaitListAdapter::new()),
+        }
     }
 
+    /// Register `current_task` as a waiter on this queue. The task is
+    /// immediately marked as blocked. Multiple callers may wait concurrently.
     pub fn wait_for_event(&mut self, current_task: TaskPointer) {
-        assert!(self.waiter.is_none());
-
         current_task.set_task_blocked();
-        self.waiter = Some(current_task);
+        self.waiters.push_back(current_task);
     }
 
-    pub fn wakeup(&mut self) -> Option<TaskPointer> {
-        self.waiter.take()
+    /// Wake all waiting tasks. Returns the waiters so the caller can unlink
+    /// and schedule each one.
+    pub fn wakeup(&mut self, wake_all: bool) -> LinkedList<TaskWaitListAdapter> {
+        assert!(wake_all);
+
+        self.waiters.take()
     }
 }
