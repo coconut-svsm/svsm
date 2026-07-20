@@ -11,11 +11,11 @@ use crate::{
     crypto::SecretSlice,
     error::SvsmError,
     greq::{pld_report::*, services::get_regular_report},
-    io::{DEFAULT_IO_DRIVER, Read, Write},
-    serial::SerialPort,
+    io::{Read, Write},
     utils::vec::{try_to_vec, vec_sized},
 };
-#[cfg(feature = "vsock")]
+#[cfg(feature = "attest-serial")]
+use crate::{io::DEFAULT_IO_DRIVER, serial::SerialPort};
 use crate::{vsock::VMADDR_CID_HOST, vsock::stream::VsockStream};
 use aes_gcm::{AeadInPlace, Aes256Gcm, KeyInit, Nonce, aead::generic_array::GenericArray};
 use aes_kw::{KeyInit as _, KwAes256};
@@ -36,77 +36,79 @@ use serde::Serialize;
 use sha2::{Digest, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
+#[cfg(feature = "attest-serial")]
 // TODO: Make the IO port configurable/discoverable or drop the support entirely.
 const ATTEST_DEFAULT_SERIAL_IO_ADDR: u16 = 0x3e8; // COM3
 
-enum Transport<'a> {
-    #[cfg(feature = "vsock")]
+enum Transport {
     Vsock(VsockStream),
-    Serial(SerialPort<'a>),
+    #[cfg(feature = "attest-serial")]
+    Serial(SerialPort<'static>),
 }
 
-impl Read for Transport<'_> {
+impl Read for Transport {
     type Err = SvsmError;
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Err> {
         match self {
-            #[cfg(feature = "vsock")]
             Transport::Vsock(vsock) => vsock.read(buf),
+            #[cfg(feature = "attest-serial")]
             Transport::Serial(serial) => serial.read(buf),
         }
     }
 }
 
-impl Write for Transport<'_> {
+impl Write for Transport {
     type Err = SvsmError;
 
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
         match self {
-            #[cfg(feature = "vsock")]
             Transport::Vsock(vsock) => vsock.write(buf),
+            #[cfg(feature = "attest-serial")]
             Transport::Serial(serial) => serial.write(buf),
         }
     }
 }
 
-impl Transport<'_> {
-    #[cfg(feature = "vsock")]
-    fn new() -> Self {
+impl Transport {
+    fn new() -> Result<Self, SvsmError> {
         match VsockStream::connect(ATTEST_DEFAULT_VSOCK_PORT, VMADDR_CID_HOST) {
-            Ok(value) => Transport::Vsock(value),
+            Ok(value) => Ok(Transport::Vsock(value)),
             Err(e) => {
                 log::warn!(
                     "Failed to connect to attestation proxy on vsock port \
-                     {ATTEST_DEFAULT_VSOCK_PORT}: {e:?}. \
-                     Falling back to serial port transport.",
+                     {ATTEST_DEFAULT_VSOCK_PORT}: {e:?}."
                 );
-                create_serial_transport()
+
+                #[cfg(feature = "attest-serial")]
+                {
+                    log::warn!("Falling back to serial port transport.");
+                    create_serial_transport()
+                }
+                #[cfg(not(feature = "attest-serial"))]
+                Err(e)
             }
         }
     }
-
-    #[cfg(not(feature = "vsock"))]
-    fn new() -> Self {
-        create_serial_transport()
-    }
 }
 
-fn create_serial_transport<'a>() -> Transport<'a> {
+#[cfg(feature = "attest-serial")]
+fn create_serial_transport() -> Result<Transport, SvsmError> {
     let sp = SerialPort::new(&DEFAULT_IO_DRIVER, ATTEST_DEFAULT_SERIAL_IO_ADDR);
     sp.init();
-    Transport::Serial(sp)
+    Ok(Transport::Serial(sp))
 }
 
 /// The attestation driver that communicates with the proxy via some communication channel (serial
 /// port, virtio-vsock, etc...).
 #[allow(missing_debug_implementations)]
-pub struct AttestationDriver<'a> {
-    transport: Transport<'a>,
+pub struct AttestationDriver {
+    transport: Transport,
     tee: Tee,
     ecc: EccKey,
 }
 
-impl TryFrom<Tee> for AttestationDriver<'_> {
+impl TryFrom<Tee> for AttestationDriver {
     type Error = SvsmError;
 
     fn try_from(tee: Tee) -> Result<Self, Self::Error> {
@@ -118,7 +120,7 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
         let curve = Curve::new(TpmEccCurve::NistP521).map_err(AttestationError::Crypto)?;
         let ecc = sc_key_generate(&curve).map_err(AttestationError::Crypto)?;
 
-        let transport = Transport::new();
+        let transport = Transport::new()?;
         Ok(Self {
             transport,
             tee,
@@ -127,7 +129,7 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
     }
 }
 
-impl AttestationDriver<'_> {
+impl AttestationDriver {
     /// Attest SVSM's launch state by communicating with the attestation proxy.
     pub fn attest(&mut self) -> Result<SecretSlice, SvsmError> {
         let negotiation = self.negotiation()?;
