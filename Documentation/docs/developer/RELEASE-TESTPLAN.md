@@ -100,7 +100,7 @@ cargo verify
 In the Linux guest OS, check that a TPM2 is available.
 
 ```
-systemd-analyze has-tpm2`
+systemd-analyze has-tpm2
 ```
 
 ### `make clippy CARGO_HACK=1`
