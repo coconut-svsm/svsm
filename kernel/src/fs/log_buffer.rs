@@ -11,8 +11,8 @@ use crate::error::SvsmError;
 use crate::fs::*;
 use crate::locking::SpinLock;
 use crate::syscall::Obj;
-use alloc::string::String;
 use alloc::sync::Arc;
+
 pub fn initialize_log_buffer() -> Result<usize, SvsmError> {
     mkdir("Log").map_err(|_| SvsmError::LogError)?;
     let _handle = create("Log/logfile").map_err(|_| SvsmError::LogError)?;
@@ -36,7 +36,7 @@ struct LogFile {
 }
 
 impl LogFile {
-    fn new(component: String, is_console: bool) -> Self {
+    fn new<S: AsRef<str>>(component: S, is_console: bool) -> Self {
         Self {
             lb: SpinLock::new(LineBuffer::new(component, is_console)),
         }
@@ -69,9 +69,9 @@ impl File for LogFile {
     }
 }
 
-pub fn stdout_open(taskname: String) -> (Arc<dyn Obj>, Arc<dyn Obj>) {
-    let console_file: Arc<dyn File> = Arc::new(LogFile::new(taskname.clone(), true));
-    let log_file: Arc<dyn File> = Arc::new(LogFile::new(taskname.clone(), false));
+pub fn stdout_open(taskname: &str) -> (Arc<dyn Obj>, Arc<dyn Obj>) {
+    let console_file: Arc<dyn File> = Arc::new(LogFile::new(taskname, true));
+    let log_file: Arc<dyn File> = Arc::new(LogFile::new(taskname, false));
 
     // Stdout is write-only.
     (
@@ -108,10 +108,10 @@ mod tests {
     fn test_log_buffer_multiple_tasks() {
         let _ = log_reset();
         log::info!("in test task");
-        let task1 = start_kernel_task(KernelThreadStartInfo::new(task1, 1), String::from("task1"))
+        let task1 = start_kernel_task(KernelThreadStartInfo::new(task1, 1), "task1")
             .expect("Failed to launch request processing task");
         wait_for_termination(task1);
-        let task2 = start_kernel_task(KernelThreadStartInfo::new(task2, 2), String::from("task2"))
+        let task2 = start_kernel_task(KernelThreadStartInfo::new(task2, 2), "task2")
             .expect("Failed to launch request processing task");
         wait_for_termination(task2);
         let expected = "[SVSM test task] in test task\n[task1] in task1\n[task2] in task2\n";

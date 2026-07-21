@@ -11,8 +11,7 @@ use packit::PackItArchiveDecoder;
 
 use super::*;
 
-extern crate alloc;
-use alloc::slice;
+use core::slice;
 
 /// Used to create a SVSM RAM filesystem from a filesystem archive.
 ///

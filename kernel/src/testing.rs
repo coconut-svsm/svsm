@@ -105,7 +105,7 @@ pub fn user_tests_in_svsm() {
 
     for file in files {
         log::info!("Running tests in svsm for {file}");
-        let task = exec_user(&format!("test/{file}"), opendir("/").unwrap()).unwrap();
+        let task = exec_user(format!("test/{file}"), opendir("/").unwrap()).unwrap();
         wait_for_termination(task.clone());
         let exit_status = task.get_exit_status().unwrap();
         assert_eq!(

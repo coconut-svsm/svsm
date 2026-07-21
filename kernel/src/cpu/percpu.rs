@@ -61,7 +61,6 @@ use crate::types::{
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use alloc::boxed::Box;
-use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
@@ -886,7 +885,7 @@ impl PerCpu {
     }
 
     fn setup_idle_task_internal(&self, start_info: KernelThreadStartInfo) -> Result<(), SvsmError> {
-        let idle_task = Task::create(self, start_info, String::from("idle"))?;
+        let idle_task = Task::create(self, start_info, Arc::from("idle"))?;
         self.runqueue_mut().set_idle_task(idle_task);
         Ok(())
     }

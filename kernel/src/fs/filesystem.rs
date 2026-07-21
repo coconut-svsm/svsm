@@ -375,8 +375,7 @@ where
     let mut current_dir = dir;
 
     for item in path_items {
-        let dir_name = FileName::from(item);
-        let dir_entry = current_dir.lookup_entry(&dir_name)?;
+        let dir_entry = current_dir.lookup_entry(item)?;
         current_dir = match dir_entry {
             DirEntry::File(_) => return Err(SvsmError::FileSystem(FsError::file_not_found())),
             DirEntry::Directory(dir) => dir,
@@ -467,10 +466,10 @@ pub fn open_root(
     write: bool,
 ) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
-    let file_name = FileName::from(path_items.next_back().unwrap());
+    let file_name = path_items.next_back().unwrap();
     let current_dir = walk_path(root_dir, path_items)?;
 
-    let dir_entry = current_dir.lookup_entry(&file_name)?;
+    let dir_entry = current_dir.lookup_entry(file_name)?;
 
     match dir_entry {
         DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::file_not_found())),
@@ -673,11 +672,11 @@ pub fn mkdir(path: &str) -> Result<(), SvsmError> {
 /// value if successful,  [`SvsmError`] otherwise.
 pub fn unlink_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
-    let entry_name = FileName::from(path_items.next_back().unwrap());
+    let entry_name = path_items.next_back().unwrap();
     let dir = walk_path(root_dir, path_items)?;
 
-    match dir.lookup_entry(&entry_name)? {
-        DirEntry::File(_) => dir.unlink(&entry_name),
+    match dir.lookup_entry(entry_name)? {
+        DirEntry::File(_) => dir.unlink(entry_name),
         DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::is_dir())),
     }
 }
@@ -714,14 +713,14 @@ pub fn unlink(path: &str) -> Result<(), SvsmError> {
 /// in progress.
 pub fn rmdir_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
-    let entry_name = FileName::from(path_items.next_back().unwrap());
+    let entry_name = path_items.next_back().unwrap();
     let dir = walk_path(root_dir, path_items)?;
 
-    match dir.lookup_entry(&entry_name)? {
+    match dir.lookup_entry(entry_name)? {
         DirEntry::File(_) => Err(SvsmError::FileSystem(FsError::is_file())),
         DirEntry::Directory(target) => {
             target.prepare_remove()?;
-            dir.unlink(&entry_name)
+            dir.unlink(entry_name)
         }
     }
 }
@@ -891,7 +890,7 @@ mod tests {
 
         // Check if it appears in the listing
         let root_list = list_dir("").unwrap();
-        assert!(root_list.contains(&FileName::from("test1")));
+        assert!(root_list.iter().any(|f| f == "test1"));
 
         // Try again - should succeed now
         create("test1/file1").unwrap();
@@ -910,7 +909,7 @@ mod tests {
 
         // Check if it appears in the listing
         let root_list = list_dir("").unwrap();
-        assert!(root_list.contains(&FileName::from("test1")));
+        assert!(root_list.iter().any(|f| f == "test1"));
 
         // Try creating again as file - should fail
         create("test1").unwrap_err();
@@ -926,8 +925,8 @@ mod tests {
 
         // Check if it is removed from the listing
         let root_list = list_dir("").unwrap();
-        assert!(!root_list.contains(&FileName::from("test1")));
-        assert!(root_list.contains(&FileName::from("test2")));
+        assert!(!root_list.iter().any(|f| f == "test1"));
+        assert!(root_list.iter().any(|f| f == "test2"));
 
         // Cleanup
         rmdir("test2").unwrap();
@@ -949,14 +948,14 @@ mod tests {
 
         // Check if it appears in the listing
         let list = list_dir("test1/").unwrap();
-        assert_eq!(list, [FileName::from("test2")]);
+        assert_eq!(list, ["test2"]);
 
         // Try again - should succeed now
         create("test1/test2/file1").unwrap();
 
         // Check if it appears in the listing
         let list = list_dir("test1/test2/").unwrap();
-        assert_eq!(list, [FileName::from("file1")]);
+        assert_eq!(list, ["file1"]);
 
         // Cleanup
         unlink("test1/test2/file1").unwrap();
@@ -978,7 +977,7 @@ mod tests {
 
         // Check if they appears in the listing
         let list = list_dir("test1").unwrap();
-        assert_eq!(list, [FileName::from("file1"), FileName::from("file2")]);
+        assert_eq!(list, ["file1", "file2"]);
 
         // Unlink non-existent file
         unlink("test2").unwrap_err();
@@ -988,7 +987,7 @@ mod tests {
 
         // Check if it is removed from the listing
         let list = list_dir("test1").unwrap();
-        assert_eq!(list, [FileName::from("file2")]);
+        assert_eq!(list, ["file2"]);
 
         // Cleanup
         unlink("test1/file2").unwrap();

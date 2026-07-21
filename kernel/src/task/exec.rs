@@ -28,10 +28,8 @@ pub struct UserExecInfo {
 }
 
 impl UserExecInfo {
-    pub fn new(b: &str) -> Self {
-        Self {
-            binary: String::from(b),
-        }
+    pub fn new(binary: String) -> Self {
+        Self { binary }
     }
 }
 
@@ -51,11 +49,11 @@ fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
 
 /// Returns the name of the binary file without preceeding directories. This is
 /// used as the official task name.
-fn task_name(binary: &str) -> String {
+fn task_name(binary: &str) -> &str {
     let mut items = binary.split('/').filter(|x| !x.is_empty());
     match items.nth_back(0) {
-        Some(p) => String::from(p),
-        None => String::from("unknown"),
+        Some(p) => p,
+        None => "unknown",
     }
 }
 
@@ -163,13 +161,18 @@ pub fn exec(info: UserExecInfo) -> Result<u64, SvsmError> {
 /// # Arguments
 ///
 /// * binary: Path to file in the file-system
+/// * root: Root directory associated with the new task
 ///
 /// # Returns
 ///
 /// [`Ok(TaskPointer)`] on success, [`Err(SvsmError)`] on failure.
-pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<TaskPointer, SvsmError> {
-    let info = Box::new(UserExecInfo::new(binary));
-    let new_task = create_user_task(info, root, task_name(binary))?;
+pub fn exec_user<S: Into<String>>(
+    binary: S,
+    root: Arc<dyn Directory>,
+) -> Result<TaskPointer, SvsmError> {
+    let info = Box::new(UserExecInfo::new(binary.into()));
+    let name = Arc::from(task_name(&info.binary));
+    let new_task = create_user_task(info, root, name)?;
 
     finish_user_task(new_task.clone());
     schedule();

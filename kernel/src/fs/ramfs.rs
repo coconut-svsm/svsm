@@ -367,9 +367,9 @@ impl RawRamDirectory {
         }
     }
 
-    fn lookup_entry(&self, name: &FileName) -> Result<DirEntry, SvsmError> {
+    fn lookup_entry(&self, name: FileNameRef<'_>) -> Result<DirEntry, SvsmError> {
         for e in self.entries.iter() {
-            if &e.name == name {
+            if e.name == name {
                 return Ok(e.entry.clone());
             }
         }
@@ -407,9 +407,8 @@ impl RawRamDirectory {
         Ok(new_dir)
     }
 
-    fn unlink(&mut self, name: &FileName) -> Result<(), SvsmError> {
-        let pos = self.entries.iter().position(|e| &e.name == name);
-
+    fn unlink(&mut self, name: FileNameRef<'_>) -> Result<(), SvsmError> {
+        let pos = self.entries.iter().position(|e| e.name == name);
         match pos {
             Some(idx) => {
                 self.entries.swap_remove(idx);
@@ -444,7 +443,7 @@ impl Directory for RamDirectory {
         self.directory.lock_write().prepare_remove()
     }
 
-    fn lookup_entry(&self, name: &FileName) -> Result<DirEntry, SvsmError> {
+    fn lookup_entry(&self, name: FileNameRef<'_>) -> Result<DirEntry, SvsmError> {
         self.directory.lock_read().lookup_entry(name)
     }
 
@@ -456,7 +455,7 @@ impl Directory for RamDirectory {
         self.directory.lock_write().create_directory(name)
     }
 
-    fn unlink(&self, name: &FileName) -> Result<(), SvsmError> {
+    fn unlink(&self, name: FileNameRef<'_>) -> Result<(), SvsmError> {
         self.directory.lock_write().unlink(name)
     }
 }
@@ -559,7 +558,7 @@ mod tests {
             .expect("Failed to create directory");
 
         let list = ram_dir.list();
-        assert_eq!(list, [f_name.clone(), d_name.clone()]);
+        assert_eq!(list, [f_name.as_str(), d_name.as_str()]);
 
         let entry = ram_dir
             .lookup_entry(&f_name)
