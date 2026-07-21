@@ -6,9 +6,8 @@
 
 use crate::{FsObjHandle, ObjHandle, SysCallError, write};
 
-static LOG_HANDLE: FsObjHandle = FsObjHandle::new(ObjHandle::new(1));
+static LOG_HANDLE: FsObjHandle = FsObjHandle::new(ObjHandle::new(0));
 
 pub fn write_log(buf: &[u8]) -> Result<usize, SysCallError> {
-    write(&LOG_HANDLE, buf)?;
-    Ok(0)
+    write(&LOG_HANDLE, buf)
 }
