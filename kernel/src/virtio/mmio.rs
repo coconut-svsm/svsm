@@ -14,7 +14,7 @@ use virtio_drivers::transport::{DeviceType, Transport, mmio::MmioTransport};
 use crate::address::{Address, PhysAddr};
 use crate::boot_params::BootParams;
 use crate::fw_cfg::FwCfg;
-use crate::mm::{GlobalRangeGuard, map_global_range_4k_shared, pagetable::PTEntryFlags};
+use crate::mm::GlobalRangeGuard;
 use crate::platform::SVSM_PLATFORM;
 use crate::types::PAGE_SIZE;
 
@@ -31,7 +31,7 @@ pub struct MmioSlot {
     // TODO: The destruction order should be expressed via code rather than
     // relying on field ordering. This should be addressed when moving to
     // the upstream virtio-drivers crate.
-    pub mmio_range: GlobalRangeGuard,
+    pub mmio_range: Option<GlobalRangeGuard>,
 }
 
 #[derive(Debug, Default)]
@@ -93,22 +93,20 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
         // If multiple devices reside in the same page, each gets its own
         // mapping, which is slightly wasteful but avoids shared-ownership
         // complexity.
-        let Ok(mem) = map_global_range_4k_shared(page_base, PAGE_SIZE, PTEntryFlags::data()) else {
+        let Ok((vbase, guard)) = SVSM_PLATFORM.virtio_mmio_init(page_base, PAGE_SIZE) else {
             log::warn!("MmioSlots: Failed to map MMIO region at {addr:x}");
             continue;
         };
 
-        // Not expected to fail, because mem exists.
-        let header = NonNull::new((mem.addr() + page_offset).as_mut_ptr()).unwrap();
+        // Not expected to fail, because vbase is non-null.
+        let header = NonNull::new((vbase + page_offset).as_mut_ptr()).unwrap();
 
-        // SAFETY: The address is valid, mapped by `map_global_range_4k_shared`, and verified
-        // to be VirtIOHeader-aligned by the guard above.
+        // SAFETY: The address is valid and verified to be VirtIOHeader-aligned by the guard above.
         // The memory region has the same lifetime of the MmioSlot structure which will be consumed by the driver.
         // TODO: Currently the hypervisor does not advertise the size of the mmio space (header + config space).
         //       The size will be provided by the device tree. For now, let's just make sure we don't go past
         //       the boundaries of the allocated space.
-        let Ok(transport) = (unsafe { MmioTransport::new(header, mem.size() - page_offset) })
-        else {
+        let Ok(transport) = (unsafe { MmioTransport::new(header, PAGE_SIZE - page_offset) }) else {
             // Currently QEMU advertises _all_ slots, regardless they are empty or not.
             log::debug!("MmioSlots: {addr:x} empty");
             continue;
@@ -118,7 +116,7 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
 
         let slot_type = MmioSlot {
             transport,
-            mmio_range: mem,
+            mmio_range: guard,
         };
 
         slots.push(slot_type);

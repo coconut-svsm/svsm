@@ -23,7 +23,7 @@ use alloc::boxed::Box;
 
 pub struct VirtIOBlkDriver {
     device: SpinLock<VirtIOBlk<SvsmHal, MmioTransport<'static>>>,
-    _mmio_space: GlobalRangeGuard,
+    _mmio_space: Option<GlobalRangeGuard>,
 }
 
 impl core::fmt::Debug for VirtIOBlkDriver {

@@ -40,8 +40,10 @@ use core::arch::asm;
 use core::mem::MaybeUninit;
 use syscall::GlobalFeatureFlags;
 
+use crate::mm::pagetable::PTEntryFlags;
 #[cfg(debug_assertions)]
 use crate::mm::virt_to_phys;
+use crate::mm::{GlobalRangeGuard, map_global_range_4k_shared};
 
 #[cfg(test)]
 use bootdefs::platform::SvsmPlatformType;
@@ -240,6 +242,16 @@ impl SvsmPlatform for NativePlatform {
         apic_post_irq(sipi_icr.into());
 
         Ok(())
+    }
+
+    fn virtio_mmio_init(
+        &self,
+        paddr: PhysAddr,
+        size: usize,
+    ) -> Result<(VirtAddr, Option<GlobalRangeGuard>), SvsmError> {
+        let guard = map_global_range_4k_shared(paddr, size, PTEntryFlags::data())?;
+        let vaddr = guard.addr();
+        Ok((vaddr, Some(guard)))
     }
 
     /// Perform a write to a memory-mapped IO area

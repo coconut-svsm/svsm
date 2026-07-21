@@ -32,6 +32,7 @@ use crate::cpu::tlb::{TlbFlushScope, flush_tlb};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
+use crate::mm::GlobalRangeGuard;
 use crate::mm::alloc::free_page;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -267,6 +268,19 @@ pub trait SvsmPlatform: Sync {
     fn start_svsm_request_loop(&self) -> bool {
         false
     }
+
+    /// Map an MMIO region for use with virtio devices.
+    ///
+    /// Returns the virtual address to use for MMIO access and an optional
+    /// [`GlobalRangeGuard`] that keeps the mapping alive. Platforms that
+    /// access MMIO through a side-channel (e.g. GHCB) may return `None` for
+    /// the guard and encode the physical address directly in the returned
+    /// [`VirtAddr`].
+    fn virtio_mmio_init(
+        &self,
+        paddr: PhysAddr,
+        size: usize,
+    ) -> Result<(VirtAddr, Option<GlobalRangeGuard>), SvsmError>;
 
     /// Perfrom a write to a memory-mapped IO area
     ///

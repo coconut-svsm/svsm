@@ -33,6 +33,7 @@ use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
 use crate::hyperv;
 use crate::io::IOPort;
+use crate::mm::GlobalRangeGuard;
 use crate::mm::PAGE_SIZE;
 use crate::mm::PAGE_SIZE_2M;
 use crate::mm::PerCPUPageMappingGuard;
@@ -431,15 +432,26 @@ impl SvsmPlatform for SnpPlatform {
         true
     }
 
+    fn virtio_mmio_init(
+        &self,
+        paddr: PhysAddr,
+        _size: usize,
+    ) -> Result<(VirtAddr, Option<GlobalRangeGuard>), SvsmError> {
+        // SNP MMIO goes through the GHCB, so no virtual mapping is needed.
+        // Encode the physical address directly in the returned VirtAddr.
+        Ok((VirtAddr::from(paddr.bits()), None))
+    }
+
     /// Perfrom a write to a memory-mapped IO area
     ///
     /// # Safety
     ///
-    /// Caller must ensure that `vaddr` points to a properly aligned memory location and the
-    /// memory accessed is part of a valid MMIO range.
+    /// Caller must ensure that `vaddr` encodes a valid physical MMIO address
+    /// and that data is properly aligned.
     unsafe fn mmio_write(&self, vaddr: VirtAddr, data: &[u8]) -> Result<(), SvsmError> {
-        let paddr = this_cpu().get_pgtable().phys_addr(vaddr)?;
-
+        // MMIO accesses go through the GHCB, so no virtual mapping is created;
+        // virtual addresses are physical addresses.
+        let paddr = PhysAddr::from(vaddr.bits());
         // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
         unsafe { crate::cpu::percpu::current_ghcb().mmio_write(paddr, data) }
     }
@@ -448,14 +460,16 @@ impl SvsmPlatform for SnpPlatform {
     ///
     /// # Safety
     ///
-    /// Caller must ensure that `vaddr` points to a properly aligned memory location and the
-    /// memory accessed is part of a valid MMIO range.
+    /// Caller must ensure that `vaddr` encodes a valid physical MMIO address
+    /// and that data is properly aligned.
     unsafe fn mmio_read(
         &self,
         vaddr: VirtAddr,
         data: &mut [MaybeUninit<u8>],
     ) -> Result<(), SvsmError> {
-        let paddr = this_cpu().get_pgtable().phys_addr(vaddr)?;
+        // MMIO accesses go through the GHCB, so no virtual mapping is created;
+        // virtual addresses are physical addresses.
+        let paddr = PhysAddr::from(vaddr.bits());
         // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
         unsafe { crate::cpu::percpu::current_ghcb().mmio_read(paddr, data) }
     }

@@ -26,7 +26,7 @@ use virtio_drivers::transport::mmio::MmioTransport;
 
 pub struct VirtIOVsockDriver {
     device: SpinLock<VsockConnectionManager<SvsmHal, MmioTransport<'static>>>,
-    _mmio_space: GlobalRangeGuard,
+    _mmio_space: Option<GlobalRangeGuard>,
 }
 
 impl core::fmt::Debug for VirtIOVsockDriver {

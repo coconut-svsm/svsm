@@ -22,7 +22,7 @@ use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::hyperv_start_cpu;
 use crate::io::IOPort;
-use crate::mm::PerCPUMapping;
+use crate::mm::{GlobalRangeGuard, PerCPUMapping};
 use crate::platform::IrqGuard;
 use crate::tdx::apic::TDX_APIC_ACCESSOR;
 use crate::tdx::tdcall::{
@@ -265,6 +265,14 @@ impl SvsmPlatform for TdpPlatform {
         }
 
         Ok(())
+    }
+
+    fn virtio_mmio_init(
+        &self,
+        _paddr: PhysAddr,
+        _size: usize,
+    ) -> Result<(VirtAddr, Option<GlobalRangeGuard>), SvsmError> {
+        unimplemented!()
     }
 
     unsafe fn mmio_write(&self, _vaddr: VirtAddr, _data: &[u8]) -> Result<(), SvsmError> {
