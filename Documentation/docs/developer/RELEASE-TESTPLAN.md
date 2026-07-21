@@ -91,6 +91,7 @@ Run the formal verification included in the project.
 Commands:
 
 ```
+./scripts/vinstall.sh --use-prebuilt
 cd kernel
 cargo verify
 ```
