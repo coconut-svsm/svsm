@@ -51,13 +51,7 @@ fn lb_write(args: fmt::Arguments<'_>) {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct BufferLogger {}
-
-impl BufferLogger {
-    const fn new() -> Self {
-        Self {}
-    }
-}
+struct BufferLogger;
 
 impl log::Log for BufferLogger {
     fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
@@ -94,24 +88,21 @@ impl log::Log for BufferLogger {
     fn flush(&self) {}
 }
 
-static BUFFER_LOGGER: ImmutAfterInitCell<BufferLogger> = ImmutAfterInitCell::uninit();
+static BUFFER_LOGGER: BufferLogger = BufferLogger;
 
+/// Set the log buffer as logger. This function will panic if it is
+/// called more than once.
 pub fn install_buffer_logger() {
     let logbuf = SpinLock::new(LogBuffer::new());
-    let _res = LOGGER.init(logbuf).map_err(|_| SvsmError::LogError);
+    LOGGER
+        .init(logbuf)
+        .expect("Failed to initialize log buffer");
 
-    BUFFER_LOGGER
-        .init_from_ref(&BufferLogger::new())
-        .expect("log init error");
-
-    if let Err(e) = log::set_logger(&*BUFFER_LOGGER) {
-        // Failed to install the ConsoleLogger, presumably because something had
-        // installed another logger before. No logs will appear at the console.
-        // Print an error string.
-        _print(format_args!(
-            "ERROR: failed to install console logger: {e:?}"
-        ));
-    }
+    // As described in the `log` crate, this function can be called only once
+    // and successive calls will return an error. Panic on that error.
+    // Essentially, it handles initialization in the same way as `immut_after_init`,
+    // so we can avoid using it. Therefore, the logger will be immutable after initialization.
+    log::set_logger(&BUFFER_LOGGER).expect("Failed to install the BufferLogger");
 
     // Log levels are to be configured via the log's library feature configuration.
     log::set_max_level(log::LevelFilter::Trace);

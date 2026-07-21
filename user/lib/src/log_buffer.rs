@@ -7,6 +7,7 @@
 use crate::SpinLock;
 use crate::console_print;
 use core::fmt;
+use log::{Level, LevelFilter, Metadata, Record};
 use syscall::SysCallError;
 use syscall::write_log;
 
@@ -40,11 +41,60 @@ pub fn log_msg(args: fmt::Arguments<'_>) {
 
 #[macro_export]
 macro_rules! print {
-        ($($arg:tt)*) => (log_msg(format_args!($($arg)*)))
+        ($($arg:tt)*) => ($crate::log_msg(format_args!($($arg)*)))
 }
 
 #[macro_export]
 macro_rules! println {
-    () => (print!("\n"));
-    ($($arg:tt)*) => (print!("{}\n", format_args!($($arg)*)));
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+struct UserLogger;
+
+impl log::Log for UserLogger {
+    fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+        true
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+
+        // The logger being uninitialized is impossible, as that would mean it
+        // wouldn't have been registered with the log library.
+        // Log format/detail depends on the level.
+        match record.metadata().level() {
+            Level::Error | Level::Warn => {
+                println!("{}: {}", record.metadata().level().as_str(), record.args());
+            }
+            Level::Info => {
+                println!("{}", record.args());
+            }
+
+            Level::Debug | Level::Trace => {
+                println!(
+                    "[{}] {} {}",
+                    record.target(),
+                    record.metadata().level().as_str(),
+                    record.args()
+                );
+            }
+        };
+    }
+
+    fn flush(&self) {}
+}
+
+static LOGGER: UserLogger = UserLogger;
+
+/// Install the logger. This function is called automatically at start up
+/// in `declare_main` macro. Subsequent calls will cause a panic.
+pub fn install_logger() {
+    // This can be called a single time, additional calls will
+    // generate an error (internal behaviour of log crate)
+    log::set_logger(&LOGGER).expect("Logger already initialized");
+    // Log levels are to be configured via the log's library feature configuration.
+    log::set_max_level(LevelFilter::Trace);
 }
