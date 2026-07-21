@@ -191,3 +191,59 @@ git clone https://github.com/hpe-security-lab/svsm-vtpm-test.git
 cd svsm-vtpm-test
 cargo run
 ```
+
+### Attestation Tests
+
+Test SVSM attestation via KBS using both transport methods. See
+[ATTESTATION.md](ATTESTATION.md) for full details.
+
+If attestation fails, SVSM will panic and the VM will not boot.
+On success, `[SVSM] attestation successful` appears in the boot logs.
+
+#### Build SVSM and proxy
+
+```
+cargo xbuild -f attest,vsock,attest-serial,virtio-drivers configs/qemu-target.json
+make aproxy
+```
+
+#### Start the kbs-test server
+
+In a separate terminal:
+
+```
+SVSM=/path/to/svsm
+
+git clone https://github.com/coconut-svsm/kbs-test.git
+cd kbs-test
+MEASUREMENT="$($SVSM/bin/igvmmeasure --check-kvm $SVSM/bin/coconut-qemu.igvm measure -b)"
+cargo run -- --measurement $MEASUREMENT
+```
+
+#### vsock transport
+
+Start the proxy in another terminal:
+
+```
+bin/aproxy --protocol kbs --url http://0.0.0.0:8080 --vsock
+```
+
+Launch the guest:
+
+```
+./scripts/launch_guest.sh --vsock 3
+```
+
+#### Serial transport
+
+Start the proxy in another terminal:
+
+```
+bin/aproxy --protocol kbs --url http://0.0.0.0:8080 --unix /tmp/svsm-proxy.sock --force
+```
+
+Launch the guest:
+
+```
+./scripts/launch_guest.sh --aproxy /tmp/svsm-proxy.sock
+```
