@@ -12,8 +12,10 @@ use crate::task::{KernelThreadStartInfo, go_idle, set_affinity, start_kernel_thr
 use crate::vmm::{GuestExitMessage, enter_guest};
 
 use crate::protocols::attest::attest_protocol_request;
+use crate::protocols::ocp::ocp_protocol_request;
 use crate::protocols::{
     RequestOutput, RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
+    SVSM_OBSERVABILITY_CONFIGURATION_PROTOCOL,
 };
 #[cfg(all(feature = "uefivars", not(test)))]
 use crate::protocols::{SVSM_UEFI_MM_PROTOCOL, uefivars::uefi_mm_protocol_request};
@@ -84,6 +86,7 @@ fn request_loop_once(
         SVSM_APIC_PROTOCOL => apic_protocol_request(request, params),
         #[cfg(all(feature = "uefivars", not(test)))]
         SVSM_UEFI_MM_PROTOCOL => uefi_mm_protocol_request(request, params),
+        SVSM_OBSERVABILITY_CONFIGURATION_PROTOCOL => ocp_protocol_request(request, params),
         _ => Err(SvsmReqError::unsupported_protocol()),
     }
 }

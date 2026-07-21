@@ -8,6 +8,7 @@ pub mod apic;
 pub mod attest;
 pub mod core;
 pub mod errors;
+pub mod ocp;
 #[cfg(all(feature = "uefivars", not(test)))]
 pub mod uefivars;
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -21,6 +22,7 @@ pub const SVSM_ATTEST_PROTOCOL: u32 = 1;
 pub const SVSM_VTPM_PROTOCOL: u32 = 2;
 pub const SVSM_APIC_PROTOCOL: u32 = 3;
 pub const SVSM_UEFI_MM_PROTOCOL: u32 = 4;
+pub const SVSM_OBSERVABILITY_CONFIGURATION_PROTOCOL: u32 = 5;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RequestParams {
@@ -28,6 +30,7 @@ pub struct RequestParams {
     rcx: u64,
     rdx: u64,
     r8: u64,
+    r9: u64,
 }
 
 impl RequestParams {
@@ -37,6 +40,7 @@ impl RequestParams {
             rcx: vmsa.rcx,
             rdx: vmsa.rdx,
             r8: vmsa.r8,
+            r9: vmsa.r9,
         }
     }
 
@@ -44,6 +48,7 @@ impl RequestParams {
         res.rcx = Some(self.rcx);
         res.rdx = Some(self.rdx);
         res.r8 = Some(self.r8);
+        res.r9 = Some(self.r9);
     }
 }
 
@@ -54,6 +59,7 @@ pub struct RequestOutput {
     rcx: Option<u64>,
     rdx: Option<u64>,
     r8: Option<u64>,
+    r9: Option<u64>,
 }
 
 impl RequestOutput {
@@ -63,6 +69,7 @@ impl RequestOutput {
             rcx: None,
             rdx: None,
             r8: None,
+            r9: None,
         }
     }
 
@@ -86,6 +93,9 @@ impl RequestOutput {
         }
         if let Some(val) = self.r8 {
             vmsa.r8 = val;
+        }
+        if let Some(val) = self.r9 {
+            vmsa.r9 = val;
         }
     }
 }
