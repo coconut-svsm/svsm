@@ -4,6 +4,16 @@
 
 Here is the list of tests performed for each monthly development release.
 
+### Environment Setup
+
+Set the following environment variables before running the tests:
+
+```
+export FW_FILE=/usr/share/edk2/ovmf/OVMF.amdsev.fd
+export QEMU=/path/to/qemu-system-x86_64
+export IMAGE=/path/to/guest.qcow2
+```
+
 ### Build all targets
 
 Build all targets in the `configs/` directory.
@@ -16,17 +26,37 @@ cargo xbuild configs/*.json configs/test/*.json
 
 Build with debug flag enabled and boot VM under SEV-SNP to Linux prompt.
 
+```
+cargo xbuild configs/qemu-target.json
+./scripts/launch_guest.sh
+```
+
 ### Development Build + Native boot test
 
 Build with debug flag enabled and boot COCONUT-SVSM in a non-confidential VM.
+
+```
+cargo xbuild configs/qemu-target.json
+./scripts/launch_guest.sh --nocc
+```
 
 ### Release Build + SNP boot test
 
 Build with release flag enabled and boot VM under SEV-SNP to Linux prompt.
 
+```
+cargo xbuild --release configs/qemu-target.json
+./scripts/launch_guest.sh
+```
+
 ### Release Build + Native boot test
 
 Build with release flag enabled and boot COCONUT-SVSM in a non-confidential VM.
+
+```
+cargo xbuild --release configs/qemu-target.json
+./scripts/launch_guest.sh --nocc
+```
 
 ### Fuzzers
 
