@@ -64,35 +64,13 @@ Run all the fuzzers included in the project for an extended period of time.
 Given that failures in the past usually showed up in the first minute of
 fuzzing, for releases the fuzzer runs for a minimum of 10 minutes.
 
-
-#### Fuzzer: `alloc`
-
 ```
-RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz run alloc --strip-dead-code -- -max_total_time=600
-```
-
-#### Fuzzer: `bitmap_allocator`
-
-```
-RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz run bitmap_allocator --strip-dead-code -- -max_total_time=600
-```
-
-#### Fuzzer: `fs`
-
-```
-RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz run fs --strip-dead-code -- -max_total_time=600
-```
-
-#### Fuzzer: `insn`
-
-```
-RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz run insn --strip-dead-code -- -max_total_time=600
-```
-
-#### Fuzzer: `page_alloc`
-
-```
-RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz run page_alloc --strip-dead-code -- -max_total_time=600
+for target in $(cargo +nightly fuzz list); do
+    echo "== Fuzzing: $target =="
+    RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" \
+        cargo +nightly fuzz run $target --strip-dead-code -- -max_total_time=600 \
+        || { echo "FAILED: $target"; break; }
+done
 ```
 
 ### `make test`
