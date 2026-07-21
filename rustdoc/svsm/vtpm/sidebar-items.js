@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SvsmVTpmError"],"fn":["vtpm_get_locked","vtpm_get_manifest","vtpm_init"],"mod":["tcgtpm"],"static":["VTPM"],"trait":["TcgTpmSimulatorInterface","VtpmInterface","VtpmProtocolInterface"]};

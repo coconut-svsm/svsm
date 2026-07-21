@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["copy_cpuid_table_to","cpuid_table","dump_cpuid_table","filter_xsave_features","init_cpuid_table","register_cpuid_table"],"static":["CPUID_PAGE"],"struct":["CpuidLeaf"]};

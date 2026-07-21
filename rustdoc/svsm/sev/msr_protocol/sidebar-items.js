@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["GHCBMsr","GhcbMsrError"],"fn":["hypervisor_ghcb_features","init_hypervisor_ghcb_features","invalidate_page_msr","register_ghcb_gpa_msr","request_termination_msr","set_page_valid_status_msr","validate_page_msr","verify_ghcb_version"],"static":["GHCB_HV_FEATURES"],"struct":["GHCBHvFeatures"]};

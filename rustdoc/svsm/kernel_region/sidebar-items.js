@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["expand_kernel_heap","new_kernel_region"]};

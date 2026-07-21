@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["install_buffer_logger","lb_write","print_warning"],"static":["BUFFER_LOGGER","LOGGER"],"struct":["BufferLogger","LogBuffer"]};

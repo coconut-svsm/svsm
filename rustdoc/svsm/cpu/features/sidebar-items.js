@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["NUM_FEATS"],"enum":["CpuidReg","Feature"],"fn":["cpu_get_feat","cpu_has_feat"],"macro":["define_cpu_feats"],"static":["CPU_FEATS"],"struct":["CpuFeat"]};
