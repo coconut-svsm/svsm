@@ -17,6 +17,10 @@ CARGO ?= cargo
 CLIPPY_OPTIONS ?= --all-features
 CLIPPY_ARGS ?= -D warnings
 
+# Packages that require --target x86_64-unknown-none
+BARE_METAL_MEMBERS := svsm bldr stage1
+BARE_METAL_EXCLUDES := $(addprefix --exclude ,$(BARE_METAL_MEMBERS))
+
 ifdef CARGO_HACK
 CARGO = cargo hack
 CLIPPY_OPTIONS = --each-feature
@@ -162,11 +166,11 @@ endif
 	touch ${FS_BIN}
 
 clippy:
-	${CARGO} clippy ${CLIPPY_OPTIONS} --workspace --exclude svsm --exclude stage1 --exclude svsm-fuzz --exclude uapi_tester -- ${CLIPPY_ARGS}
+	${CARGO} clippy ${CLIPPY_OPTIONS} --workspace $(BARE_METAL_EXCLUDES) --exclude svsm-fuzz --exclude uapi_tester -- ${CLIPPY_ARGS}
 	RUSTFLAGS="--cfg fuzzing" ${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm-fuzz -- ${CLIPPY_ARGS}
-	${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm --target x86_64-unknown-none -- ${CLIPPY_ARGS}
-	${CARGO} clippy ${CLIPPY_OPTIONS} --package bldr --target x86_64-unknown-none -- ${CLIPPY_ARGS}
-	${CARGO} clippy ${CLIPPY_OPTIONS} --package stage1 --target x86_64-unknown-none -- ${CLIPPY_ARGS}
+	for pkg in $(BARE_METAL_MEMBERS); do \
+		${CARGO} clippy ${CLIPPY_OPTIONS} --package $$pkg --target x86_64-unknown-none -- ${CLIPPY_ARGS} || exit 1; \
+	done
 	${CARGO} clippy ${CLIPPY_OPTIONS} --workspace --tests --exclude svsm -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm --tests -- ${CLIPPY_ARGS}
 
