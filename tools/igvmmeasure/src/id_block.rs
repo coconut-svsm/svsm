@@ -7,8 +7,6 @@
 use std::error::Error;
 use std::fs;
 
-use base64::Engine;
-use base64::prelude::BASE64_STANDARD;
 use hex;
 use igvm::{IgvmDirectiveHeader, IgvmFile};
 use igvm_defs::{
@@ -76,10 +74,8 @@ impl SevIdBlockBuilder {
     fn parse_image_id(image_id: &str) -> Result<[u8; 16], Box<dyn Error>> {
         let bytes = if let Ok(bytes) = hex::decode(image_id) {
             bytes
-        } else if let Ok(bytes) = BASE64_STANDARD.decode(image_id) {
-            bytes
         } else {
-            return Err("Image ID must be a valid hex or base64 string.".into());
+            return Err("Image ID must be a valid hex string.".into());
         };
 
         bytes.try_into().map_err(|bytes: Vec<u8>| {

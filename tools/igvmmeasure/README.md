@@ -96,7 +96,7 @@ sign
 
       --image-id <IMAGE_ID>
           The image ID to store in the ID block (16 bytes). Accepts a
-          hex string or a base64 encoded string.
+          hex string.
 ```
 
 ## Example signing process
