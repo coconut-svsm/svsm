@@ -7,6 +7,9 @@
 use std::error::Error;
 use std::fs;
 
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
+use hex;
 use igvm::{IgvmDirectiveHeader, IgvmFile};
 use igvm_defs::{
     IGVM_VHS_SNP_ID_BLOCK_PUBLIC_KEY, IGVM_VHS_SNP_ID_BLOCK_SIGNATURE, IgvmPlatformType,
@@ -38,7 +41,11 @@ pub struct SevIdBlockBuilder {
 }
 
 impl SevIdBlockBuilder {
-    pub fn build(igvm: &IgvmFile, measure: &IgvmMeasure) -> Result<Self, Box<dyn Error>> {
+    pub fn build(
+        igvm: &IgvmFile,
+        measure: &IgvmMeasure,
+        image_id: &Option<String>,
+    ) -> Result<Self, Box<dyn Error>> {
         let compatibility_mask = get_compatibility_mask(igvm, IgvmPlatformType::SEV_SNP).ok_or(
             String::from("IGVM file is not compatible with the specified platform."),
         )?;
@@ -48,16 +55,35 @@ impl SevIdBlockBuilder {
         let mut ld = [0u8; 48];
         ld.copy_from_slice(measure.digest());
 
+        let image_id = match image_id {
+            Some(image_id) => Self::parse_image_id(image_id)?,
+            None => Default::default(),
+        };
+
         Ok(Self {
             compatibility_mask,
             id_block: SevIdBlock {
                 ld,
                 family_id: Default::default(),
-                image_id: Default::default(),
+                image_id,
                 version: 1,
                 guest_svn: Default::default(),
                 policy,
             },
+        })
+    }
+
+    fn parse_image_id(image_id: &str) -> Result<[u8; 16], Box<dyn Error>> {
+        let bytes = if let Ok(bytes) = hex::decode(image_id) {
+            bytes
+        } else if let Ok(bytes) = BASE64_STANDARD.decode(image_id) {
+            bytes
+        } else {
+            return Err("Image ID must be a valid hex or base64 string.".into());
+        };
+
+        bytes.try_into().map_err(|bytes: Vec<u8>| {
+            format!("Image ID must be exactly 16 bytes, got {}.", bytes.len()).into()
         })
     }
 

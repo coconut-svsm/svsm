@@ -93,6 +93,10 @@ sign
 
         The author key is option. See the SEV-SNP documentation for more
         information.
+
+      --image-id <IMAGE_ID>
+          The image ID to store in the ID block (16 bytes). Accepts a
+          hex string or a base64 encoded string.
 ```
 
 ## Example signing process

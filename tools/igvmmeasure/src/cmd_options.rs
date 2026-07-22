@@ -80,6 +80,11 @@ pub enum Commands {
         /// information.
         #[arg(long)]
         author_key: Option<String>,
+
+        /// The image ID to store in the ID block (16 bytes). Accepts a
+        /// hex string or a base64 encoded string.
+        #[arg(long)]
+        image_id: Option<String>,
     },
 }
 
