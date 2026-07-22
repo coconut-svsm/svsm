@@ -75,6 +75,11 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
         let page_base = phys_addr.page_align();
         let page_offset = phys_addr.page_offset();
 
+        if phys_addr.is_null() {
+            log::warn!("MmioSlots: MMIO device address is null");
+            continue;
+        }
+
         if !phys_addr.is_aligned_to::<VirtIOHeader>() {
             log::warn!("MmioSlots: MMIO device at {phys_addr:x} is not properly aligned");
             continue;
