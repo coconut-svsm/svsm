@@ -1236,6 +1236,7 @@ name = "igvmmeasure"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "hex",
  "igvm",
  "igvm_defs",
  "p384",

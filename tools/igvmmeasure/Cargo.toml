@@ -8,6 +8,7 @@ edition.workspace = true
 [target.'cfg(all(target_os = "linux"))'.dependencies]
 clap = { workspace = true, default-features = true, features = ["derive"] }
 sha2 = { workspace = true, default-features = true }
+hex = { version = "0.4.3", features = ["alloc"] }
 igvm.workspace = true
 igvm_defs.workspace = true
 p384.workspace = true
