@@ -178,7 +178,14 @@ mod tests {
 
         let remote_port = start_vsock_server_host();
 
-        VsockStream::connect(remote_port, VMADDR_CID_HOST).expect("connection failed");
+        let mut stream =
+            VsockStream::connect(remote_port, VMADDR_CID_HOST).expect("connection failed");
+
+        // Read the message to ensure the server has accepted the connection
+        // and closed its listening socket before we attempt the second connect.
+        let mut buffer = [0u8; 11];
+        stream.read(&mut buffer).expect("read failed");
+        drop(stream);
 
         VsockStream::connect(remote_port, VMADDR_CID_HOST)
             .expect_err("The second connection operation was expected to fail, but it succeeded.");
