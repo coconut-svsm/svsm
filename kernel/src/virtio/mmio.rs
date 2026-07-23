@@ -7,16 +7,15 @@
 extern crate alloc;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
+use fdt::Fdt;
 
 use virtio_drivers::transport::mmio::VirtIOHeader;
 use virtio_drivers::transport::{DeviceType, Transport, mmio::MmioTransport};
 
 use crate::address::{Address, PhysAddr};
 use crate::boot_params::BootParams;
-use crate::fw_cfg::FwCfg;
 use crate::mm::{GlobalRangeGuard, map_global_range_4k_shared, pagetable::PTEntryFlags};
-use crate::platform::SVSM_PLATFORM;
-use crate::types::PAGE_SIZE;
+use crate::types::SVSM_VMPL;
 
 #[derive(Debug)]
 pub struct MmioSlot {
@@ -39,9 +38,46 @@ pub struct MmioSlots {
     slots: Vec<MmioSlot>,
 }
 
+#[derive(Debug)]
+struct MmioRegion {
+    address: usize,
+    size: usize,
+}
+
+/// Parses the device tree to extract base addresses and size of virtio-MMIO
+/// devices. Devices without a `plane` property are always included; devices
+/// with a `plane` property are included only if it matches [`SVSM_VMPL`].
+fn get_virtio_mmio_addresses(device_tree: Fdt<'_>) -> Vec<MmioRegion> {
+    device_tree
+        .all_nodes()
+        .filter(|dev| {
+            dev.compatible()
+                .is_some_and(|c| c.all().any(|c| c == "virtio,mmio"))
+        })
+        .filter(|dev| {
+            let Some(prop) = dev.property("plane") else {
+                return true;
+            };
+            let Some(plane) = prop.as_usize() else {
+                log::warn!("virtio-mmio: malformed 'plane' property, skipping");
+                return false;
+            };
+            plane == SVSM_VMPL
+        })
+        .filter_map(|element| {
+            let reg_value = element.reg()?.next()?;
+
+            Some(MmioRegion {
+                address: reg_value.starting_address as usize,
+                size: reg_value.size?,
+            })
+        })
+        .collect()
+}
+
 /// Probes and enumerates all virtio-MMIO devices available in the system.
 ///
-/// This function queries the fw_cfg interface to discover virtio-MMIO device
+/// This function parses the device tree to discover virtio-MMIO device
 /// addresses and maps their MMIO regions.
 ///
 /// # Usage
@@ -54,24 +90,25 @@ pub struct MmioSlots {
 /// # Returns
 ///
 /// Returns an [`MmioSlots`] collection containing all discovered virtio-MMIO devices.
-/// Returns an empty collection if no devices are found or if the fw_cfg interface
+/// Returns an empty collection if no devices are found or if the device tree
 /// is unavailable.
 pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
-    // Virtio MMIO addresses are discovered via fw_cfg, so skip probing
+    // Virtio MMIO addresses are discovered via device tree, so skip probing
     // if it is not present.
-    if !boot_params.has_fw_cfg_port() {
-        return MmioSlots::default();
-    }
-
-    let cfg = FwCfg::new(SVSM_PLATFORM.get_io_port());
-    let Ok(dev) = cfg.get_virtio_mmio_addresses() else {
+    let Some(device_tree) = boot_params.get_device_tree() else {
         return MmioSlots::default();
     };
 
+    let Ok(parsed_dt) = Fdt::new(device_tree) else {
+        log::warn!("MmioSlots: Failed to parse device tree");
+        return MmioSlots::default();
+    };
+
+    let dev = get_virtio_mmio_addresses(parsed_dt);
     let mut slots = Vec::with_capacity(dev.len());
 
-    for addr in dev {
-        let phys_addr = PhysAddr::from(addr);
+    for slot in dev {
+        let phys_addr = PhysAddr::from(slot.address);
         let page_base = phys_addr.page_align();
         let page_offset = phys_addr.page_offset();
 
@@ -80,7 +117,7 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
             continue;
         }
 
-        if phys_addr.crosses_page(core::mem::size_of::<VirtIOHeader>()) {
+        if phys_addr.crosses_page(slot.size) {
             log::warn!("MmioSlots: MMIO device header at {phys_addr:x} crosses a page boundary");
             continue;
         }
@@ -88,8 +125,8 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
         // If multiple devices reside in the same page, each gets its own
         // mapping, which is slightly wasteful but avoids shared-ownership
         // complexity.
-        let Ok(mem) = map_global_range_4k_shared(page_base, PAGE_SIZE, PTEntryFlags::data()) else {
-            log::warn!("MmioSlots: Failed to map MMIO region at {addr:x}");
+        let Ok(mem) = map_global_range_4k_shared(page_base, slot.size, PTEntryFlags::data()) else {
+            log::warn!("MmioSlots: Failed to map MMIO region at {:x}", slot.address);
             continue;
         };
 
@@ -99,17 +136,17 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
         // SAFETY: The address is valid, mapped by `map_global_range_4k_shared`, and verified
         // to be VirtIOHeader-aligned by the guard above.
         // The memory region has the same lifetime of the MmioSlot structure which will be consumed by the driver.
-        // TODO: Currently the hypervisor does not advertise the size of the mmio space (header + config space).
-        //       The size will be provided by the device tree. For now, let's just make sure we don't go past
-        //       the boundaries of the allocated space.
-        let Ok(transport) = (unsafe { MmioTransport::new(header, mem.size() - page_offset) })
-        else {
+        let Ok(transport) = (unsafe { MmioTransport::new(header, slot.size) }) else {
             // Currently QEMU advertises _all_ slots, regardless they are empty or not.
-            log::debug!("MmioSlots: {addr:x} empty");
+            log::debug!("MmioSlots: {:x} empty", slot.address);
             continue;
         };
 
-        log::info!("MmioSlots: Found {:?} at {addr:x}", transport.device_type());
+        log::info!(
+            "MmioSlots: Found {:?} at {:x}",
+            transport.device_type(),
+            slot.address
+        );
 
         let slot_type = MmioSlot {
             transport,

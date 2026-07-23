@@ -58,7 +58,8 @@ pub static COMPATIBILITY_MASK: PlatformMask = PlatformMask::new();
 const IGVM_GENERAL_PARAMS_PA: u32 = 0;
 const IGVM_MEMORY_MAP_PA: u32 = 1;
 const IGVM_MADT_PA: u32 = 2;
-const IGVM_PARAMETER_COUNT: u32 = 3;
+const IGVM_DT_PA: u32 = 3;
+const IGVM_PARAMETER_COUNT: u32 = 4;
 
 const _: () = assert!(size_of::<BootParamBlock>() as u64 <= PAGE_SIZE_4K);
 const _: () = assert!(size_of::<InitialGuestContext>() as u64 <= PAGE_SIZE_4K);
@@ -230,11 +231,6 @@ impl IgvmBuilder {
             _ => 0,
         };
 
-        let has_fw_cfg_port = match self.options.hypervisor {
-            Hypervisor::Qemu | Hypervisor::Vanadium => 1,
-            _ => 0,
-        };
-
         let has_test_iorequests = match self.options.hypervisor {
             Hypervisor::Qemu => 1,
             _ => 0,
@@ -259,6 +255,14 @@ impl IgvmBuilder {
                 .gpa_map
                 .boot_param_layout
                 .get_param_size(BootParamType::Madt),
+            dt_offset: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_offset(BootParamType::DeviceTree),
+            dt_size: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_size(BootParamType::DeviceTree),
             guest_context_offset: self
                 .gpa_map
                 .boot_param_layout
@@ -271,7 +275,6 @@ impl IgvmBuilder {
             kernel_max_size: self.gpa_map.kernel_max_size,
             use_alternate_injection: u8::from(self.options.alt_injection),
             has_qemu_testdev,
-            has_fw_cfg_port,
             has_test_iorequests,
             _reserved: Default::default(),
         })
@@ -509,6 +512,19 @@ impl IgvmBuilder {
             parameter_area_index: IGVM_MADT_PA,
             initial_data: vec![],
         });
+
+        let dt_size = self
+            .gpa_map
+            .boot_param_layout
+            .get_param_size(BootParamType::DeviceTree);
+
+        if dt_size != 0 {
+            self.directives.push(IgvmDirectiveHeader::ParameterArea {
+                number_of_bytes: dt_size as u64,
+                parameter_area_index: IGVM_DT_PA,
+                initial_data: vec![],
+            });
+        }
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
             number_of_bytes: self
                 .gpa_map
@@ -532,6 +548,14 @@ impl IgvmBuilder {
                 parameter_area_index: IGVM_MADT_PA,
                 byte_offset: 0,
             }));
+
+        if dt_size != 0 {
+            self.directives
+                .push(IgvmDirectiveHeader::DeviceTree(IGVM_VHS_PARAMETER {
+                    parameter_area_index: IGVM_DT_PA,
+                    byte_offset: 0,
+                }));
+        }
         self.directives
             .push(IgvmDirectiveHeader::MemoryMap(IGVM_VHS_PARAMETER {
                 parameter_area_index: IGVM_MEMORY_MAP_PA,
@@ -557,6 +581,19 @@ impl IgvmBuilder {
                 parameter_area_index: IGVM_MADT_PA,
             },
         ));
+
+        if dt_size != 0 {
+            self.directives.push(IgvmDirectiveHeader::ParameterInsert(
+                IGVM_VHS_PARAMETER_INSERT {
+                    gpa: self
+                        .gpa_map
+                        .boot_param_layout
+                        .get_param_gpa(image_layout.boot_params_gpa, BootParamType::DeviceTree),
+                    compatibility_mask: COMPATIBILITY_MASK.get(),
+                    parameter_area_index: IGVM_DT_PA,
+                },
+            ));
+        }
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
             IGVM_VHS_PARAMETER_INSERT {
                 gpa: self

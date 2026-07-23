@@ -32,7 +32,6 @@ pub mod crypto;
 pub mod debug;
 pub mod error;
 pub mod fs;
-pub mod fw_cfg;
 pub mod greq;
 pub mod hyperv;
 pub mod insn_decode;

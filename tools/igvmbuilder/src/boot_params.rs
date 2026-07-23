@@ -11,6 +11,7 @@ pub enum BootParamType {
     General,
     MemoryMap,
     Madt,
+    DeviceTree,
     GuestContext,
 }
 
@@ -19,13 +20,15 @@ pub struct BootParamLayout {
     general_param_offset: u32,
     memory_map_offset: u32,
     madt_offset: u32,
+    device_tree_offset: u32,
+    device_tree_size: u32,
     guest_context_offset: u32,
     guest_context_size: u32,
     total_size: u32,
 }
 
 impl BootParamLayout {
-    pub fn new(include_guest_context: bool) -> Self {
+    pub fn new(include_guest_context: bool, include_device_tree: bool) -> Self {
         let page_size = PAGE_SIZE_4K as u32;
         // If a guest context is present, it is the first parameter page after
         // the parameter block header.  Otherwise, no space is consumed.
@@ -37,11 +40,18 @@ impl BootParamLayout {
         let general_param_offset = page_size + guest_context_size;
         let madt_offset = general_param_offset + page_size;
         let memory_map_offset = madt_offset + page_size;
-        let total_size = memory_map_offset + page_size;
+        let (device_tree_offset, device_tree_size) = if include_device_tree {
+            (memory_map_offset + page_size, page_size)
+        } else {
+            (0, 0)
+        };
+        let total_size = memory_map_offset + page_size + device_tree_size;
         Self {
             general_param_offset,
             memory_map_offset,
             madt_offset,
+            device_tree_offset,
+            device_tree_size,
             guest_context_offset,
             guest_context_size,
             total_size,
@@ -57,6 +67,7 @@ impl BootParamLayout {
             BootParamType::General => self.general_param_offset,
             BootParamType::MemoryMap => self.memory_map_offset,
             BootParamType::Madt => self.madt_offset,
+            BootParamType::DeviceTree => self.device_tree_offset,
             BootParamType::GuestContext => self.guest_context_offset,
         }
     }
@@ -64,6 +75,7 @@ impl BootParamLayout {
     pub fn get_param_size(&self, param_type: BootParamType) -> u32 {
         match param_type {
             BootParamType::GuestContext => self.guest_context_size,
+            BootParamType::DeviceTree => self.device_tree_size,
             _ => {
                 // All other parameter types are currently a single page.
                 PAGE_SIZE_4K as u32
