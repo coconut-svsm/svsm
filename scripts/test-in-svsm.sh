@@ -30,7 +30,41 @@ check_required_tools() {
 
 # Only the non-coreutils binaries are listed here, since coreutils is assumed to
 # be installed. Add any future non-coreutils dependencies to this list.
-check_required_tools ncat xxd ss
+check_required_tools python3 xxd
+
+# Start a vsock server on port $1 that accepts one connection, sends the port
+# to the guest pipe $2 when it's ready to accept the connection, and sends
+# "hello_world" message on the vsock connection.
+start_vsock_server() {
+    python3 -c '
+import socket, struct, sys
+port = int(sys.argv[1])
+pipe_in = sys.argv[2]
+with open(pipe_in, "wb") as pipe:
+    try:
+        sock = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)
+        sock.bind((socket.VMADDR_CID_ANY, port))
+        sock.listen(1)
+    except Exception as e:
+        print(f"vsock server failed: {e}", file=sys.stderr)
+        # use VMADDR_PORT_ANY to signal the guest that an error has occurred
+        pipe.write(struct.pack(">I", socket.VMADDR_PORT_ANY))
+        sys.exit(0)
+    # send the port to the guest as big-endian u32 so it knows where to connect
+    pipe.write(struct.pack(">I", port))
+conn, _ = sock.accept()
+sock.close()
+try:
+    conn.sendall(b"hello_world")
+    # virtio-vsock in SVSM does not handle half-duplex connections,
+    # so keep the connection open until the peer closes it.
+    while conn.recv(1024):
+        pass
+except OSError:
+    pass
+conn.close()
+' "$1" "$2"
+}
 
 test_io(){
     PIPE_IN=$1
@@ -56,27 +90,7 @@ test_io(){
             #                          to the guest and a "hello_world" string to SVSM
             #                          using the vsock socket
             "03")
-              # virtio-vsock in svsm does not handle half duplex connections.
-              # This is why we need to use `--no-shutdown` that prevents ncat from sending a
-              # partial shutdown after it has no more bytes to send.
-              echo -n "hello_world" | ncat --no-shutdown -l --vsock -p $TEST_VSOCK_PORT > /dev/null &
-              echo $! >> "$NCAT_PIDS_FILE"
-              NCAT_READY=false
-              # Wait until ncat is ready for listening
-              for _ in $(seq 1 50); do
-                  if ss --numeric --listening --no-header --vsock | grep -q ":$TEST_VSOCK_PORT"; then
-                      NCAT_READY=true
-                      break
-                  fi
-                  sleep 0.1
-              done
-              if [ "$NCAT_READY" = false ]; then
-                  echo "ncat failed to start listening on vsock port $TEST_VSOCK_PORT"
-                  # use VMADDR_PORT_ANY to signal the guest that an error has occurred
-                  TEST_VSOCK_PORT=$((0xFFFFFFFF))
-              fi
-              # write port number as a zero-padded 8-char hex string
-              printf '%08x' "$TEST_VSOCK_PORT" | xxd -p -r > "$PIPE_IN"
+              start_vsock_server "$TEST_VSOCK_PORT" "$PIPE_IN"
               ;;
             "")
                 # skip EOF
@@ -89,7 +103,6 @@ test_io(){
 }
 
 TEST_DIR=$(mktemp -d -q)
-NCAT_PIDS_FILE="$TEST_DIR/ncat_pids"
 mkfifo $TEST_DIR/pipe.in
 mkfifo $TEST_DIR/pipe.out
 # Create a raw disk image (512kB in size) for virtio-blk tests containing random data
@@ -158,14 +171,6 @@ else
 fi
 
 kill $TEST_IO_PID 2> /dev/null || true
-# Kill ncat processes spawned by test_io. NCAT_PID was set inside a
-# subshell (test_io runs in background) so it is not visible here.
-# Read the PIDs from the file instead.
-if [ -f "$NCAT_PIDS_FILE" ]; then
-    while read -r pid; do
-        kill "$pid" 2> /dev/null || true
-    done < "$NCAT_PIDS_FILE"
-fi
 rm -rf $TEST_DIR
 
 exit $exit_value
