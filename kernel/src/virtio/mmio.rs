@@ -117,7 +117,7 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
             continue;
         }
 
-        if phys_addr.crosses_page(core::mem::size_of::<VirtIOHeader>()) {
+        if phys_addr.crosses_page(slot.size) {
             log::warn!("MmioSlots: MMIO device header at {phys_addr:x} crosses a page boundary");
             continue;
         }
