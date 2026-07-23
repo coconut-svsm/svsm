@@ -4,6 +4,16 @@
 
 Here is the list of tests performed for each monthly development release.
 
+### Environment Setup
+
+Set the following environment variables before running the tests:
+
+```
+export FW_FILE=/usr/share/edk2/ovmf/OVMF.amdsev.fd
+export QEMU=/path/to/qemu-system-x86_64
+export IMAGE=/path/to/guest.qcow2
+```
+
 ### Build all targets
 
 Build all targets in the `configs/` directory.
@@ -16,17 +26,37 @@ cargo xbuild configs/*.json configs/test/*.json
 
 Build with debug flag enabled and boot VM under SEV-SNP to Linux prompt.
 
+```
+cargo xbuild configs/qemu-target.json
+./scripts/launch_guest.sh
+```
+
 ### Development Build + Native boot test
 
 Build with debug flag enabled and boot COCONUT-SVSM in a non-confidential VM.
+
+```
+cargo xbuild configs/qemu-target.json
+./scripts/launch_guest.sh --nocc
+```
 
 ### Release Build + SNP boot test
 
 Build with release flag enabled and boot VM under SEV-SNP to Linux prompt.
 
+```
+cargo xbuild --release configs/qemu-target.json
+./scripts/launch_guest.sh
+```
+
 ### Release Build + Native boot test
 
 Build with release flag enabled and boot COCONUT-SVSM in a non-confidential VM.
+
+```
+cargo xbuild --release configs/qemu-target.json
+./scripts/launch_guest.sh --nocc
+```
 
 ### Fuzzers
 
@@ -34,35 +64,13 @@ Run all the fuzzers included in the project for an extended period of time.
 Given that failures in the past usually showed up in the first minute of
 fuzzing, for releases the fuzzer runs for a minimum of 10 minutes.
 
-
-#### Fuzzer: `alloc`
-
 ```
-RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz run alloc --strip-dead-code -- -max_total_time=600
-```
-
-#### Fuzzer: `bitmap_allocator`
-
-```
-RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz run bitmap_allocator --strip-dead-code -- -max_total_time=600
-```
-
-#### Fuzzer: `fs`
-
-```
-RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz run fs --strip-dead-code -- -max_total_time=600
-```
-
-#### Fuzzer: `insn`
-
-```
-RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz run insn --strip-dead-code -- -max_total_time=600
-```
-
-#### Fuzzer: `page_alloc`
-
-```
-RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz run page_alloc --strip-dead-code -- -max_total_time=600
+for target in $(cargo +nightly fuzz list); do
+    echo "== Fuzzing: $target =="
+    RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" \
+        cargo +nightly fuzz run $target --strip-dead-code -- -max_total_time=600 \
+        || { echo "FAILED: $target"; break; }
+done
 ```
 
 ### `make test`
@@ -91,6 +99,7 @@ Run the formal verification included in the project.
 Commands:
 
 ```
+./scripts/vinstall.sh --use-prebuilt
 cd kernel
 cargo verify
 ```
@@ -100,7 +109,7 @@ cargo verify
 In the Linux guest OS, check that a TPM2 is available.
 
 ```
-systemd-analyze has-tpm2`
+systemd-analyze has-tpm2
 ```
 
 ### `make clippy CARGO_HACK=1`
