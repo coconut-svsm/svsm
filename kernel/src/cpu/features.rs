@@ -170,5 +170,8 @@ define_cpu_feats! {
     HyperV => CpuFeat::new_u32(0x40000001, CpuidReg::Eax, 0x31237648),
     PhysAddrSizes => CpuFeat::new_u32(0x80000008, CpuidReg::Eax, 0),
     InvlpgbMax => CpuFeat::new(0x80000008, CpuidReg::Edx, 0, u16::BITS as u8, 0),
+    Invlpgb => CpuFeat::new_bit(0x80000008, CpuidReg::Ebx, 3),
     Cbit => CpuFeat::new(0x8000001f, CpuidReg::Ebx, 0, 6, 0),
+    Pcid => CpuFeat::new_bit(0x0000_0001, CpuidReg::Ecx, 17),
+    Invpcid => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ebx, 24),
 }
