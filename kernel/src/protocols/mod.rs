@@ -8,6 +8,7 @@ pub mod apic;
 pub mod attest;
 pub mod core;
 pub mod errors;
+pub mod omp;
 #[cfg(feature = "uefivars")]
 pub mod uefivars;
 #[cfg(feature = "vtpm")]
@@ -21,7 +22,7 @@ pub const SVSM_ATTEST_PROTOCOL: u32 = 1;
 pub const SVSM_VTPM_PROTOCOL: u32 = 2;
 pub const SVSM_APIC_PROTOCOL: u32 = 3;
 pub const SVSM_UEFI_MM_PROTOCOL: u32 = 4;
-pub const SVSM_OBSERVABILITY_CONFIGURATION_PROTOCOL: u32 = 5;
+pub const SVSM_OBSERVABILITY_MANAGEMENT_PROTOCOL: u32 = 5;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RequestParams {
