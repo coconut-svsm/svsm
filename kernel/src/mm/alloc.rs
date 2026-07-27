@@ -1127,7 +1127,7 @@ impl HeapMemoryRegion {
     }
 
     /// Merges two pages of the same order into a new compound page.
-    #[verus_verify(spinoff_prover, rlimit(2))]
+    #[verus_verify(spinoff_prover, rlimit(3))]
     #[verus_spec(ret =>
         with Tracked(perm): Tracked<&mut PgUnitPerm<DeallocUnit>>, Tracked(p2): Tracked<PgUnitPerm<DeallocUnit>>
         requires
