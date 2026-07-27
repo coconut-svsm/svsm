@@ -9,7 +9,10 @@ extern crate alloc;
 use alloc::{sync::Arc, vec::Vec};
 
 use super::source::OcpObject;
-use crate::locking::RWLock;
+use crate::{
+    locking::RWLock,
+    protocols::{RequestParams, errors::SvsmReqError},
+};
 
 static OCP_OBJECTS: RWLock<Vec<Arc<dyn OcpObject>>> = RWLock::new(Vec::new());
 
@@ -27,4 +30,10 @@ pub fn get_ocp_object(name: &str) -> Option<Arc<dyn OcpObject>> {
         }
     }
     None
+}
+
+pub fn ocp_protocol_request(request: u32, _params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    match request {
+        _ => Err(SvsmReqError::unsupported_call()),
+    }
 }
