@@ -9,7 +9,7 @@ use userlib::*;
 declare_main!(main);
 
 fn main() -> u32 {
-    println!("COCONUT-SVSM init process starting");
+    log::info!("COCONUT-SVSM init process starting");
 
     0
 }
