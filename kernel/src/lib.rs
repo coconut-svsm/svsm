@@ -20,7 +20,7 @@
 )]
 
 pub mod acpi;
-pub mod address;
+pub use paging::address;
 #[cfg(feature = "attest")]
 pub mod attest;
 #[cfg(feature = "block")]
