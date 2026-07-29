@@ -5,18 +5,49 @@
 // Authors: Joerg Roedel <jroedel@suse.de>
 //          Carlos López <clopez@suse.de>
 
-use core::arch::x86_64::CpuidResult;
+use crate::platform::cpuid;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
+use cpufeature::CpuidFeature;
+use cpufeature::CpuidRegister;
+use cpufeature::leaves::{
+    CET_SS, INVLPGB_MAX_PAGES, PTE_CBIT_POS, X86_FEATURE_PGE, X86_FEATURE_SMAP, X86_FEATURE_SMEP,
+    X86_FEATURE_UMIP, X86_FEATURE_X2APIC, X86_FEATURE_XMM, X86_FEATURE_XSAVE, X86_FEATURE_XSAVEOPT,
+    XCR0_AVX, XCR0_SSE, XCR0_X87,
+};
 
-use crate::{platform::cpuid, utils::immut_after_init::ImmutAfterInitCell};
+/// CPUID leaf 0 — CPU vendor ID string (EBX/ECX/EDX).
+///
+/// Not exposed under that name in the cpufeature database (leaf 0 is
+/// `MAX_STD_LEAF` on EAX), so keep a local descriptor for vendor detection.
+pub const CPU_VENDOR_ID: CpuidFeature = CpuidFeature {
+    leaf: 0,
+    subleaf: 0,
+    register: CpuidRegister::Edx,
+    shift: 0,
+    width: 32,
+};
 
-/// The CPUID output register for a particular feature
-#[derive(Clone, Copy, Debug)]
-enum CpuidReg {
-    Eax,
-    Ebx,
-    Ecx,
-    Edx,
-}
+/// Raw EAX from CPUID leaf 0x8000_0008 — processor capacity parameters.
+/// Not in the cpufeature database as a full-register field (only the individual
+/// bit ranges are), so keep a local descriptor for the full EAX value.
+const PHYS_ADDR_SIZES: CpuidFeature = CpuidFeature {
+    leaf: 0x8000_0008,
+    subleaf: 0,
+    register: CpuidRegister::Eax,
+    shift: 0,
+    width: 32,
+};
+
+/// CPUID.4000_0001:EAX — Hyper-V interface signature ("Hv#1").
+const HYPERV_INTERFACE: CpuidFeature = CpuidFeature {
+    leaf: 0x4000_0001,
+    subleaf: 0,
+    register: CpuidRegister::Eax,
+    shift: 0,
+    width: 32,
+};
+
+const HYPERV_INTERFACE_SIGNATURE: u32 = 0x3123_7648;
 
 /// A discoverable CPU feature.
 ///
@@ -26,78 +57,35 @@ enum CpuidReg {
 struct CpuFeat {
     /// Raw value
     val: ImmutAfterInitCell<u32>,
-    /// CPUID leaf
-    leaf: u32,
-    /// CPUID subleaf
-    subleaf: u32,
-    /// CPUID output register
-    reg: CpuidReg,
-    /// Bitshift to apply to raw value
-    shift: u8,
-    /// Bitmask to apply to raw value
-    bitsize: u8,
+    /// Location of the feature within a CPUID leaf
+    feature: CpuidFeature,
     /// Expected value after shift + mask
     expected: u32,
 }
 
 impl CpuFeat {
-    /// Create a new feature, indicated by a single bit in the specified
-    /// register in the given CPUID leaf.
-    const fn new_bit(leaf: u32, reg: CpuidReg, bit: u8) -> Self {
-        Self::new(leaf, reg, bit, 1, 1)
+    /// Create a new feature, indicated by a single bit (expected value 1).
+    const fn new_bit(feature: CpuidFeature) -> Self {
+        Self::new(feature, 1)
     }
 
-    /// Create a new feature, indicated by the full value of a register
-    /// in the given CPUID leaf.
-    const fn new_u32(leaf: u32, reg: CpuidReg, expected: u32) -> Self {
-        Self::new(leaf, reg, 0, u32::BITS as u8, expected)
-    }
-
-    /// Create a new CPU feature, detected by querying the given CPUID leaf, and applying
-    /// a bitshift and bitmask on the specified output register to compare it to the given
-    /// expected value.
-    const fn new(leaf: u32, reg: CpuidReg, shift: u8, bitsize: u8, expected: u32) -> Self {
-        // This method is only called from const context, so these assertions have no
-        // runtime effect.
-        assert!((shift as u32) < u32::BITS);
-        assert!((bitsize as u32) <= u32::BITS);
+    /// Create a new CPU feature from a cpufeature descriptor, comparing the
+    /// extracted field against the given expected value.
+    const fn new(feature: CpuidFeature, expected: u32) -> Self {
         Self {
             val: ImmutAfterInitCell::uninit(),
-            leaf,
-            subleaf: 0,
-            reg,
-            shift,
-            bitsize,
+            feature,
             expected,
         }
-    }
-
-    /// Create a copy of the given CPU feature, but with the specified
-    /// subleaf.
-    const fn with_subfn(mut self, subleaf: u32) -> Self {
-        self.subleaf = subleaf;
-        self
-    }
-
-    /// Get the CPUID register that corresponds to this feature
-    const fn get_reg(&self, cpuid: &CpuidResult) -> u32 {
-        match self.reg {
-            CpuidReg::Eax => cpuid.eax,
-            CpuidReg::Ebx => cpuid.ebx,
-            CpuidReg::Ecx => cpuid.ecx,
-            CpuidReg::Edx => cpuid.edx,
-        }
-    }
-
-    const fn mask(&self) -> u32 {
-        ((1u64 << self.bitsize) - 1) as u32
     }
 
     fn get_or_init(&self) -> u32 {
         if let Ok(val) = self.val.try_get_inner() {
             return *val;
         }
-        let val = cpuid(self.leaf, self.subleaf).map_or(0, |c| self.get_reg(&c));
+        let val = cpuid(&self.feature).map_or(0, |c| {
+            self.feature.register.select(c.eax, c.ebx, c.ecx, c.edx)
+        });
         // If init() fails it means the cell got initialized by someone else
         // concurrently, which is always benign.
         let _ = self.val.init(val);
@@ -107,7 +95,8 @@ impl CpuFeat {
     /// Gets the raw value of this feature, lazily querying CPUID if
     /// the value is not cached from a previous query
     fn get(&self) -> u32 {
-        (self.get_or_init() >> self.shift) & self.mask()
+        let mask = ((1u64 << self.feature.width) as u32).wrapping_sub(1);
+        (self.get_or_init() >> self.feature.shift) & mask
     }
 
     /// Checks whether this feature is available by comparing it to
@@ -155,20 +144,20 @@ pub fn cpu_get_feat(feat: Feature) -> u32 {
 }
 
 define_cpu_feats! {
-    X2Apic => CpuFeat::new_bit(0x0000_0001, CpuidReg::Ecx, 21),
-    Xsave => CpuFeat::new_bit(0x0000_0001, CpuidReg::Ecx, 26),
-    Pge => CpuFeat::new_bit(0x0000_0001, CpuidReg::Edx, 13),
-    Sse1 => CpuFeat::new_bit(0x0000_0001, CpuidReg::Edx, 25),
-    Smep => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ebx, 7),
-    Smap => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ebx, 20),
-    Umip => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ecx, 2),
-    CetSS => CpuFeat::new_bit(0x0000_0007, CpuidReg::Ecx, 7),
-    Xcr0X87 => CpuFeat::new_bit(0x0000_000d, CpuidReg::Eax, 0),
-    Xcr0Sse => CpuFeat::new_bit(0x0000_000d, CpuidReg::Eax, 1),
-    Xcr0Avx => CpuFeat::new_bit(0x0000_000d, CpuidReg::Eax, 2),
-    XsaveOpt => CpuFeat::new_bit(0x0000_000d, CpuidReg::Eax, 0).with_subfn(1),
-    HyperV => CpuFeat::new_u32(0x40000001, CpuidReg::Eax, 0x31237648),
-    PhysAddrSizes => CpuFeat::new_u32(0x80000008, CpuidReg::Eax, 0),
-    InvlpgbMax => CpuFeat::new(0x80000008, CpuidReg::Edx, 0, u16::BITS as u8, 0),
-    Cbit => CpuFeat::new(0x8000001f, CpuidReg::Ebx, 0, 6, 0),
+    X2Apic => CpuFeat::new_bit(X86_FEATURE_X2APIC),
+    Xsave => CpuFeat::new_bit(X86_FEATURE_XSAVE),
+    Pge => CpuFeat::new_bit(X86_FEATURE_PGE),
+    Sse1 => CpuFeat::new_bit(X86_FEATURE_XMM),
+    Smep => CpuFeat::new_bit(X86_FEATURE_SMEP),
+    Smap => CpuFeat::new_bit(X86_FEATURE_SMAP),
+    Umip => CpuFeat::new_bit(X86_FEATURE_UMIP),
+    CetSS => CpuFeat::new_bit(CET_SS),
+    Xcr0X87 => CpuFeat::new_bit(XCR0_X87),
+    Xcr0Sse => CpuFeat::new_bit(XCR0_SSE),
+    Xcr0Avx => CpuFeat::new_bit(XCR0_AVX),
+    XsaveOpt => CpuFeat::new_bit(X86_FEATURE_XSAVEOPT),
+    HyperV => CpuFeat::new(HYPERV_INTERFACE, HYPERV_INTERFACE_SIGNATURE),
+    PhysAddrSizes => CpuFeat::new(PHYS_ADDR_SIZES, 0),
+    InvlpgbMax => CpuFeat::new(INVLPGB_MAX_PAGES, 0),
+    Cbit => CpuFeat::new(PTE_CBIT_POS, 0),
 }

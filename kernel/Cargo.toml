@@ -16,6 +16,7 @@ doctest = true
 bootdefs.workspace = true
 bootimg.workspace = true
 cpuarch.workspace = true
+cpufeature.workspace = true
 libaproxy = { workspace = true, optional = true }
 elf.workspace = true
 syscall.workspace = true

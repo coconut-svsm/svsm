@@ -12,11 +12,10 @@ use super::PageStateChangeOp;
 use super::PageValidateOp;
 use super::SvsmPlatform;
 use super::capabilities::Caps;
-use super::cpuid;
 use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::IrqGuard;
-use crate::cpu::features::{Feature, cpu_get_feat, cpu_has_feat};
+use crate::cpu::features::{CPU_VENDOR_ID, Feature, cpu_get_feat, cpu_has_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
@@ -38,6 +37,7 @@ use cpuarch::x86apic::IcrMessageType;
 use bootdefs::kernel_launch::BLDR_BASE;
 use core::arch::asm;
 use core::mem::MaybeUninit;
+use cpufeature::backend::CpuidBackend;
 use syscall::GlobalFeatureFlags;
 
 #[cfg(debug_assertions)]
@@ -58,6 +58,8 @@ impl NativePlatform {
         Self {}
     }
 }
+
+impl CpuidBackend for NativePlatform {}
 
 impl SvsmPlatform for NativePlatform {
     #[cfg(test)]
@@ -87,7 +89,7 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn get_cpu_vendor(&self) -> CpuVendor {
-        if let Some(r) = cpuid(0, 0) {
+        if let Some(r) = Self::cpuid(&CPU_VENDOR_ID) {
             match r.edx {
                 0x69746e65 => CpuVendor::AMD,
                 0x49656e69 => CpuVendor::Intel,

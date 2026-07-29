@@ -58,6 +58,8 @@ use core::arch::x86_64::CpuidResult;
 use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
+use cpufeature::CpuidFeature;
+use cpufeature::backend::CpuidBackend;
 use syscall::GlobalFeatureFlags;
 
 static GHCB_IO_DRIVER: GHCBIOPort = GHCBIOPort::new();
@@ -292,20 +294,6 @@ impl SvsmPlatform for SnpPlatform {
         })
     }
 
-    fn cpuid(eax: u32, ecx: u32) -> Option<CpuidResult>
-    where
-        Self: Sized,
-    {
-        // If this is an architectural CPUID leaf, then extract the result
-        // from the CPUID table.  Otherwise, request the value from the
-        // hypervisor.
-        if (eax >> 28) == 4 {
-            current_ghcb().cpuid(eax, ecx).ok()
-        } else {
-            cpuid_table(eax, ecx)
-        }
-    }
-
     unsafe fn write_host_msr(&self, msr: u32, value: u64) {
         current_ghcb()
             .wrmsr(msr, value)
@@ -469,6 +457,22 @@ impl SvsmPlatform for SnpPlatform {
         // outright prior to shutdown.
         raw_irqs_disable();
         request_termination_msr();
+    }
+}
+
+impl CpuidBackend for SnpPlatform {
+    fn cpuid(feature: &CpuidFeature) -> Option<CpuidResult>
+    where
+        Self: Sized,
+    {
+        // If this is an architectural CPUID leaf, then extract the result
+        // from the CPUID table.  Otherwise, request the value from the
+        // hypervisor.
+        if (feature.leaf >> 28) == 4 {
+            current_ghcb().cpuid(feature.leaf, feature.subleaf).ok()
+        } else {
+            cpuid_table(feature.leaf, feature.subleaf)
+        }
     }
 }
 

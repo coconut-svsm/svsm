@@ -19,9 +19,11 @@ use snp::SnpPlatform;
 use tdp::TdpPlatform;
 
 use core::arch::asm;
-use core::arch::x86_64::{__cpuid_count, CpuidResult};
+use core::arch::x86_64::CpuidResult;
 use core::fmt::Debug;
 use core::mem::MaybeUninit;
+use cpufeature::CpuidFeature;
+use cpufeature::backend::CpuidBackend;
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
@@ -180,20 +182,6 @@ pub trait SvsmPlatform: Sync {
         input_control: hyperv::HvHypercallInput,
         hypercall_pages: &hyperv::HypercallPagesGuard<'_>,
     ) -> hyperv::HvHypercallOutput;
-
-    /// Obtain CPUID using platform-specific tables.
-    fn cpuid(eax: u32, ecx: u32) -> Option<CpuidResult>
-    where
-        Self: Sized,
-    {
-        // Stable clippy and the nightly rust compiler disagree on the safety
-        // of __cpuid_count(). Silence both until this is resolved.
-        #[allow(unused_unsafe)]
-        // SAFETY: CPUID is always safe
-        unsafe {
-            Some(__cpuid_count(eax, ecx))
-        }
-    }
 
     /// Write a host-owned MSR.
     /// # Safety
@@ -364,8 +352,8 @@ macro_rules! platform_method {
 }
 
 #[inline]
-pub fn cpuid(leaf: u32, subleaf: u32) -> Option<CpuidResult> {
-    platform_method!(cpuid, leaf, subleaf)
+pub fn cpuid(feature: &CpuidFeature) -> Option<CpuidResult> {
+    platform_method!(cpuid, feature)
 }
 
 pub fn halt() {

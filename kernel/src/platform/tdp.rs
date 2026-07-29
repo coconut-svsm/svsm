@@ -37,6 +37,7 @@ use crate::utils::{MemoryRegion, is_aligned};
 use bootdefs::tdp_start::TdpStartContext;
 use core::mem::MaybeUninit;
 use core::sync::atomic::Ordering;
+use cpufeature::backend::CpuidBackend;
 use syscall::GlobalFeatureFlags;
 
 #[cfg(test)]
@@ -53,6 +54,8 @@ impl TdpPlatform {
         Self {}
     }
 }
+
+impl CpuidBackend for TdpPlatform {}
 
 impl SvsmPlatform for TdpPlatform {
     #[cfg(test)]
