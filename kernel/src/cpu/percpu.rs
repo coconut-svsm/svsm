@@ -32,7 +32,7 @@ use crate::locking::{
     WriteLockGuard, WriteLockGuardIrqSafe,
 };
 use crate::mm::page_visibility::SharedBox;
-use crate::mm::pagetable::{PTEntryFlags, PageTable};
+use crate::mm::pagetable::{PTEntryFlags, PageTable, SvsmMayNeedFlush};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
 use crate::mm::{
@@ -818,7 +818,7 @@ impl PerCpu {
 
     fn finish_page_table(&self) {
         let pgtable = self.get_pgtable();
-        self.vm_range.populate(pgtable);
+        self.vm_range.populate(pgtable).expect_no_flush();
     }
 
     pub fn dump_vm_ranges(&self) {
@@ -1199,8 +1199,8 @@ impl PerCpu {
     /// # Arguments
     ///
     /// * `pt` - The page table to populate the the PerCpu range into
-    pub fn populate_page_table(&self, pt: &mut PageTable) {
-        self.vm_range.populate(pt);
+    pub fn populate_page_table(&self, pt: &mut PageTable) -> SvsmMayNeedFlush {
+        self.vm_range.populate(pt)
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
