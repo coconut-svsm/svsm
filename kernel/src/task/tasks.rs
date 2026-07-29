@@ -461,7 +461,7 @@ impl Task {
     fn create_common(cpu: &PerCpu, args: CreateTaskArguments) -> Result<TaskPointer, SvsmError> {
         let mut pgtable = cpu.get_pgtable().clone_shared()?;
 
-        cpu.populate_page_table(&mut pgtable);
+        cpu.populate_page_table(&mut pgtable).expect_no_flush();
 
         let (task_mm, objtree) = {
             if let Some(ref parent_thread) = args.thread_of {
@@ -533,7 +533,10 @@ impl Task {
         let kernel_stack_mapping = TaskKernelMapping::new(task_mm.clone(), stack)?;
         let stack_start = kernel_stack_mapping.virt_addr();
 
-        task_mm.kernel_range().populate(&mut pgtable);
+        task_mm
+            .kernel_range()
+            .populate(&mut pgtable)
+            .expect_no_flush();
 
         // Remap at the per-task offset
         let bounds = MemoryRegion::new(stack_start + raw_bounds.start().into(), raw_bounds.len());

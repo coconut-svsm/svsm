@@ -123,7 +123,7 @@ pub broadcast proof fn reveal_pfn(addr: usize)
 
 #[verifier(inline)]
 pub open spec fn align_requires(align: InnerAddr) -> bool {
-    crate::utils::util::align_requires(align as u64)
+    crate::util::align_requires(align as u64)
 }
 
 pub open spec fn addr_align_up_requires<A: AddressSpec>(addr: A, align: InnerAddr) -> bool {
@@ -141,7 +141,7 @@ pub broadcast proof fn lemma_align_up_requires<A: AddressSpec>(
         #[trigger] addr_align_up_requires(addr, align),
         A::into.ensures((addr,), iaddr),
     ensures
-        #[trigger] crate::utils::util::align_up_requires((iaddr, align)),
+        #[trigger] crate::util::align_up_requires((iaddr, align)),
 {
     assert forall|one: usize|
         call_ensures(usize::from, (1u8,), one) implies #[trigger] align.sub_req(one) by {
@@ -157,7 +157,7 @@ pub open spec fn addr_align_up_impl<A: AddressSpec>(addr: A, align: InnerAddr, r
     &&& exists|iaddr: InnerAddr, iret: InnerAddr|
         {
             &&& A::into.ensures((addr,), iaddr)
-            &&& #[trigger] crate::utils::util::align_up_ens((iaddr, align), iret)
+            &&& #[trigger] crate::util::align_up_ens((iaddr, align), iret)
             &&& A::from.ensures((iret,), ret)
         }
 }
@@ -200,10 +200,10 @@ pub broadcast proof fn lemma_align_up_ens<A: AddressSpec>(addr: A, align: InnerA
     let (iaddr, iret) = choose|iaddr: InnerAddr, iret: InnerAddr|
         {
             &&& A::into.ensures((addr,), iaddr)
-            &&& crate::utils::util::align_up_ens((iaddr, align), iret)
+            &&& crate::util::align_up_ens((iaddr, align), iret)
             &&& A::from.ensures((iret,), ret)
         };
-    crate::utils::util::proof_align_up(iaddr, align, iret);
+    crate::util::proof_align_up(iaddr, align, iret);
 }
 
 } // verus!

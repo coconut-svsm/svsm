@@ -7,35 +7,8 @@
 use crate::error::SvsmError;
 use crate::sev::vmsa::VMPL_MAX;
 
-use verus_stub::*;
-#[cfg(verus_keep_ghost)]
-include!("types.verus.rs");
-
-verus! {
-
-pub const PAGE_SHIFT: usize = 12;
-pub const PAGE_SHIFT_2M: usize = 21;
-pub const PAGE_SHIFT_1G: usize = 30;
-pub const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
-pub const PAGE_SIZE_2M: usize = 1 << PAGE_SHIFT_2M;
-pub const PAGE_SIZE_1G: usize = 1 << PAGE_SHIFT_1G;
-
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PageSize {
-    Regular,
-    Huge,
-}
-
-impl From<PageSize> for usize {
-    fn from(psize: PageSize) -> Self {
-        match psize {
-            PageSize::Regular => PAGE_SIZE,
-            PageSize::Huge => PAGE_SIZE_2M,
-        }
-    }
-}
+// Re-export page types from paging crate
+pub use paging::sizes::*;
 
 #[expect(clippy::identity_op)]
 pub const SVSM_CS: u16 = 1 * 8;

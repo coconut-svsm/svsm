@@ -78,7 +78,7 @@ impl From<PageFrame> for EptMappingInfo {
         let (gpa, flags) = match frame {
             PageFrame::Size4K(gpa) => (u64::from(gpa), 0),
             PageFrame::Size2M(gpa) => (u64::from(gpa), 1),
-            PageFrame::Size1G(gpa) => (u64::from(gpa), 2),
+            PageFrame::Size1G(gpa, _) => (u64::from(gpa), 2),
         };
         Self::new()
             .with_flags(flags)
