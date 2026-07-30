@@ -645,6 +645,16 @@ fn checked_guest_region(start: PhysAddr, size: usize) -> Result<MemoryRegion<Phy
     Ok(region)
 }
 
+pub fn checked_guest_region_guard(
+    start: PhysAddr,
+    size: usize,
+) -> Result<PerCPUPageMappingGuard, SvsmError> {
+    let region = checked_guest_region(start, size)?;
+    let start = region.start().page_align();
+    let end = region.end().page_align_up();
+    PerCPUPageMappingGuard::create(start, end, 0)
+}
+
 /// Reads a slice of bytes from a physical address region outside of SVSM use.
 ///
 /// # Safety
