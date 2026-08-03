@@ -678,15 +678,12 @@ pub fn checked_guest_region_guard(
 /// If the physical address region is not allocated to the guest, it returns
 ///   `Err(SvsmError::InvalidAddress)`.
 pub unsafe fn copy_from_guest(src: PhysAddr, dst: *mut u8, size: usize) -> Result<(), SvsmError> {
-    let region = checked_guest_region(src, size)?;
-    let start = region.start().page_align();
+    let guard = checked_guest_region_guard(src, size, 0)?;
     // Offset will always be 0..4K, so this is infallible.
-    let offset = region.start().page_offset() as isize;
-    let end = region.end().page_align_up();
+    let offset = src.page_offset() as isize;
 
     // SAFETY: Only reads data from a region outside the SVSM.
     unsafe {
-        let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
         let source = with_exposed_provenance::<u8>(guard.virt_addr().bits()).offset(offset);
         copy_bytes(source, dst, size)
     }
@@ -729,15 +726,13 @@ pub fn copy_slice_from_guest(src: PhysAddr, dst: &mut [u8]) -> Result<(), SvsmEr
 ///   `Err(SvsmError::InvalidAddress)`.
 pub fn copy_slice_to_guest(src: &[u8], dst: PhysAddr) -> Result<(), SvsmError> {
     let size = src.len();
-    let region = checked_guest_region(dst, src.len())?;
-    let start = region.start().page_align();
-    // Offset will always be 0..4K so this is infallible.
-    let offset = region.start().page_offset() as isize;
-    let end = region.end().page_align_up();
+
+    let guard = checked_guest_region_guard(dst, size, 0)?;
+    // Offset will always be 0..4K, so this is infallible.
+    let offset = dst.page_offset() as isize;
 
     // SAFETY: Only reads data from a region outside the SVSM.
     unsafe {
-        let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
         let destination =
             with_exposed_provenance_mut::<u8>(guard.virt_addr().bits()).offset(offset);
         copy_bytes(src.as_ptr(), destination, size)
