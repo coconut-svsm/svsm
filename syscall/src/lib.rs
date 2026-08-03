@@ -9,16 +9,14 @@ mod call;
 mod class0;
 mod class1;
 mod class3;
-mod console;
 mod def;
-mod log_buffer;
+mod logging;
 mod obj;
 
 pub use call::SysCallError;
 pub use class0::*;
 pub use class1::*;
 pub use class3::*;
-pub use console::*;
 pub use def::*;
-pub use log_buffer::*;
+pub use logging::*;
 pub use obj::*;

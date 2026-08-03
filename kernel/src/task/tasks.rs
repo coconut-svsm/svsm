@@ -1045,13 +1045,9 @@ impl Task {
             &self.name
         };
 
-        let (fh_console, fh_log) = stdout_open(name);
+        let fh_log = stdout_open(name);
 
-        let oh_console = ObjHandle::new(0);
-        self.add_obj_at(fh_console, oh_console)
-            .expect("Failed to attach console");
-
-        let oh_log = ObjHandle::new(1);
+        let oh_log = ObjHandle::new(0);
         self.add_obj_at(fh_log, oh_log)
             .expect("Failed to attach log");
     }
