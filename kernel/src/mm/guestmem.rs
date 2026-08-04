@@ -474,18 +474,19 @@ pub struct UserPtr<T> {
 }
 
 impl<T> UserPtr<T> {
+    /// Constructs a `UserPtr` pointing to `v`, checking that the entire object
+    /// falls within userspace.
     #[inline]
-    pub fn new(v: VirtAddr) -> Self {
-        Self {
-            ptr: TryPtr::new(v),
+    pub fn new(v: VirtAddr) -> Result<Self, SvsmError> {
+        let userspace = MemoryRegion::from_addresses(USER_MEM_START, USER_MEM_END);
+        let region =
+            MemoryRegion::checked_new(v, size_of::<T>()).ok_or(SvsmError::InvalidAddress)?;
+        if !userspace.contains_region(&region) {
+            return Err(SvsmError::InvalidAddress);
         }
-    }
-
-    fn check_bounds(&self) -> bool {
-        let v = VirtAddr::from(self.ptr.ptr);
-
-        (USER_MEM_START..USER_MEM_END).contains(&v)
-            && (USER_MEM_START..USER_MEM_END).contains(&(v + size_of::<T>()))
+        Ok(Self {
+            ptr: TryPtr::new(v),
+        })
     }
 
     #[inline]
@@ -493,11 +494,8 @@ impl<T> UserPtr<T> {
     where
         T: FromBytes,
     {
-        if !self.check_bounds() {
-            return Err(SvsmError::InvalidAddress);
-        }
         let _guard = UserAccessGuard::new();
-        // SAFETY: Target pointer is guaranteed to point to user memory.
+        // SAFETY: bounds were verified at construction.
         unsafe { self.ptr.read() }
     }
 
@@ -508,11 +506,8 @@ impl<T> UserPtr<T> {
     where
         T: TryFromBytes,
     {
-        if !self.check_bounds() {
-            return Err(SvsmError::InvalidAddress);
-        }
         let _guard = UserAccessGuard::new();
-        // SAFETY: Target pointer is guaranteed to point to user memory.
+        // SAFETY: bounds were verified at construction.
         unsafe { self.ptr.try_read() }
     }
 
@@ -522,26 +517,20 @@ impl<T> UserPtr<T> {
         B: Borrow<T>,
         T: IntoBytes,
     {
-        if !self.check_bounds() {
-            return Err(SvsmError::InvalidAddress);
-        }
         let _guard = UserAccessGuard::new();
-        // SAFETY: Target pointer is guaranteed to point to user memory.
+        // SAFETY: bounds were verified at construction.
         unsafe { self.ptr.write(buf) }
     }
 
     #[inline]
-    pub const fn cast<N>(&self) -> UserPtr<N> {
-        UserPtr {
-            ptr: self.ptr.cast(),
-        }
+    pub fn cast<N>(&self) -> Result<UserPtr<N>, SvsmError> {
+        let vaddr = VirtAddr::from(self.ptr.ptr);
+        UserPtr::new(vaddr)
     }
 
     #[inline]
-    pub fn offset(&self, count: isize) -> UserPtr<T> {
-        UserPtr {
-            ptr: self.ptr.offset(count),
-        }
+    pub fn offset(&self, count: isize) -> Result<Self, SvsmError> {
+        Self::new(VirtAddr::from(self.ptr.offset(count).ptr))
     }
 }
 
@@ -552,7 +541,7 @@ impl UserPtr<c_char> {
         let mut buffer = Vec::new();
 
         for offset in 0..PATH_MAX {
-            let current_ptr = self.offset(offset as isize);
+            let current_ptr = self.offset(offset as isize)?;
             let char_result = current_ptr.read()?;
             match char_result {
                 0 => return String::from_utf8(buffer).map_err(|_| SvsmError::InvalidUtf8),
