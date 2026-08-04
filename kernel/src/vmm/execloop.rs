@@ -7,7 +7,7 @@
 use super::GuestExitMessage;
 use crate::cpu::percpu::{GuestVmsaRef, this_cpu};
 use crate::cpu::{IrqGuard, flush_tlb_global_sync};
-use crate::mm::GuestPtr;
+use crate::mm::TryPtr;
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::{RequestOutput, RequestParams};
 use crate::requests::SvsmCaa;
@@ -20,7 +20,7 @@ use cpuarch::vmsa::GuestVMExit;
 
 fn get_and_clear_caa_request_flag(vmsa_ref: &GuestVmsaRef) -> Result<bool, SvsmReqError> {
     if let Some(caa) = vmsa_ref.caa() {
-        let calling_area = GuestPtr::<SvsmCaa>::from(caa);
+        let calling_area = TryPtr::<SvsmCaa>::from(caa);
         // SAFETY: guest vmsa and ca are always validated before beeing updated
         // (core_remap_ca(), core_create_vcpu() or prepare_fw_launch()) so
         // they're safe to use.

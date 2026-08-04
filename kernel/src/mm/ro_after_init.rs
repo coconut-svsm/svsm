@@ -62,24 +62,24 @@ mod tests {
     #[cfg(test_in_svsm)]
     fn test_make_ro_after_init() {
         use super::*;
-        use crate::mm::GuestPtr;
+        use crate::mm::TryPtr;
 
         // SAFETY: reading at ro_after_init_start doesn't break memory safety.
         let res_r =
-            unsafe { GuestPtr::<u8>::new(VirtAddr::from(&raw const ro_after_init_start)).read() };
+            unsafe { TryPtr::<u8>::new(VirtAddr::from(&raw const ro_after_init_start)).read() };
         assert!(res_r.is_ok());
 
         make_ro_after_init().expect("failed to make ro_after_init section read-only");
 
         // SAFETY: writing to ro_after_init_start is supposed to fail preventing memory safety break.
         let res_w1 = unsafe {
-            GuestPtr::<u8>::new(VirtAddr::from(&raw const ro_after_init_start)).write(0x41u8)
+            TryPtr::<u8>::new(VirtAddr::from(&raw const ro_after_init_start)).write(0x41u8)
         };
         assert!(res_w1.is_err());
 
         // SAFETY: writing up to ro_after_init_end is supposed to fail preventing memory safety break.
         let res_w2 = unsafe {
-            GuestPtr::<u8>::new(VirtAddr::from(&raw const ro_after_init_end).const_sub(1))
+            TryPtr::<u8>::new(VirtAddr::from(&raw const ro_after_init_end).const_sub(1))
                 .write(0x41u8)
         };
         assert!(res_w2.is_err());

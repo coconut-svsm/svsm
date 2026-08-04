@@ -10,7 +10,7 @@ use crate::acpi::tables::{ACPICPUInfo, ACPITable, load_acpi_cpu_info};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::alloc::free_multiple_pages;
-use crate::mm::{GuestPtr, PAGE_SIZE, PerCPUPageMappingGuard};
+use crate::mm::{PAGE_SIZE, PerCPUPageMappingGuard, TryPtr};
 use crate::platform::{PageStateChangeOp, PageValidateOp, SVSM_PLATFORM, SevFWMetaData};
 use crate::utils::{MemoryRegion, page_align_up, round_to_pages};
 use alloc::vec::Vec;
@@ -245,7 +245,7 @@ impl BootParams<'_> {
         }
 
         // Generate a guest pointer range to hold the memory map.
-        let mem_map = GuestPtr::new(mem_map_va + mem_map_gpa.page_offset());
+        let mem_map = TryPtr::new(mem_map_va + mem_map_gpa.page_offset());
 
         for (i, entry) in map.iter().enumerate() {
             // SAFETY: mem_map_va points to newly mapped memory, whose physical

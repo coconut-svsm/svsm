@@ -10,8 +10,8 @@ use crate::cpu::{flush_tlb_global_sync, flush_tlb_global_sync_page};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
-use crate::mm::{GuestPtr, valid_phys_region, writable_phys_addr};
 use crate::mm::{PerCPUMapping, PerCPUPageMappingGuard};
+use crate::mm::{TryPtr, valid_phys_region, writable_phys_addr};
 #[cfg(all(feature = "uefivars", not(test)))]
 use crate::protocols::SVSM_UEFI_MM_PROTOCOL;
 use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
@@ -419,7 +419,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let start = guard.virt_addr();
 
-    let guest_page = GuestPtr::<PValidateRequest>::new(start + offset);
+    let guest_page = TryPtr::<PValidateRequest>::new(start + offset);
     // SAFETY: start is a new mapped page address, thus valid.
     // offset can't exceed a page size, so guest_page belongs to mapped memory.
     let mut request = unsafe { guest_page.read()? };
@@ -493,7 +493,7 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let mapping_guard = PerCPUPageMappingGuard::create_4k(gpa)?;
     let vaddr = mapping_guard.virt_addr();
 
-    let pending = GuestPtr::<SvsmCaa>::new(vaddr);
+    let pending = TryPtr::<SvsmCaa>::new(vaddr);
     // SAFETY: pending points to a new allocated page
     unsafe { pending.write(SvsmCaa::zeroed())? };
 

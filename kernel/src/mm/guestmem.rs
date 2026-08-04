@@ -314,12 +314,13 @@ unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
     unsafe { copy_bytes(src.cast(), dst.cast(), size) }
 }
 
+/// A pointer wrapper that safely handles faults when accessing memory.
 #[derive(Debug)]
-pub struct GuestPtr<T> {
+pub struct TryPtr<T> {
     ptr: *mut T,
 }
 
-impl<T> GuestPtr<T> {
+impl<T> TryPtr<T> {
     #[inline]
     pub fn new(v: VirtAddr) -> Self {
         Self {
@@ -340,7 +341,7 @@ impl<T> GuestPtr<T> {
     ///
     /// # Safety
     ///
-    /// See safety considerations for [`GuestPtr::read()`].
+    /// See safety considerations for [`TryPtr::read()`].
     ///
     /// # Errors
     ///
@@ -431,38 +432,36 @@ impl<T> GuestPtr<T> {
     }
 
     #[inline]
-    pub const fn cast<N>(&self) -> GuestPtr<N> {
-        GuestPtr::from_ptr(self.ptr.cast())
+    pub const fn cast<N>(&self) -> TryPtr<N> {
+        TryPtr::from_ptr(self.ptr.cast())
     }
 
     #[inline]
     pub fn offset(&self, count: isize) -> Self {
-        // SAFETY: Safe when self.ptr does not point to SVSM memory because
-        // then the write can not harm memory safety.
-        GuestPtr::from_ptr(self.ptr.wrapping_offset(count))
+        TryPtr::from_ptr(self.ptr.wrapping_offset(count))
     }
 }
 
-impl<T> From<NonNull<T>> for GuestPtr<T> {
+impl<T> From<NonNull<T>> for TryPtr<T> {
     fn from(value: NonNull<T>) -> Self {
         Self::from_ptr(value.as_ptr())
     }
 }
 
-impl<T: FromBytes + IntoBytes> InsnMachineMem<T> for GuestPtr<T> {
+impl<T: FromBytes + IntoBytes> InsnMachineMem<T> for TryPtr<T> {
     /// # Safety
     ///
-    /// See the GuestPtr's read() method documentation for safety requirements.
+    /// See the TryPtr's read() method documentation for safety requirements.
     unsafe fn mem_read(&self) -> Result<T, InsnError> {
-        // SAFETY: Safe when GuestPtr::read safety requirements are met.
+        // SAFETY: Safe when TryPtr::read safety requirements are met.
         unsafe { self.read().map_err(|_| InsnError::MemRead) }
     }
 
     /// # Safety
     ///
-    /// See the GuestPtr's write() method documentation for safety requirements.
+    /// See the TryPtr's write() method documentation for safety requirements.
     unsafe fn mem_write(&mut self, data: T) -> Result<(), InsnError> {
-        // SAFETY: Safe when GuestPtr::write safety requirements are met.
+        // SAFETY: Safe when TryPtr::write safety requirements are met.
         unsafe { self.write(data).map_err(|_| InsnError::MemWrite) }
     }
 }
@@ -484,19 +483,19 @@ impl Drop for UserAccessGuard {
 
 #[derive(Debug)]
 pub struct UserPtr<T> {
-    guest_ptr: GuestPtr<T>,
+    ptr: TryPtr<T>,
 }
 
 impl<T> UserPtr<T> {
     #[inline]
     pub fn new(v: VirtAddr) -> Self {
         Self {
-            guest_ptr: GuestPtr::new(v),
+            ptr: TryPtr::new(v),
         }
     }
 
     fn check_bounds(&self) -> bool {
-        let v = VirtAddr::from(self.guest_ptr.ptr);
+        let v = VirtAddr::from(self.ptr.ptr);
 
         (USER_MEM_START..USER_MEM_END).contains(&v)
             && (USER_MEM_START..USER_MEM_END).contains(&(v + size_of::<T>()))
@@ -512,11 +511,11 @@ impl<T> UserPtr<T> {
         }
         let _guard = UserAccessGuard::new();
         // SAFETY: Target pointer is guaranteed to point to user memory.
-        unsafe { self.guest_ptr.read() }
+        unsafe { self.ptr.read() }
     }
 
     /// Attempts to read the `T` behind the pointer, verifying it has a valid
-    /// representation in the process (see [`GuestPtr::try_read`]).
+    /// representation in the process (see [`TryPtr::try_read`]).
     #[inline]
     pub fn try_read(&self) -> Result<T, SvsmError>
     where
@@ -527,7 +526,7 @@ impl<T> UserPtr<T> {
         }
         let _guard = UserAccessGuard::new();
         // SAFETY: Target pointer is guaranteed to point to user memory.
-        unsafe { self.guest_ptr.try_read() }
+        unsafe { self.ptr.try_read() }
     }
 
     #[inline]
@@ -548,20 +547,20 @@ impl<T> UserPtr<T> {
         }
         let _guard = UserAccessGuard::new();
         // SAFETY: Target pointer is guaranteed to point to user memory.
-        unsafe { self.guest_ptr.write_ref(buf) }
+        unsafe { self.ptr.write_ref(buf) }
     }
 
     #[inline]
     pub const fn cast<N>(&self) -> UserPtr<N> {
         UserPtr {
-            guest_ptr: self.guest_ptr.cast(),
+            ptr: self.ptr.cast(),
         }
     }
 
     #[inline]
     pub fn offset(&self, count: isize) -> UserPtr<T> {
         UserPtr {
-            guest_ptr: self.guest_ptr.offset(count),
+            ptr: self.ptr.offset(count),
         }
     }
 }
@@ -844,7 +843,7 @@ mod tests {
     fn test_read_15_bytes_valid_address() {
         let test_buffer = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
         let test_addr = VirtAddr::from(test_buffer.as_ptr());
-        let ptr: GuestPtr<[u8; 15]> = GuestPtr::new(test_addr);
+        let ptr: TryPtr<[u8; 15]> = TryPtr::new(test_addr);
         // SAFETY: ptr points to test_buffer's virtual address
         let result = unsafe { ptr.read().unwrap() };
 
@@ -855,7 +854,7 @@ mod tests {
     #[cfg_attr(miri, ignore = "inline assembly")]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_read_invalid_address() {
-        let ptr: GuestPtr<u8> = GuestPtr::new(VirtAddr::new(0xDEAD_BEEF));
+        let ptr: TryPtr<u8> = TryPtr::new(VirtAddr::new(0xDEAD_BEEF));
         // SAFETY: ptr points to an invalid virtual address (0xDEADBEEF is
         // unmapped). ptr.read() will return an error but this is expected.
         let err = unsafe { ptr.read() };
@@ -867,7 +866,7 @@ mod tests {
     fn test_read_valid_bit_pattern() {
         // Valid bit pattern for `bool`
         let mut buffer = [1u8];
-        let ptr = GuestPtr::<bool>::from_ptr(buffer.as_mut_ptr().cast());
+        let ptr = TryPtr::<bool>::from_ptr(buffer.as_mut_ptr().cast());
         // SAFETY: the pointer points to a buffer on the stack with a size of 1
         // which is also the size of a bool, so we cannot read, out of bounds.
         let val = unsafe { ptr.try_read() };
@@ -879,7 +878,7 @@ mod tests {
     fn test_read_invalid_bit_pattern() {
         // Invalid bit pattern for `bool`
         let mut buffer = [2u8];
-        let ptr = GuestPtr::<bool>::from_ptr(buffer.as_mut_ptr().cast());
+        let ptr = TryPtr::<bool>::from_ptr(buffer.as_mut_ptr().cast());
         // SAFETY: the pointer points to a buffer on the stack with a size of 1
         // which is also the size of a bool, so we cannot read, out of bounds.
         let val = unsafe { ptr.try_read() };
