@@ -191,7 +191,7 @@ fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Option<DecodedInsnCtx>, S
     // TODO: the instruction fetch will likely to be handled differently when
     // #VC exception will be raised from CPL > 0.
 
-    let rip: TryPtr<[u8; MAX_INSN_SIZE]> = TryPtr::new(VirtAddr::from(ctx.frame.rip));
+    let rip = TryPtr::<[u8; MAX_INSN_SIZE]>::new(VirtAddr::from(ctx.frame.rip));
 
     // rip and rip+15 addresses should belong to a mapped page.
     // To ensure this, we rely on TryPtr::read() that uses the exception table

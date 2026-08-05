@@ -245,7 +245,8 @@ impl BootParams<'_> {
         }
 
         // Generate a guest pointer range to hold the memory map.
-        let mem_map = TryPtr::new(mem_map_va + mem_map_gpa.page_offset());
+        let mem_map =
+            TryPtr::<IGVM_VHS_MEMORY_MAP_ENTRY>::new(mem_map_va + mem_map_gpa.page_offset());
 
         for (i, entry) in map.iter().enumerate() {
             // SAFETY: mem_map_va points to newly mapped memory, whose physical
