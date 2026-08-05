@@ -185,9 +185,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
 /// safe-mmio backend implementation
 struct SvsmMmio;
 
-// SAFETY: Each method performs a single MMIO access of the indicated width
-// via the platform's GHCB-based MMIO helpers.
-unsafe impl safe_mmio::custom_mmio::MmioOps for SvsmMmio {
+impl safe_mmio::MmioOps for SvsmMmio {
     unsafe fn read_u8(src: *const u8) -> u8 {
         let mut data = MaybeUninit::<u8>::uninit();
         // SAFETY: src is a valid, aligned MMIO pointer per MmioOps contract.
