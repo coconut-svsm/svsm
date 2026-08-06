@@ -41,6 +41,8 @@ pub mod kernel_region;
 pub mod locking;
 pub mod log_buffer;
 pub mod mm;
+#[cfg(feature = "ocp-test")]
+pub mod ocp_test;
 pub mod platform;
 pub mod protocols;
 pub mod requests;
