@@ -140,7 +140,7 @@ impl AttestationProtocol for KbsProtocol {
             .cli
             .get(format!("{}/kbs/v0/resource/default/sample/test", http.url))
             .send()
-            .context("unable to POST to KBS /attest endpoint")?;
+            .context("unable to GET KBS /resource endpoint")?;
 
         // Unsuccessful attempt at retrieving secret.
         if http_resp.status() != StatusCode::OK {
