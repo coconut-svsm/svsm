@@ -422,3 +422,75 @@ fn hash(
 
     try_to_vec(&sha.finalize()).or(Err(AttestationError::VecAlloc))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+    use cocoon_tpm_tpm2_interface::{Tpm2bEccParameter, TpmBuffer};
+
+    fn make_ecc_point(x: &[u8], y: &[u8]) -> TpmsEccPoint<'static> {
+        TpmsEccPoint {
+            x: Tpm2bEccParameter {
+                buffer: TpmBuffer::Owned(x.to_vec()),
+            },
+            y: Tpm2bEccParameter {
+                buffer: TpmBuffer::Owned(y.to_vec()),
+            },
+        }
+    }
+
+    mod negotiation_hash {
+        use super::*;
+
+        // The challenge size is server-dictated; 48 is an arbitrary choice.
+        const CHALLENGE_LEN: usize = 48;
+        // P-521 coordinate size.
+        const COORD_LEN: usize = 66;
+
+        /// hash() feeds NegotiationParams into SHA-512 in the order they
+        /// appear in `response.params`. Verify that [Challenge, EcPublicKeyBytes]
+        /// and [EcPublicKeyBytes, Challenge] each produce the correct digest and
+        /// that the two digests differ — the server-negotiated ordering must
+        /// affect the resulting attestation evidence.
+        #[test]
+        fn hash_respects_param_ordering() {
+            let challenge = vec![0xdd; CHALLENGE_LEN];
+            let x = vec![0x10; COORD_LEN];
+            let y = vec![0x20; COORD_LEN];
+            let pub_key = make_ecc_point(&x, &y);
+
+            let response_chal_first = NegotiationResponse {
+                challenge: challenge.clone(),
+                params: vec![
+                    NegotiationParam::Challenge,
+                    NegotiationParam::EcPublicKeyBytes,
+                ],
+            };
+            let response_key_first = NegotiationResponse {
+                challenge: challenge.clone(),
+                params: vec![
+                    NegotiationParam::EcPublicKeyBytes,
+                    NegotiationParam::Challenge,
+                ],
+            };
+
+            let result_chal_first = hash(&response_chal_first, &pub_key).unwrap();
+            let result_key_first = hash(&response_key_first, &pub_key).unwrap();
+
+            let mut sha = Sha512::new();
+            sha.update(&challenge);
+            sha.update(&x);
+            sha.update(&y);
+            assert_eq!(result_chal_first, sha.finalize().as_slice());
+
+            let mut sha = Sha512::new();
+            sha.update(&x);
+            sha.update(&y);
+            sha.update(&challenge);
+            assert_eq!(result_key_first, sha.finalize().as_slice());
+
+            assert_ne!(result_chal_first, result_key_first);
+        }
+    }
+}
