@@ -39,6 +39,7 @@ pub struct BootParams<'a> {
     igvm_param_page: &'a IgvmParamPage,
     igvm_memory_map: &'a IgvmMemoryMap,
     igvm_madt: &'a [u8],
+    igvm_device_tree: &'a [u8],
     guest_context: Option<&'a InitialGuestContext>,
 }
 
@@ -58,6 +59,12 @@ impl BootParams<'_> {
         let madt = unsafe {
             slice::from_raw_parts(madt_address.as_ptr::<u8>(), param_block.madt_size as usize)
         };
+        let dt_address = addr + param_block.dt_offset as usize;
+        // SAFETY: the parameter block correctly describes the bounds of the device tree.
+        let device_tree = unsafe {
+            slice::from_raw_parts(dt_address.as_ptr::<u8>(), param_block.dt_size as usize)
+        };
+
         let guest_context = if param_block.guest_context_offset != 0 {
             let offset = usize::try_from(param_block.guest_context_offset).unwrap();
             Some(Self::try_aligned_ref::<InitialGuestContext>(addr + offset)?)
@@ -70,6 +77,7 @@ impl BootParams<'_> {
             igvm_param_page: param_page,
             igvm_memory_map: memory_map,
             igvm_madt: madt,
+            igvm_device_tree: device_tree,
             guest_context,
         })
     }
@@ -280,6 +288,10 @@ impl BootParams<'_> {
         ACPITable::new(self.igvm_madt).and_then(|t| load_acpi_cpu_info(&t))
     }
 
+    pub fn get_device_tree(&self) -> &[u8] {
+        self.igvm_device_tree
+    }
+
     pub fn should_launch_fw(&self) -> bool {
         self.boot_param_block.firmware.size != 0
     }
@@ -463,10 +475,6 @@ impl BootParams<'_> {
 
     pub fn has_qemu_testdev(&self) -> bool {
         self.boot_param_block.has_qemu_testdev != 0
-    }
-
-    pub fn has_fw_cfg_port(&self) -> bool {
-        self.boot_param_block.has_fw_cfg_port != 0
     }
 
     pub fn has_test_iorequests(&self) -> bool {
