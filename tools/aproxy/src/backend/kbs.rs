@@ -16,6 +16,8 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+const KBS_API_VERSION: &str = "0.4.0";
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct KbsProtocol;
 
@@ -40,7 +42,7 @@ impl AttestationProtocol for KbsProtocol {
             return Err(anyhow!("invalid request version"));
         }
         let req = Request {
-            version: "0.4.0".to_string(),
+            version: KBS_API_VERSION.to_string(),
             tee: request.tee,
             extra_params: Value::String("".to_string()), // unused.
         };
