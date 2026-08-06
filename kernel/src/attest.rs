@@ -33,12 +33,13 @@ use cocoon_tpm_utils_common::{
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
-use sha2::{Digest, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
 #[cfg(feature = "attest-serial")]
 // TODO: Make the IO port configurable/discoverable or drop the support entirely.
 const ATTEST_DEFAULT_SERIAL_IO_ADDR: u16 = 0x3e8; // COM3
+const CHALLENGE_LEN: usize = 48;
+const TEE_REPORT_DATA_LEN: usize = 64;
 
 enum Transport {
     Vsock(VsockStream),
@@ -130,6 +131,19 @@ impl TryFrom<Tee> for AttestationDriver {
 }
 
 impl AttestationDriver {
+    /// Extracts the public key coordinates as a TPM ECC point from the internal `EccKey`.
+    fn get_tpm_pub_key(&self) -> Result<TpmsEccPoint<'static>, AttestationError> {
+        let curve =
+            Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
+
+        let curve_ops = curve.curve_ops().map_err(AttestationError::Crypto)?;
+
+        self.ecc
+            .pub_key()
+            .to_tpms_ecc_point(&curve_ops)
+            .map_err(AttestationError::Crypto)
+    }
+
     /// Attest SVSM's launch state by communicating with the attestation proxy.
     pub fn attest(&mut self) -> Result<SecretSlice, SvsmError> {
         let negotiation = self.negotiation()?;
@@ -141,9 +155,12 @@ impl AttestationDriver {
     /// that should be included in attestation evidence (e.g. through SEV-SNP's REPORT_DATA
     /// mechanism).
     fn negotiation(&mut self) -> Result<NegotiationResponse, AttestationError> {
+        let pub_key = self.get_tpm_pub_key()?;
+
         let request = NegotiationRequest {
             version: (0, 1, 0), // Only version supported at present.
             tee: self.tee,
+            key: (self.ecc.pub_key().get_curve_id(), &pub_key).into(),
         };
 
         self.write(request)?;
@@ -156,16 +173,9 @@ impl AttestationDriver {
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
     fn attestation(&mut self, n: NegotiationResponse) -> Result<SecretSlice, AttestationError> {
-        let curve =
-            Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
+        let pub_key = self.get_tpm_pub_key()?;
 
-        let pub_key = self
-            .ecc
-            .pub_key()
-            .to_tpms_ecc_point(&curve.curve_ops().map_err(AttestationError::Crypto)?)
-            .map_err(AttestationError::Crypto)?;
-
-        let evidence = evidence(&self.tee, hash(&n, &pub_key)?)?;
+        let evidence = evidence(&self.tee, prepare_report_data(&n)?)?;
 
         let req = AttestationRequest {
             tee: self.tee,
@@ -297,6 +307,8 @@ pub enum AttestationError {
     Crypto(CryptoError),
     /// Guest has failed attestation.
     Failed,
+    /// Negotiation Response challenge length from KBS is invalid
+    InvalidChallengeLength,
     // Unable to derive wrap key.
     KeyDerivation(concat_kdf::Error),
     /// Error deserializing the negotiation response from JSON bytes.
@@ -399,26 +411,14 @@ fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<AttestationEvidence, Attestation
     Ok(evidence)
 }
 
-/// Hash the negotiation parameters from the attestation server for inclusion in the
-/// attestation evidence.
-fn hash(
-    n: &NegotiationResponse,
-    pub_key: &TpmsEccPoint<'static>,
-) -> Result<Vec<u8>, AttestationError> {
-    let mut sha = Sha512::new();
-
-    for p in &n.params {
-        match p {
-            NegotiationParam::Challenge => {
-                sha.update(&n.challenge);
-            }
-            #[allow(irrefutable_let_patterns)]
-            NegotiationParam::EcPublicKeyBytes => {
-                sha.update(&*pub_key.x.buffer);
-                sha.update(&*pub_key.y.buffer);
-            }
-        }
+/// Take 48 byte negotiation challenge nonce from aproxy into 64 byte array required for the TEE attestation evidence report
+fn prepare_report_data(n: &NegotiationResponse) -> Result<Vec<u8>, AttestationError> {
+    if n.challenge.len() != CHALLENGE_LEN {
+        return Err(AttestationError::InvalidChallengeLength);
     }
 
-    try_to_vec(&sha.finalize()).or(Err(AttestationError::VecAlloc))
+    let mut report_data = [0u8; TEE_REPORT_DATA_LEN];
+    report_data[..CHALLENGE_LEN].copy_from_slice(&n.challenge);
+
+    Ok(report_data.to_vec())
 }
