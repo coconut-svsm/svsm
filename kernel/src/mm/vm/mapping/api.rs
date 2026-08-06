@@ -150,7 +150,7 @@ pub struct VMM {
     mapping: Mapping,
 }
 
-intrusive_adapter!(pub VMMAdapter = Box<VMM>: VMM { link: AtomicLink });
+intrusive_adapter!(pub VMMAdapter = Box<VMM>: VMM { link => AtomicLink });
 
 impl<'a> KeyAdapter<'a> for VMMAdapter {
     type Key = usize;
