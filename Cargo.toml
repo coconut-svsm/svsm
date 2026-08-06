@@ -74,8 +74,8 @@ aes-gcm = { version = "0.10.3", default-features = false }
 aes-kw = { version = "0.3.1", default-features = false }
 arbitrary = "1.3.0"
 base64 = { version = "0.22.1", default-features = false }
-bindgen = { version = "0.71.0", default-features = false }
-bitfield-struct = "0.6.2"
+bindgen = { version = "0.72.0", default-features = false }
+bitfield-struct = "0.13.0"
 bitflags = "2.6"
 clap = { version = "4.4.14", default-features = false }
 cocoon-tpm-crypto = { version = "0.1.0", default-features = false }
@@ -86,7 +86,7 @@ gdbstub = { version = "0.7.10", default-features = false }
 gdbstub_arch = { version = "0.3.3" }
 igvm = { version = "0.4.0", default-features = false }
 igvm_defs = { version = "0.4.0", default-features = false }
-intrusive-collections = "0.9.6"
+intrusive-collections = "0.10.0"
 kbs-types = { version = "0.14.0", default-features = false }
 libfuzzer-sys = "0.4"
 log = "0.4.17"
