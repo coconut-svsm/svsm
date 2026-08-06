@@ -244,7 +244,9 @@ impl TryFrom<&AttestationRequest> for KbsEvidence {
 
                 Ok(Self::Snp {
                     snp_report: BASE64_STANDARD.encode(report),
-                    certs_buf: certs_buf.clone().map(|certs| BASE64_STANDARD.encode(certs)),
+                    certs_buf: certs_buf
+                        .as_ref()
+                        .map(|certs| BASE64_STANDARD.encode(certs)),
                 })
             }
             _ => Err(anyhow!("invalid TEE")),
