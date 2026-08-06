@@ -61,7 +61,11 @@ fn accept_loop<S: Read + Write>(
         let mut stream = stream.context("Failed to accept connection")?;
         log::info!("accepted incoming connection from SVSM");
         let mut http_client = backend::HttpClient::new(url.to_string(), backend.into())?;
-        attest::attest(&mut stream, &mut http_client)?;
+        if let Err(e) = attest::attest(&mut stream, &mut http_client) {
+            log::error!("attestation failed: {e:#}");
+            continue;
+        }
+
         log::info!("attestation successful");
     }
     Ok(())
