@@ -123,7 +123,7 @@ pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
 pub fn sys_readdir(obj_id: u32, dirents: usize, size: usize) -> Result<u64, SysCallError> {
     let fsobj = obj_get(obj_id.into())?;
     let fsobj = fsobj.as_fs().ok_or(ENOTSUPP)?;
-    let user_dirents_ptr = UserPtr::<DirEnt>::new(VirtAddr::from(dirents))?;
+    let user_dirents = UserPtr::<[DirEnt]>::new(VirtAddr::from(dirents), size)?;
 
     for i in 0..size {
         let Some((name, dirent)) = fsobj.readdir()? else {
@@ -153,8 +153,7 @@ pub fn sys_readdir(obj_id: u32, dirents: usize, size: usize) -> Result<u64, SysC
             new_entry.file_size = 0;
         }
 
-        let user_dirents_ptr = user_dirents_ptr.offset(i.try_into().unwrap())?;
-        user_dirents_ptr.write(new_entry)?
+        user_dirents.write(i, new_entry)?;
     }
     Ok(size as u64)
 }
