@@ -214,6 +214,8 @@ impl From<SvsmError> for SysCallError {
             | SvsmError::InvalidBytes
             | SvsmError::InvalidUtf8 => SysCallError::EINVAL,
 
+            SvsmError::Fault => SysCallError::EFAULT,
+
             _ => SysCallError::UNKNOWN,
         }
     }
