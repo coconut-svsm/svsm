@@ -633,7 +633,7 @@ impl Drop for UserAccessGuard {
 }
 
 #[derive(Debug)]
-pub struct UserPtr<T> {
+pub struct UserPtr<T: ?Sized> {
     ptr: TryPtr<T>,
 }
 
@@ -689,7 +689,7 @@ impl<T> UserPtr<T> {
     #[inline]
     pub fn cast<N>(&self) -> Result<UserPtr<N>, SvsmError> {
         let vaddr = VirtAddr::from(self.ptr.ptr);
-        UserPtr::new(vaddr)
+        UserPtr::<N>::new(vaddr)
     }
 
     #[inline]
@@ -716,57 +716,119 @@ impl UserPtr<c_char> {
     }
 }
 
-fn check_bounds_user(start: usize, len: usize) -> Result<(), SvsmError> {
-    let end: usize = start.checked_add(len).ok_or(SvsmError::InvalidAddress)?;
+impl<T> UserPtr<[T]> {
+    /// Constructs a `UserPtr<[T]>` pointing to `len` elements at `v`,
+    /// checking that the entire object falls within userspace.
+    #[inline]
+    pub fn new(v: VirtAddr, len: usize) -> Result<Self, SvsmError> {
+        let userspace = MemoryRegion::from_addresses(USER_MEM_START, USER_MEM_END);
+        let region = len
+            .checked_mul(size_of::<T>())
+            .and_then(|size| MemoryRegion::checked_new(v, size))
+            .ok_or(SvsmError::InvalidAddress)?;
+        if !userspace.contains_region(&region) {
+            return Err(SvsmError::InvalidAddress);
+        }
+        Ok(Self {
+            ptr: TryPtr::<[T]>::new(v, len),
+        })
+    }
 
-    if end > USER_MEM_END.bits() {
-        Err(SvsmError::InvalidAddress)
-    } else {
-        Ok(())
+    /// Returns the number of elements in the slice.
+    #[inline]
+    pub const fn len(&self) -> usize {
+        self.ptr.len()
+    }
+
+    /// Returns `true` if the slice contains no elements.
+    #[inline]
+    pub const fn is_empty(&self) -> bool {
+        self.ptr.is_empty()
+    }
+
+    /// Reads element at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::InvalidAddress`] if `index >= len`, or
+    /// [`SvsmError::Fault`] if the access faults.
+    #[inline]
+    pub fn read(&self, index: usize) -> Result<T, SvsmError>
+    where
+        T: FromBytes,
+    {
+        let _guard = UserAccessGuard::new();
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.read(index) }
+    }
+
+    /// Writes `val` to element at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::InvalidAddress`] if `index >= len`, or
+    /// [`SvsmError::Fault`] if the access faults.
+    #[inline]
+    pub fn write(&self, index: usize, val: T) -> Result<(), SvsmError>
+    where
+        T: IntoBytes,
+    {
+        let _guard = UserAccessGuard::new();
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.write(index, val) }
+    }
+
+    /// Copies all elements into `dst`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::Mem`] if `dst.len() != self.len()`, or
+    /// [`SvsmError::Fault`] if the access faults.
+    #[inline]
+    pub fn read_to_slice(&self, dst: &mut [T]) -> Result<(), SvsmError>
+    where
+        T: FromBytes,
+    {
+        let _guard = UserAccessGuard::new();
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.read_to_slice(dst) }
+    }
+
+    /// Copies all elements from `src` into the slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::Mem`] if `src.len() != self.len()`, or
+    /// [`SvsmError::Fault`] if the access faults.
+    #[inline]
+    pub fn write_from_slice(&self, src: &[T]) -> Result<(), SvsmError>
+    where
+        T: IntoBytes,
+    {
+        let _guard = UserAccessGuard::new();
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.write_from_slice(src) }
+    }
+}
+
+impl UserPtr<[u8]> {
+    pub fn zero_fill(&self) -> Result<(), SvsmError> {
+        let _guard = UserAccessGuard::new();
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.zero_fill() }
     }
 }
 
 pub fn zero_user_mem(dst: VirtAddr, size: usize) -> Result<(), SvsmError> {
-    let destination = with_exposed_provenance_mut::<u8>(dst.bits());
-
-    check_bounds_user(dst.bits(), size)?;
-
-    // SAFETY: As per above check this clears only the requested memory in
-    // user-mode memory.
-    unsafe {
-        let _guard = UserAccessGuard::new();
-        clear_bytes(destination, size)
-    }
+    UserPtr::<[u8]>::new(dst, size)?.zero_fill()
 }
 
 pub fn copy_from_user(src: VirtAddr, dst: &mut [u8]) -> Result<(), SvsmError> {
-    let destination = dst.as_mut_ptr();
-    let size = dst.len();
-
-    check_bounds_user(src.bits(), size)?;
-
-    // SAFETY: Safe because the copy only happens to the memory belonging to
-    // the dst slice from user-mode memory.
-    unsafe {
-        let _guard = UserAccessGuard::new();
-        let source = with_exposed_provenance::<u8>(src.bits());
-        copy_bytes(source, destination, size)
-    }
+    UserPtr::<[u8]>::new(src, dst.len())?.read_to_slice(dst)
 }
 
 pub fn copy_to_user(src: &[u8], dst: VirtAddr) -> Result<(), SvsmError> {
-    let source = src.as_ptr();
-    let size = src.len();
-
-    check_bounds_user(dst.bits(), size)?;
-
-    // SAFETY: Only reads data from with the slice and copies to an address
-    // guaranteed to be in user-space.
-    unsafe {
-        let _guard = UserAccessGuard::new();
-        let destination = with_exposed_provenance_mut::<u8>(dst.bits());
-        copy_bytes(source, destination, size)
-    }
+    UserPtr::<[u8]>::new(dst, src.len())?.write_from_slice(src)
 }
 
 fn checked_guest_region(start: PhysAddr, size: usize) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
