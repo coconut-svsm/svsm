@@ -27,6 +27,7 @@ use vstd::arithmetic::mul::*;
 use vstd::modes::tracked_swap;
 use vstd::raw_ptr::IsExposed;
 use vstd::std_specs::convert::FromSpec;
+use vstd::std_specs::iter::IteratorSpec;
 
 verus! {
 
@@ -337,6 +338,7 @@ impl HeapMemoryRegion {
         &&& new.wf_next_pages()
         &&& !spec_pfn_is_oob(new.next_page[order - 1])
         &&& self.with_same_mapping(new)
+        &&& new.next_page@ =~= self.next_page@.update(order - 1, new.next_page[order - 1])
     }
 
     spec fn spec_get_pfn(&self, vaddr: VirtAddr) -> Option<usize> {

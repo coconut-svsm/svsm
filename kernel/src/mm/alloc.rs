@@ -911,15 +911,12 @@ impl HeapMemoryRegion {
     }
 
     /// Refills the free page list for a given order.
-    #[verus_verify(external_body)]
     #[verus_spec(ret =>
         requires
             old(self).wf_next_pages(),
             0 <= order <= MAX_ORDER,
         ensures
             old(self).ens_refill_page_list(*final(self), ret.is_ok(), order),
-        decreases
-            MAX_ORDER - order,
     )]
     fn refill_page_list(&mut self, order: usize) -> Result<(), AllocError> {
         proof! {
@@ -934,22 +931,46 @@ impl HeapMemoryRegion {
             return Ok(());
         }
 
-        // Find a higher order to split a page from
-        let refill_order = ((order + 1)..MAX_ORDER)
-            .find(|ord| {
-                proof! { self.perms.borrow().free.tracked_next(*ord); }
-                self.next_page[*ord] != NO_PAGE
-            })
-            .ok_or(AllocError::OutOfMemory)?;
-
-        proof_decl! {
-            let tracked mut perm = PgUnitPerm::empty(arbitrary());
+        proof! {
+            // Prove postconditions when find returns None.
+            assert(forall|i: usize| #![trigger self.next_page[i as int]]
+                order + 1 <= i < MAX_ORDER ==>
+                ((order + 1) as usize..MAX_ORDER).remaining()[i - order - 1] == i
+            );
         }
 
+        // Find a higher order to split a page from
+        let refill_order = ((order + 1)..MAX_ORDER)
+            .find(
+                #[cfg_attr(verus_keep_ghost, verus_spec(ret: bool =>
+                    requires
+                        *ord < MAX_ORDER
+                    ensures
+                        ret == !spec_pfn_is_oob(self.next_page[*ord as int])
+                ))]
+                |ord| self.next_page[*ord] != NO_PAGE,
+            )
+            .ok_or(AllocError::OutOfMemory)?;
         // Split the page down to the order we want
+        #[cfg_attr(verus_keep_ghost, verus_spec(iter=>
+        invariant
+            order < refill_order < MAX_ORDER,
+            iter.seq() == Seq::new((refill_order - order) as nat, |i| (refill_order - i) as usize),
+            forall|i|
+                order + 1 <= i < refill_order - iter.index() ==> spec_pfn_is_oob(
+                    #[trigger] self.next_page[i],
+                ),
+            self.wf_next_pages(),
+            !spec_pfn_is_oob(self.next_page[refill_order - iter.index()]),
+            old(self).with_same_mapping(self),
+        ))]
         for ord in ((order + 1)..=refill_order).rev() {
+            proof_decl! {
+                let tracked mut perm = PgUnitPerm::empty(arbitrary());
+            }
             proof_with!(Tracked(&mut perm));
             let pfn = self.get_next_page(ord)?;
+
             proof_with!(Tracked(perm));
             self.split_page(pfn, ord)?;
         }
