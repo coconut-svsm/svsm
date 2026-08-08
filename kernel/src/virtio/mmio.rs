@@ -14,7 +14,7 @@ use virtio_drivers::transport::{DeviceType, Transport, mmio::MmioTransport};
 use crate::address::{Address, PhysAddr};
 use crate::boot_params::BootParams;
 use crate::fw_cfg::FwCfg;
-use crate::mm::{GlobalRangeGuard, map_global_range_4k_shared, pagetable::PTEntryFlags};
+use crate::mm::{GlobalRangeGuard, map_global_range_4k_private, pagetable::PTEntryFlags};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::PAGE_SIZE;
 
@@ -88,7 +88,11 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
         // If multiple devices reside in the same page, each gets its own
         // mapping, which is slightly wasteful but avoids shared-ownership
         // complexity.
-        let Ok(mem) = map_global_range_4k_shared(page_base, PAGE_SIZE, PTEntryFlags::data()) else {
+        // Map as private: in SNP mode all MMIO accesses go through the GHCB, so a shared mapping
+        // is not required, and keeping it private reduces the number of unencrypted pages. In
+        // native mode there is no shared/private distinction, so either mapping is equivalent.
+        let Ok(mem) = map_global_range_4k_private(page_base, PAGE_SIZE, PTEntryFlags::data())
+        else {
             log::warn!("MmioSlots: Failed to map MMIO region at {addr:x}");
             continue;
         };
@@ -96,7 +100,7 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
         // Not expected to fail, because mem exists.
         let header = NonNull::new((mem.addr() + page_offset).as_mut_ptr()).unwrap();
 
-        // SAFETY: The address is valid, mapped by `map_global_range_4k_shared`, and verified
+        // SAFETY: The address is valid, mapped by `map_global_range_4k_private`, and verified
         // to be VirtIOHeader-aligned by the guard above.
         // The memory region has the same lifetime of the MmioSlot structure which will be consumed by the driver.
         // TODO: Currently the hypervisor does not advertise the size of the mmio space (header + config space).
