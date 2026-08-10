@@ -410,9 +410,9 @@ unsafe impl Sync for Task {}
 
 pub type TaskPointer = Arc<Task>;
 
-intrusive_adapter!(pub TaskRunListAdapter = TaskPointer: Task { runlist_link: LinkedListAtomicLink });
-intrusive_adapter!(pub TaskListAdapter = TaskPointer: Task { list_link: LinkedListAtomicLink });
-intrusive_adapter!(pub TaskWaitListAdapter = TaskPointer: Task { waitlist_link: LinkedListAtomicLink });
+intrusive_adapter!(pub TaskRunListAdapter = TaskPointer: Task { runlist_link => LinkedListAtomicLink });
+intrusive_adapter!(pub TaskListAdapter = TaskPointer: Task { list_link => LinkedListAtomicLink });
+intrusive_adapter!(pub TaskWaitListAdapter = TaskPointer: Task { waitlist_link => LinkedListAtomicLink });
 
 impl PartialEq for Task {
     fn eq(&self, other: &Self) -> bool {
