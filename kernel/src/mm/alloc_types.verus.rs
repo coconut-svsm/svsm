@@ -256,7 +256,6 @@ impl SpecDecoderProof<PageStorageType> for FreeInfo {
         let mem = PageType::Free as u64;
         let bit1 = PageStorageType::TYPE_SHIFT;
         let bit2 = (PageStorageType::NEXT_SHIFT - PageStorageType::TYPE_SHIFT) as u64;
-        let bit3 = (u64::BITS - PageStorageType::NEXT_SHIFT) as u64;
         lemma_u64_and_bitmask_lower(order, bit2);
         broadcast use lemma_bit_u64_shr_bound;
 
@@ -379,7 +378,6 @@ impl SpecDecoderProof<PageStorageType> for FileInfo {
     {
         PageType::File.lemma_encode_decode();
         let ref_count = self.ref_count as u64;
-        let tbits = PageStorageType::TYPE_SHIFT;
         let bits = (u64::BITS - PageStorageType::TYPE_SHIFT) as u64;
         let mem = self.spec_encode().unwrap().0;
         lemma_bit_u64_extract_fields2(
@@ -481,7 +479,6 @@ impl SpecDecoderProof<PageStorageType> for PageInfo {
     proof fn lemma_encode_decode(&self) {
         let info = *self;
         let mem = info.spec_encode().unwrap();
-        let memval = mem.0;
         match info {
             PageInfo::Free(finfo) => {
                 finfo.lemma_encode_decode();
