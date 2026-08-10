@@ -765,6 +765,17 @@ impl PageTable {
         }
     }
 
+    /// In x86_64, effective permission = parent perm & children perm.
+    /// parent flags is constant: present, writable, user-accessible.
+    /// ACCESSED & DIRTY => prevent future hardware mutations.
+    fn parent_flags() -> PTEntryFlags {
+        PTEntryFlags::PRESENT
+            | PTEntryFlags::WRITABLE
+            | PTEntryFlags::USER
+            | PTEntryFlags::ACCESSED
+            | PTEntryFlags::DIRTY
+    }
+
     fn alloc_pte_lvl3(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
         let flags = entry.flags();
 
@@ -776,11 +787,7 @@ impl PageTable {
             return Mapping::Level3(entry);
         };
 
-        let flags = PTEntryFlags::PRESENT
-            | PTEntryFlags::WRITABLE
-            | PTEntryFlags::USER
-            | PTEntryFlags::ACCESSED;
-        entry.set(make_private_address(paddr), flags);
+        entry.set(make_private_address(paddr), Self::parent_flags());
 
         let idx = Self::index::<2>(vaddr);
         Self::alloc_pte_lvl2(&mut page[idx], vaddr, size)
@@ -797,11 +804,7 @@ impl PageTable {
             return Mapping::Level2(entry);
         };
 
-        let flags = PTEntryFlags::PRESENT
-            | PTEntryFlags::WRITABLE
-            | PTEntryFlags::USER
-            | PTEntryFlags::ACCESSED;
-        entry.set(make_private_address(paddr), flags);
+        entry.set(make_private_address(paddr), Self::parent_flags());
 
         let idx = Self::index::<1>(vaddr);
         Self::alloc_pte_lvl1(&mut page[idx], vaddr, size)
@@ -818,11 +821,7 @@ impl PageTable {
             return Mapping::Level1(entry);
         };
 
-        let flags = PTEntryFlags::PRESENT
-            | PTEntryFlags::WRITABLE
-            | PTEntryFlags::USER
-            | PTEntryFlags::ACCESSED;
-        entry.set(make_private_address(paddr), flags);
+        entry.set(make_private_address(paddr), Self::parent_flags());
 
         let idx = Self::index::<0>(vaddr);
         Mapping::Level0(&mut page[idx])
