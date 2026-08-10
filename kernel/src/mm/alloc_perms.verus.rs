@@ -7,19 +7,6 @@
 // Defines memory region permissions.
 verus! {
 
-spec fn spec_map_page_info_addr(map: LinearMap, pfn: usize) -> VirtAddr {
-    let reserved_unit_size = size_of::<PageStorageType>();
-    let start = map.virt_start;
-    VirtAddr::from_spec((start@ + (pfn * reserved_unit_size)) as usize)
-}
-
-spec fn spec_map_page_info_ptr(map: LinearMap, pfn: usize) -> *const PageStorageType {
-    let addr = spec_map_page_info_addr(map, pfn)@;
-    vstd::raw_ptr::ptr_from_data(
-        vstd::raw_ptr::PtrData { addr, provenance: allocator_provenance(), metadata: () },
-    )
-}
-
 /// Defines ghost tracked memory region permissions.
 ///
 /// `info` is a readonly share of reserved memory storing PageInfo which allows
@@ -152,10 +139,6 @@ impl<T: UnitType> PgUnitPerm<T> {
         pageinfo.spec_type()
     }
 
-    pub closed spec fn from_mr(&self, map: MemRegionMapping, pfn: usize, order: usize) -> bool {
-        self.wf_pfn_order(map, pfn, order)
-    }
-
     pub closed spec fn wf_pfn_order(
         &self,
         map: MemRegionMapping,
@@ -222,15 +205,6 @@ impl MemoryRegionPerms {
     #[verifier(inline)]
     spec fn get_info(&self, pfn: usize) -> Option<PageInfo> {
         self.info@[pfn].page_info()
-    }
-
-    #[verifier(inline)]
-    spec fn get_free_info(&self, pfn: usize) -> Option<FreeInfo> {
-        self.info@[pfn].page_info().unwrap().spec_get_free()
-    }
-
-    spec fn get_page_storage_type(&self, pfn: usize) -> Option<PageStorageType> {
-        self.info@[pfn].page_storage()
     }
 
     /** Invariants for page info **/

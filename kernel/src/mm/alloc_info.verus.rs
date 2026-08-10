@@ -151,11 +151,6 @@ impl PageInfoDb {
         self.id().ptr(idx)
     }
 
-    #[verifier::inline]
-    spec fn share_total(&self) -> (nat, nat) {
-        (self.id().shares, self.id().total)
-    }
-
     #[verifier(inline)]
     spec fn end(&self) -> int {
         self.unit_start + (1usize << self@[self.unit_start()].order())
@@ -341,10 +336,6 @@ impl PageInfoDb {
     #[verifier(opaque)]
     spec fn nr_page(&self, order: usize) -> nat {
         self._info_dom(order).len()
-    }
-
-    spec fn _info_head_dom(&self, order: usize) -> Set<usize> {
-        self@.dom().filter(|i| self@[i].order() == order && self@[i].is_head())
     }
 
     /// Prove that for any two orders: `order` and `order2`,
@@ -797,12 +788,6 @@ impl PageInfoDb {
         assert(old(self).ens_split_inner(*self, ret));
         old(self).proof_split_nr_page(*self, ret);
         ret
-    }
-
-    spec fn ens_unshare_for_write(&self, new: Self, unit: &PageInfoDb) -> bool {
-        &&& new@ == self@.remove_keys(unit@.dom())
-        &&& new.id() == self.id()
-        &&& self.ens_add_unit_nr_pages(new, unit.order())
     }
 
     /// Remove the permission for the specified unit from the `PageInfoDb` and merge

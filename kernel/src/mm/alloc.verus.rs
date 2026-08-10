@@ -521,10 +521,6 @@ impl HeapMemoryRegion {
 
     }
 
-    spec fn req_free_page(&self, vaddr: VirtAddr, perm: AllocatedPagesPerm) -> bool {
-        &&& self.wf_next_pages()
-    }
-
     spec fn ens_free_page(&self, new: &Self, vaddr: VirtAddr, perm: AllocatedPagesPerm) -> bool {
         self@.mr_map@ == new@.mr_map@
     }

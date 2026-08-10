@@ -20,10 +20,6 @@ pub ghost struct LinearMap {
 }
 
 impl LinearMap {
-    pub open spec fn is_identity_map(&self) -> bool {
-        self.virt_start@ == VirtAddr::from_spec(self.phys_start as usize)@
-    }
-
     pub open spec fn spec_phys_to_virt(&self, paddr: int) -> Option<VirtAddr> {
         let offset = paddr - self.phys_start;
         if 0 <= offset < self.size && (self.virt_start.offset() + offset < VADDR_RANGE_SIZE) {

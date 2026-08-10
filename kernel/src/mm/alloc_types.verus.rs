@@ -37,16 +37,6 @@ spec fn spec_page_info(mem: MemContents<PageStorageType>) -> Option<PageInfo> {
     }
 }
 
-spec fn spec_free_info(perm: MemContents<PageStorageType>) -> Option<FreeInfo> {
-    let p_info = spec_page_info(perm);
-    if p_info.is_some() {
-        let pi = p_info.unwrap();
-        pi.spec_get_free()
-    } else {
-        None
-    }
-}
-
 impl PageType {
     spec fn spec_is_deallocatable(&self) -> bool {
         matches!(self, PageType::Allocated | PageType::SlabPage | PageType::File)
@@ -71,13 +61,6 @@ impl PageInfo {
             PageInfo::Compound(_) => PageType::Compound,
             PageInfo::File(_) => PageType::File,
             PageInfo::Reserved(_) => PageType::Reserved,
-        }
-    }
-
-    spec fn spec_get_free(&self) -> Option<FreeInfo> {
-        match *self {
-            PageInfo::Free(info) => { Some(info) },
-            _ => { None },
         }
     }
 }
