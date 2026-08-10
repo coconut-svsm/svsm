@@ -52,6 +52,8 @@ use svsm::mm::pagetable::paging_init;
 use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
+#[cfg(feature = "persistence")]
+use svsm::persistence::{persistence_demo, persistence_discover, persistence_init};
 use svsm::platform::PageValidateOp;
 use svsm::platform::PlatformPageType;
 use svsm::platform::SVSM_PLATFORM;
@@ -551,11 +553,23 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
 
     #[cfg(feature = "attest")]
     {
-        let mut proxy = AttestationDriver::try_from(Tee::Snp).unwrap();
-        let _data = proxy.attest().unwrap();
+        // Obtain the persistence metadata first. It's not the case yet,
+        // but it likely will be needed as input to the attestation.
+        #[cfg(feature = "persistence")]
+        let persistence_bootstrap_info = persistence_discover().unwrap();
 
-        // Nothing to do with data at the moment, simply print a success message.
+        let mut proxy = AttestationDriver::try_from(Tee::Snp).unwrap();
+        let secret = proxy.attest().unwrap();
         log::info!("attestation successful");
+
+        #[cfg(not(feature = "persistence"))]
+        let _ = secret;
+        #[cfg(feature = "persistence")]
+        if let Some(persistence_bootstrap_info) = persistence_bootstrap_info {
+            persistence_init(persistence_bootstrap_info, &secret).unwrap();
+            // TODO: remove once we have real persistence users.
+            persistence_demo();
+        }
     }
 
     #[cfg(all(feature = "vtpm", not(test)))]
