@@ -30,6 +30,16 @@ to the `Author` field of the patch. By adding `Signed-off-by`
 the submitter attests that the contribution fulfills the requirements of
 the [Developer Certificate of Origin](https://developercertificate.org/).
 
+## Commit Bisectability
+
+When a submission has multiple commits, then after each commit the code-base
+must compile, boot and pass all tests, including `cargo fmt --check` and `make
+clippy`. This is important to maintain bisectability of the changes so that
+developers and maintainers can later find where an issue was introduced.
+
+In general it is good practice to structure a submission as a series of small
+and self-contained commits.
+
 ## Coding Style
 
 Submitted changes must be checked with `cargo fmt --check` before submitting
