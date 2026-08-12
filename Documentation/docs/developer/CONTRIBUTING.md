@@ -42,10 +42,9 @@ and self-contained commits.
 
 ## Coding Style
 
-Submitted changes must be checked with `cargo fmt --check` before submitting
-and submitted code must not introduce new warnings in the build process. With
-`cargo fmt` (without `--check`) cargo will automatically update the formatting
-of the changes to match the requirements.
+Changes must be checked with `cargo fmt --check` before submitting. With `cargo
+fmt` (without `--check`) cargo will automatically update the formatting of the
+changes to match the requirements.
 
 Make sure to format the code according to Rust edition 2024. There is a
 git-hook in the scripts directory which checks any changes with `rustfmt`
@@ -56,6 +55,11 @@ before allowing them to be committed. It can be installed by running
 ```
 
 from the projects root directory.
+
+New code must not introduce warnings in the build process. An exception are
+warnings which are caused by differences between the Rust stable and nightly
+toolchains. In these cases the changes must make sure to not issue warnings
+when built with stable Rust only while they are acceptable with nightly Rust.
 
 For detailed instructions on documentation guidelines please have a look at
 [RUSTDOC-GUIDELINES.md](RUSTDOC-GUIDELINES.md).
