@@ -17,6 +17,7 @@ use crate::utils::MemoryRegion;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::arch::asm;
+use core::borrow::Borrow;
 use core::ffi::c_char;
 use core::mem::{MaybeUninit, size_of};
 use core::ptr::{NonNull, with_exposed_provenance, with_exposed_provenance_mut};
@@ -393,6 +394,9 @@ impl<T> TryPtr<T> {
         }
     }
 
+    /// Writes `buf` into the memory pointed to by this `TryPtr`.
+    /// `buf` may be an owned instance of `T` or a reference.
+    ///
     /// # Safety
     ///
     /// The caller must verify not to corrupt arbitrary memory, as this function
@@ -403,32 +407,15 @@ impl<T> TryPtr<T> {
     /// Returns an error if the specified address is not mapped or is not mapped
     /// with the appropriate write permissions.
     #[inline]
-    pub unsafe fn write(&self, buf: T) -> Result<(), SvsmError>
+    pub unsafe fn write<B>(&self, buf: B) -> Result<(), SvsmError>
     where
+        B: Borrow<T>,
         T: IntoBytes,
     {
+        let src = buf.borrow();
         // SAFETY: Safe when self.ptr does not point to SVSM memory because
         // then the write can not harm memory safety.
-        unsafe { do_movsb(&raw const buf, self.ptr) }
-    }
-
-    /// # Safety
-    ///
-    /// The caller must verify not to corrupt arbitrary memory, as this function
-    /// doesn't make any checks in that regard.
-    ///
-    /// # Returns
-    ///
-    /// Returns an error if the specified address is not mapped or is not mapped
-    /// with the appropriate write permissions.
-    #[inline]
-    pub unsafe fn write_ref(&self, buf: &T) -> Result<(), SvsmError>
-    where
-        T: IntoBytes,
-    {
-        // SAFETY: Safe when self.ptr does not point to SVSM memory because
-        // then the write can not harm memory safety.
-        unsafe { do_movsb(buf, self.ptr) }
+        unsafe { do_movsb(src, self.ptr) }
     }
 
     #[inline]
@@ -530,16 +517,9 @@ impl<T> UserPtr<T> {
     }
 
     #[inline]
-    pub fn write(&self, buf: T) -> Result<(), SvsmError>
+    pub fn write<B>(&self, buf: B) -> Result<(), SvsmError>
     where
-        T: IntoBytes,
-    {
-        self.write_ref(&buf)
-    }
-
-    #[inline]
-    pub fn write_ref(&self, buf: &T) -> Result<(), SvsmError>
-    where
+        B: Borrow<T>,
         T: IntoBytes,
     {
         if !self.check_bounds() {
@@ -547,7 +527,7 @@ impl<T> UserPtr<T> {
         }
         let _guard = UserAccessGuard::new();
         // SAFETY: Target pointer is guaranteed to point to user memory.
-        unsafe { self.ptr.write_ref(buf) }
+        unsafe { self.ptr.write(buf) }
     }
 
     #[inline]

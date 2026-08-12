@@ -471,7 +471,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     // (untrusted), so it needs to be valid (ie. belongs to the guest and only
     // the guest). The physical address is validated by valid_phys_region()
     // called at the beginning of SVSM_CORE_PVALIDATE handler (this one).
-    if let Err(e) = unsafe { guest_page.write_ref(&request) } {
+    if let Err(e) = unsafe { guest_page.write(request) } {
         loop_result = Err(e.into());
     }
 
