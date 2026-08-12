@@ -176,6 +176,7 @@ impl Drop for GhcbPage {
             .get_pgtable()
             .set_encrypted_4k(vaddr)
             .expect("Could not re-encrypt page");
+        flush_tlb_global_sync_page(vaddr, PageSize::Regular);
 
         // Unregister GHCB PA
         // SAFETY: mapping the GHCB at physical address 0 is safe.
