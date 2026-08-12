@@ -12,6 +12,7 @@
 mod wrapper;
 
 mod persistence;
+use persistence::{ManufacturedMarker, Marker as _};
 
 pub mod ek_templates;
 mod tss;
@@ -22,8 +23,9 @@ use alloc::vec::Vec;
 
 use core::ffi::c_void;
 use libtcgtpm::bindings::{
-    _plat__LocalitySet, _plat__NVDisable, _plat__NVEnable, _plat__RunCommand, _plat__SetNvAvail,
-    _plat__Signal_PowerOn, _plat__Signal_Reset, TPM_Manufacture,
+    _plat__LocalitySet, _plat__NVDisable, _plat__NVEnable, _plat__NVNeedsManufacture,
+    _plat__RunCommand, _plat__SetNvAvail, _plat__Signal_PowerOn, _plat__Signal_Reset,
+    TPM_Manufacture,
 };
 
 use crate::{
@@ -51,6 +53,8 @@ impl TcgTpm {
     }
 
     fn manufacture(&self) -> Result<(), SvsmReqError> {
+        ManufacturedMarker::clear()?;
+
         // Wipe stale NV state and re-enable to get a fresh buffer with the
         // correct size (e.g. after a config change). NVDisable resets s_NvFile,
         // which is needed because NVEnable is a no-op when s_NvFile is already
@@ -80,6 +84,12 @@ impl TcgTpm {
             unsafe { _plat__NVDisable(core::ptr::without_provenance_mut::<c_void>(1), 0) };
             return Err(SvsmReqError::incomplete());
         }
+
+        // Persist a manufacturing marker so that the next boot can
+        // distinguish a completed manufacture from one interrupted
+        // (where NVEnable already flushed an NV image but
+        // TPM_Manufacture never finished).
+        ManufacturedMarker::write()?;
 
         Ok(())
     }
@@ -202,7 +212,15 @@ impl VtpmInterface for TcgTpm {
             return Err(SvsmReqError::incomplete());
         }
 
-        self.manufacture()?;
+        // SAFETY: FFI call, no parameters.
+        let needs_manufacture = unsafe { _plat__NVNeedsManufacture() } != 0;
+
+        if !needs_manufacture && ManufacturedMarker::exists()? {
+            log::info!("VTPM: loaded existing NV state from persistent storage");
+        } else {
+            log::info!("VTPM: manufacturing new NV state");
+            self.manufacture()?;
+        }
 
         self.signal_poweron(false)?;
         self.signal_nvon()?;

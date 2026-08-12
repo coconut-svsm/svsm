@@ -36,6 +36,7 @@ fn main() {
         .allowlist_function("_plat__Signal_Reset")
         .allowlist_function("_plat__NVDisable")
         .allowlist_function("_plat__NVEnable")
+        .allowlist_function("_plat__NVNeedsManufacture")
         .allowlist_function("TPM_Manufacture")
         .use_core()
         .clang_arg("-Wno-incompatible-library-redeclaration")
