@@ -103,13 +103,14 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     let apic_id: u32 = (params.r8 & 0xffff_ffff) as u32;
 
     // Check alignment
-    if !paddr.is_page_aligned() || !pcaa.is_aligned(8) {
+    if !paddr.is_page_aligned() || !pcaa.is_page_aligned() {
         return Err(SvsmReqError::invalid_address());
     }
 
     let vmsa_region =
         MemoryRegion::checked_new(paddr, PAGE_SIZE).ok_or(SvsmReqError::invalid_address())?;
-    let caa_region = MemoryRegion::checked_new(pcaa, 8).ok_or(SvsmReqError::invalid_address())?;
+    let caa_region =
+        MemoryRegion::checked_new(pcaa, PAGE_SIZE).ok_or(SvsmReqError::invalid_address())?;
 
     // Check for region overlap
     if vmsa_region.overlap(&caa_region)
@@ -479,21 +480,18 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
 
 fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
-    let region = MemoryRegion::checked_new(gpa, 8).ok_or(SvsmReqError::invalid_address())?;
+    let region = MemoryRegion::checked_new(gpa, PAGE_SIZE).ok_or(SvsmReqError::invalid_address())?;
 
-    if !gpa.is_aligned(8) || !valid_phys_region(&region) {
+    if !gpa.is_page_aligned() || !valid_phys_region(&region) {
         return Err(SvsmReqError::invalid_parameter());
     }
-
-    let offset = gpa.page_offset();
-    let paddr = gpa.page_align();
 
     // Prevent races between PVALIDATE and VMSA/CAA changes
     let _lock = PVALIDATE_LOCK.lock_write();
 
     // Temporarily map new CAA to clear it
-    let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
-    let vaddr = mapping_guard.virt_addr() + offset;
+    let mapping_guard = PerCPUPageMappingGuard::create_4k(gpa)?;
+    let vaddr = mapping_guard.virt_addr();
 
     let pending = GuestPtr::<SvsmCaa>::new(vaddr);
     // SAFETY: pending points to a new allocated page
