@@ -30,30 +30,6 @@ int sscanf(const char  *buffer, const char  *format, ...)
     return 0;
 }
 
-size_t fwrite(const void *buffer, size_t size, size_t count, FILE *stream)
-{
-    NOT_IMPLEMENTED;
-    return 0;
-}
-
-size_t fread(void *b, size_t c, size_t i, FILE *f)
-{
-    NOT_IMPLEMENTED;
-    return 0;
-}
-
-int fclose(FILE *f)
-{
-    NOT_IMPLEMENTED;
-    return EOF;
-}
-
-FILE *fopen(const char *c, const char *m)
-{
-    NOT_IMPLEMENTED;
-    return NULL;
-}
-
 int fputc(int c, FILE *f) 
 {
     NOT_IMPLEMENTED;

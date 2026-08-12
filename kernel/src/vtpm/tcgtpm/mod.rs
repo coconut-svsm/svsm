@@ -11,6 +11,8 @@
 #[cfg(target_os = "none")]
 mod wrapper;
 
+mod persistence;
+
 pub mod ek_templates;
 mod tss;
 

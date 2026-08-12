@@ -362,10 +362,15 @@ int toupper(int c);
 int printf(const char *, ...);
 int sscanf(const char *, const char *, ...);
 
-FILE *fopen(const char *, const char *);
-int fclose(FILE *);
-size_t fread(void *, size_t, size_t, FILE *);
-size_t fwrite(const void *buffer, size_t size, size_t count, FILE *stream);
+// Functions exported by the SVSM
+extern FILE *fopen(const char *, const char *);
+extern int fclose(FILE *);
+extern size_t fread(void *, size_t, size_t, FILE *);
+extern size_t fwrite(const void *buffer, size_t size, size_t count, FILE *stream);
+extern int fseek(FILE *stream, long offset, int whence);
+extern long ftell(FILE *stream);
+extern int fflush(FILE *stream);
+
 int fprintf(FILE *, const char *, ...);
 int fputc(int c, FILE *f);
 
