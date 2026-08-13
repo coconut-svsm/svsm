@@ -1077,7 +1077,7 @@ pub fn persistence_read_inode_sync(inode: u64) -> Result<Option<Zeroizing<Vec<u8
 
 /// Persistence inode numbers allocated statically for specific SVSM uses.
 ///
-/// Usable inode numbers start at `6`.
+/// Usable inode numbers start at `16`.
 #[derive(Debug)]
 #[repr(u64)]
 pub enum SvsmPersistenceStaticInode {
