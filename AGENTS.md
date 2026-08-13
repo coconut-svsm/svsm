@@ -67,6 +67,8 @@ This repository integrates formal verification using **Verus**.
 
 ## General coding guidelines
 
+* Follow the rules in [CONTRIBUTING.md](Documentation/docs/developer/CONTRIBUTING.md)
+  and linked files.
 * Wrap accesses to guest memory with `GuestPtr`. This type makes sure that an
   access fault is handled and returned as a regular error.
 * Be exceedingly careful when accessing guest and host-shared memory. In
