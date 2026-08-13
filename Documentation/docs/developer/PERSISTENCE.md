@@ -85,16 +85,7 @@ Setup/Testing
    -device virtio-blk-device,drive=svsm_storage
    ```
 
-If everything goes well, you should see the following message at the first boot:
+If everything goes well, you should see the following message at boot:
 ```
 [SVSM] persistent CocoonFs storage opened successfully
-[SVSM] persistence demo: no boot counter found yet
-[SVSM] persistence demo: successfully wrote updated boot counter
 ```
-and e.g.
-```
-[SVSM] persistent CocoonFs storage opened successfully
-[SVSM] persistence demo: boot counter read back is 1
-[SVSM] persistence demo: successfully wrote updated boot counter
-```
-etc. in subsequent ones.
