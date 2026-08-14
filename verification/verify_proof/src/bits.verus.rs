@@ -641,7 +641,6 @@ proof fn lemma_bit_u64_shl_bit_bound(x: u64, n: u64, m: u64)
     broadcast use lemma_bit_u64_shl_values;
     broadcast use vstd::bits::lemma_u64_pow2_no_overflow;
 
-    let upper = ((1u64 << m) - 1) as u64;
     vstd::bits::lemma_u64_shl_is_mul(1u64, m);
     vstd::bits::lemma_u64_shl_is_mul(1u64, n);
     vstd::bits::lemma_u64_shl_is_mul(1u64, (n + m) as u64);
@@ -699,7 +698,6 @@ pub proof fn lemma_bit_u64_extract_fields2(a: u64, b: u64, n: u64, m: u64)
 {
     let mask1 = sub(1u64 << n, 1);
     let mask2 = sub(1u64 << m, 1);
-    let field2 = (b & mask2);
     assert((b << n) <= BIT64_MASK!(m) << n) by (bit_vector)
         requires
             b <= BIT64_MASK!(m),

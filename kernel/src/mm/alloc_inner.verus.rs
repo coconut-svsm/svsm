@@ -35,8 +35,6 @@ pub spec const ALLOCATOR_PGINFO_SHARES: nat = 1;
 
 pub spec const DEALLOC_PGINFO_SHARES: nat = 1;
 
-pub uninterp spec fn allocator_provenance() -> Provenance;
-
 pub proof fn tracked_empty_seq_of_seq<T>(n: nat) -> (tracked ret: Seq<Seq<T>>)
     requires
         n >= 0,

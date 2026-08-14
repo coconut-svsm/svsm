@@ -37,16 +37,6 @@ spec fn spec_page_info(mem: MemContents<PageStorageType>) -> Option<PageInfo> {
     }
 }
 
-spec fn spec_free_info(perm: MemContents<PageStorageType>) -> Option<FreeInfo> {
-    let p_info = spec_page_info(perm);
-    if p_info.is_some() {
-        let pi = p_info.unwrap();
-        pi.spec_get_free()
-    } else {
-        None
-    }
-}
-
 impl PageType {
     spec fn spec_is_deallocatable(&self) -> bool {
         matches!(self, PageType::Allocated | PageType::SlabPage | PageType::File)
@@ -71,13 +61,6 @@ impl PageInfo {
             PageInfo::Compound(_) => PageType::Compound,
             PageInfo::File(_) => PageType::File,
             PageInfo::Reserved(_) => PageType::Reserved,
-        }
-    }
-
-    spec fn spec_get_free(&self) -> Option<FreeInfo> {
-        match *self {
-            PageInfo::Free(info) => { Some(info) },
-            _ => { None },
         }
     }
 }
@@ -256,7 +239,6 @@ impl SpecDecoderProof<PageStorageType> for FreeInfo {
         let mem = PageType::Free as u64;
         let bit1 = PageStorageType::TYPE_SHIFT;
         let bit2 = (PageStorageType::NEXT_SHIFT - PageStorageType::TYPE_SHIFT) as u64;
-        let bit3 = (u64::BITS - PageStorageType::NEXT_SHIFT) as u64;
         lemma_u64_and_bitmask_lower(order, bit2);
         broadcast use lemma_bit_u64_shr_bound;
 
@@ -379,7 +361,6 @@ impl SpecDecoderProof<PageStorageType> for FileInfo {
     {
         PageType::File.lemma_encode_decode();
         let ref_count = self.ref_count as u64;
-        let tbits = PageStorageType::TYPE_SHIFT;
         let bits = (u64::BITS - PageStorageType::TYPE_SHIFT) as u64;
         let mem = self.spec_encode().unwrap().0;
         lemma_bit_u64_extract_fields2(
@@ -481,7 +462,6 @@ impl SpecDecoderProof<PageStorageType> for PageInfo {
     proof fn lemma_encode_decode(&self) {
         let info = *self;
         let mem = info.spec_encode().unwrap();
-        let memval = mem.0;
         match info {
             PageInfo::Free(finfo) => {
                 finfo.lemma_encode_decode();

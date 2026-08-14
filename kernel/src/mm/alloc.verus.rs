@@ -323,7 +323,6 @@ impl HeapMemoryRegion {
     }
 
     spec fn req_split_page(&self, pfn: usize, order: usize, perm: PgUnitPerm<DeallocUnit>) -> bool {
-        let new_size = (1usize << (order - 1) as usize);
         &&& self.wf_next_pages()
         &&& perm.wf_pfn_order(self@.mr_map, pfn, order)
         &&& perm.page_type() == PageType::Free
@@ -332,7 +331,6 @@ impl HeapMemoryRegion {
     }
 
     spec fn ens_split_page_ok(&self, new: &Self, pfn: usize, order: usize) -> bool {
-        let rhs_pfn = (pfn + (1usize << order) / 2) as usize;
         let new_order = order - 1;
         let order = order as int;
         &&& new.wf_next_pages()
@@ -523,10 +521,6 @@ impl HeapMemoryRegion {
 
     }
 
-    spec fn req_free_page(&self, vaddr: VirtAddr, perm: AllocatedPagesPerm) -> bool {
-        &&& self.wf_next_pages()
-    }
-
     spec fn ens_free_page(&self, new: &Self, vaddr: VirtAddr, perm: AllocatedPagesPerm) -> bool {
         self@.mr_map@ == new@.mr_map@
     }
@@ -543,7 +537,6 @@ impl HeapMemoryRegion {
     }
 
     spec fn ens_free_page_raw(&self, new: &Self, pfn: usize, order: usize) -> bool {
-        let end = pfn + (1usize << order);
         &&& new.wf_next_pages()
         &&& self.with_same_mapping(new)
     }
