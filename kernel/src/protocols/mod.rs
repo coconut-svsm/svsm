@@ -8,9 +8,9 @@ pub mod apic;
 pub mod attest;
 pub mod core;
 pub mod errors;
-#[cfg(all(feature = "uefivars", not(test)))]
+#[cfg(feature = "uefivars")]
 pub mod uefivars;
-#[cfg(all(feature = "vtpm", not(test)))]
+#[cfg(feature = "vtpm")]
 pub mod vtpm;
 
 use cpuarch::vmsa::VMSA;

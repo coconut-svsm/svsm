@@ -103,7 +103,7 @@ pub fn uefi_mm_protocol_init() -> Result<(), SvsmReqError> {
     let mut store = STORE.lock();
     store.reset();
 
-    #[cfg(all(feature = "secureboot", not(test)))]
+    #[cfg(feature = "secureboot")]
     {
         // hard coded configuration for now.
         store.enroll_pk_mgmt();

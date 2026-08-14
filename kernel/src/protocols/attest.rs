@@ -17,11 +17,11 @@ use crate::greq::{
     services::get_regular_report,
 };
 use crate::mm::guestmem::{copy_slice_to_guest, read_bytes_from_guest, read_from_guest};
-#[cfg(all(feature = "uefivars", not(test)))]
+#[cfg(feature = "uefivars")]
 use crate::protocols::uefivars::uefi_mm_get_manifest;
 use crate::protocols::{RequestParams, errors::SvsmReqError};
 use crate::utils::MemoryRegion;
-#[cfg(all(feature = "vtpm", not(test)))]
+#[cfg(feature = "vtpm")]
 use crate::vtpm::vtpm_get_manifest;
 
 use crate::sev::ghcb::GhcbError;
@@ -38,9 +38,9 @@ const GUID_HEADER_ENTRY_SIZE: usize = 24;
 const SVSM_ATTEST_SERVICES: u32 = 0;
 const SVSM_ATTEST_SINGLE_SERVICE: u32 = 1;
 
-#[cfg(all(feature = "vtpm", not(test)))]
+#[cfg(feature = "vtpm")]
 const SVSM_ATTEST_VTPM_GUID: Uuid = uuid!("c476f1eb-0123-45a5-9641-b4e7dde5bfe3");
-#[cfg(all(feature = "uefivars", not(test)))]
+#[cfg(feature = "uefivars")]
 const SVSM_ATTEST_UEFI_MM_GUID: Uuid = uuid!("a4453a59-9e1b-4787-a033-1986d6adbe55");
 
 // According to
@@ -214,8 +214,7 @@ impl GuidTable {
         }
     }
 
-    // Only used when features are enabled.
-    #[allow(dead_code)]
+    #[cfg(any(feature = "vtpm", feature = "uefivars"))]
     fn push(&mut self, guid: uuid::Uuid, data: Vec<u8>) {
         self.entries.push(GuidTableEntry { guid, data })
     }
@@ -473,7 +472,7 @@ fn get_attestation_report(
     )
 }
 
-#[allow(dead_code)]
+#[cfg(any(feature = "vtpm", feature = "uefivars"))]
 fn attest_single_service(
     manifest: &[u8],
     params: &mut RequestParams,
@@ -489,7 +488,7 @@ fn attest_single_service(
     get_attestation_report(hash.as_slice(), manifest, params, &ops.op)
 }
 
-#[cfg(all(feature = "vtpm", not(test)))]
+#[cfg(feature = "vtpm")]
 fn attest_single_vtpm(
     params: &mut RequestParams,
     ops: &AttestSingleServiceOp,
@@ -508,10 +507,10 @@ fn attest_multiple_services(params: &mut RequestParams) -> Result<(), SvsmReqErr
     #[allow(unused_mut)]
     let mut services = GuidTable::new();
 
-    #[cfg(all(feature = "vtpm", not(test)))]
+    #[cfg(feature = "vtpm")]
     services.push(SVSM_ATTEST_VTPM_GUID, vtpm_get_manifest()?);
 
-    #[cfg(all(feature = "uefivars", not(test)))]
+    #[cfg(feature = "uefivars")]
     services.push(SVSM_ATTEST_UEFI_MM_GUID, uefi_mm_get_manifest()?);
 
     let manifest = services.to_vec()?;
@@ -536,9 +535,9 @@ fn attest_single_service_handler(params: &mut RequestParams) -> Result<(), SvsmR
     // Extract the GUID from the Attest Single Service Operation structure.
     // The GUID is used to determine the specific service to be attested.
     match attest_op.get_guid() {
-        #[cfg(all(feature = "vtpm", not(test)))]
+        #[cfg(feature = "vtpm")]
         SVSM_ATTEST_VTPM_GUID => attest_single_vtpm(params, &attest_op),
-        #[cfg(all(feature = "uefivars", not(test)))]
+        #[cfg(feature = "uefivars")]
         SVSM_ATTEST_UEFI_MM_GUID => {
             attest_single_service(uefi_mm_get_manifest()?.as_slice(), params, &attest_op)
         }
