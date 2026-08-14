@@ -85,37 +85,6 @@ impl PerCPUPageMappingGuard {
     pub fn virt_addr(&self) -> VirtAddr {
         self.mapping.region().start()
     }
-
-    /// Creates a virtual contigous mapping for the given 4k physical pages which
-    /// may not be contiguous in physical memory.
-    ///
-    /// # Arguments
-    ///
-    /// * `pages`: A slice of tuple containing `PhysAddr` objects representing the
-    ///   4k page to map and its shareability.
-    ///
-    /// # Returns
-    ///
-    /// This function returns a `Result` that contains a `PerCPUPageMappingGuard`
-    /// object on success. The `PerCPUPageMappingGuard` object represents the page
-    /// mapping that was created. If an error occurs while creating the page
-    /// mapping, it returns a `SvsmError`.
-    pub fn create_4k_pages(pages: &[(PhysAddr, bool)]) -> Result<Self, SvsmError> {
-        let mapping = VRangeAlloc::new_4k(pages.len() * PAGE_SIZE, 0)?;
-        let flags = PTEntryFlags::data();
-
-        let pgtable = this_cpu().get_pgtable();
-        for (vaddr, (paddr, shared)) in mapping
-            .region()
-            .iter_pages(PageSize::Regular)
-            .zip(pages.iter().copied())
-        {
-            assert!(paddr.is_page_aligned());
-            pgtable.map_4k(vaddr, paddr, flags, shared)?;
-        }
-
-        Ok(Self { mapping })
-    }
 }
 
 impl Drop for PerCPUPageMappingGuard {
