@@ -11,7 +11,7 @@ use crate::cpu::tlb::flush_tlb_global_percpu_range;
 use crate::error::SvsmError;
 use crate::mm::virtualrange::VRangeAlloc;
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
-use crate::utils::align_up;
+use crate::utils::{MemoryRegion, align_up};
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
@@ -22,6 +22,7 @@ use zerocopy::FromBytes;
 #[must_use = "if unused the mapping will immediately be unmapped"]
 pub struct PerCPUPageMappingGuard {
     mapping: VRangeAlloc,
+    phys_base: PhysAddr,
 }
 
 impl PerCPUPageMappingGuard {
@@ -76,7 +77,10 @@ impl PerCPUPageMappingGuard {
             range
         };
 
-        Ok(Self { mapping })
+        Ok(Self {
+            mapping,
+            phys_base: paddr_start,
+        })
     }
 
     /// Creates a new [`PerCPUPageMappingGuard`] for a 4KB page at the
@@ -91,6 +95,16 @@ impl PerCPUPageMappingGuard {
     /// Returns the virtual address associated with the guard.
     pub fn virt_addr(&self) -> VirtAddr {
         self.mapping.region().start()
+    }
+
+    /// Returns the physical base address of the mapped region.
+    pub const fn phys_base(&self) -> PhysAddr {
+        self.phys_base
+    }
+
+    /// Returns the physical address region mapped by this guard
+    pub fn phys_region(&self) -> MemoryRegion<PhysAddr> {
+        MemoryRegion::new(self.phys_base, self.mapping.region().len())
     }
 }
 
