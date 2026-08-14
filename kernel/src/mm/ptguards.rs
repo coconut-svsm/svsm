@@ -48,6 +48,10 @@ impl PerCPUPageMappingGuard {
         paddr_end: PhysAddr,
         alignment: usize,
     ) -> Result<Self, SvsmError> {
+        if paddr_start >= paddr_end {
+            return Err(SvsmError::InvalidAddress);
+        }
+
         let align_mask = (PAGE_SIZE << alignment) - 1;
         let size = paddr_end - paddr_start;
         assert_eq!((size & align_mask), 0);
@@ -78,7 +82,10 @@ impl PerCPUPageMappingGuard {
     /// Creates a new [`PerCPUPageMappingGuard`] for a 4KB page at the
     /// specified physical address, or an `SvsmError` if an error occurs.
     pub fn create_4k(paddr: PhysAddr) -> Result<Self, SvsmError> {
-        Self::create(paddr, paddr + PAGE_SIZE, 0)
+        let end = paddr
+            .checked_add(PAGE_SIZE)
+            .ok_or(SvsmError::InvalidAddress)?;
+        Self::create(paddr, end, 0)
     }
 
     /// Returns the virtual address associated with the guard.
