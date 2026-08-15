@@ -10,8 +10,8 @@ use crate::cpu::{flush_tlb_global_sync, flush_tlb_global_sync_page};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
-use crate::mm::{GuestPtr, valid_phys_region, writable_phys_addr};
 use crate::mm::{PerCPUMapping, PerCPUPageMappingGuard};
+use crate::mm::{valid_phys_region, writable_phys_addr};
 #[cfg(all(feature = "uefivars", not(test)))]
 use crate::protocols::SVSM_UEFI_MM_PROTOCOL;
 use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
@@ -404,9 +404,8 @@ fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
 
 fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
-    let header_region = MemoryRegion::checked_new(gpa, 8).ok_or(SvsmReqError::invalid_address())?;
 
-    if !gpa.is_aligned(8) || !valid_phys_region(&header_region) {
+    if !gpa.is_aligned(8) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
@@ -417,12 +416,9 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let _lock = PVALIDATE_LOCK.lock_read();
 
     let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
-    let start = guard.virt_addr();
 
-    let guest_page = GuestPtr::<PValidateRequest>::new(start + offset);
-    // SAFETY: start is a new mapped page address, thus valid.
-    // offset can't exceed a page size, so guest_page belongs to mapped memory.
-    let mut request = unsafe { guest_page.read()? };
+    let request_ptr = guard.guest_ptr::<PValidateRequest>(offset)?;
+    let mut request = request_ptr.read()?;
 
     let entries = request.entries;
     let next = request.next;
@@ -436,22 +432,13 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
         return Err(SvsmReqError::invalid_parameter());
     }
 
-    let entries_len = ((entries + 1) * 8) as usize;
-    let region =
-        MemoryRegion::checked_new(gpa, entries_len).ok_or(SvsmReqError::invalid_address())?;
-    if !valid_phys_region(&region) {
-        return Err(SvsmReqError::invalid_parameter());
-    }
+    let entries_offset = offset + size_of::<PValidateRequest>();
+    let entries_ptr = guard.guest_slice::<u64>(entries_offset, entries as usize)?;
 
     let mut loop_result = Ok(());
 
-    let guest_entries = guest_page.offset(1).cast::<u64>();
     for i in next..entries {
-        let index = i as isize;
-        // SAFETY: guest_entries comes from guest_page which is a new mapped
-        // page. index is between [next, entries) and both values have been
-        // validated.
-        let entry = match unsafe { guest_entries.offset(index).read() } {
+        let entry = match entries_ptr.read(i as usize) {
             Ok(v) => v,
             Err(e) => {
                 loop_result = Err(e.into());
@@ -467,11 +454,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
         }
     }
 
-    // SAFETY: guest_page is obtained from a guest-provided physical address
-    // (untrusted), so it needs to be valid (ie. belongs to the guest and only
-    // the guest). The physical address is validated by valid_phys_region()
-    // called at the beginning of SVSM_CORE_PVALIDATE handler (this one).
-    if let Err(e) = unsafe { guest_page.write_ref(&request) } {
+    if let Err(e) = request_ptr.write(request) {
         loop_result = Err(e.into());
     }
 
@@ -480,9 +463,8 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
 
 fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
-    let region = MemoryRegion::checked_new(gpa, PAGE_SIZE).ok_or(SvsmReqError::invalid_address())?;
 
-    if !gpa.is_page_aligned() || !valid_phys_region(&region) {
+    if !gpa.is_page_aligned() {
         return Err(SvsmReqError::invalid_parameter());
     }
 
@@ -490,12 +472,9 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let _lock = PVALIDATE_LOCK.lock_write();
 
     // Temporarily map new CAA to clear it
-    let mapping_guard = PerCPUPageMappingGuard::create_4k(gpa)?;
-    let vaddr = mapping_guard.virt_addr();
-
-    let pending = GuestPtr::<SvsmCaa>::new(vaddr);
-    // SAFETY: pending points to a new allocated page
-    unsafe { pending.write(SvsmCaa::zeroed())? };
+    PerCPUPageMappingGuard::create_4k(gpa)?
+        .guest_ptr::<SvsmCaa>(0)?
+        .write(SvsmCaa::zeroed())?;
 
     // Clear any pending interrupt state before remapping the calling area to
     // ensure that any pending lazy EOI has been processed.

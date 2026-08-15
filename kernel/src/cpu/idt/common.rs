@@ -12,8 +12,8 @@ use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
 use crate::cpu::shadow_stack::is_cet_ss_enabled;
 use crate::error::SvsmError;
 use crate::insn_decode::{InsnError, InsnMachineCtx, Register, SegRegister};
-use crate::mm::GuestPtr;
 use crate::mm::PAGE_SIZE;
+use crate::mm::TryPtr;
 use crate::mm::ro_after_init::make_ro;
 use crate::platform::SVSM_PLATFORM;
 use crate::types::{Bytes, SVSM_CS};
@@ -99,7 +99,7 @@ impl X86ExceptionContext {
 }
 
 impl InsnMachineCtx for X86ExceptionContext {
-    type Ptr<T: FromBytes + IntoBytes> = GuestPtr<T>;
+    type Ptr<T: FromBytes + IntoBytes> = TryPtr<T>;
 
     fn read_efer(&self) -> u64 {
         read_efer().bits()
@@ -181,7 +181,7 @@ impl InsnMachineCtx for X86ExceptionContext {
         if user_mode(self) {
             todo!();
         } else {
-            Ok(GuestPtr::<T>::new(VirtAddr::from(la)))
+            Ok(TryPtr::<T>::new(VirtAddr::from(la)))
         }
     }
 

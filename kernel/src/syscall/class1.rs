@@ -23,7 +23,7 @@ use syscall::SysCallError::*;
 use syscall::*;
 
 pub fn sys_open(path: usize, mode: usize, flags: usize) -> Result<u64, SysCallError> {
-    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
+    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path))?;
     let user_path = user_path_ptr.read_c_string()?;
     let file_mode = FileModes::from_bits(mode).ok_or(SysCallError::EINVAL)?;
     let file_flags = FileFlags::from_bits(flags).ok_or(SysCallError::EINVAL)?;
@@ -103,7 +103,7 @@ pub fn sys_truncate(obj_id: u32, length: usize) -> Result<u64, SysCallError> {
 }
 
 pub fn sys_unlink(path: usize) -> Result<u64, SysCallError> {
-    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
+    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path))?;
     let user_path = user_path_ptr.read_c_string()?;
 
     unlink_root(current_task().rootdir(), &user_path).map_err(SysCallError::from)?;
@@ -112,7 +112,7 @@ pub fn sys_unlink(path: usize) -> Result<u64, SysCallError> {
 }
 
 pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
-    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
+    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path))?;
     let user_path = user_path_ptr.read_c_string()?;
     let dir = find_dir(current_task().rootdir(), &user_path)?;
     let id = obj_add(Arc::new(FsObj::new_dir(&dir)))?;
@@ -123,7 +123,7 @@ pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
 pub fn sys_readdir(obj_id: u32, dirents: usize, size: usize) -> Result<u64, SysCallError> {
     let fsobj = obj_get(obj_id.into())?;
     let fsobj = fsobj.as_fs().ok_or(ENOTSUPP)?;
-    let user_dirents_ptr = UserPtr::<DirEnt>::new(VirtAddr::from(dirents));
+    let user_dirents = UserPtr::<[DirEnt]>::new(VirtAddr::from(dirents), size)?;
 
     for i in 0..size {
         let Some((name, dirent)) = fsobj.readdir()? else {
@@ -153,14 +153,13 @@ pub fn sys_readdir(obj_id: u32, dirents: usize, size: usize) -> Result<u64, SysC
             new_entry.file_size = 0;
         }
 
-        let user_dirents_ptr = user_dirents_ptr.offset(i.try_into().unwrap());
-        user_dirents_ptr.write(new_entry)?
+        user_dirents.write(i, new_entry)?;
     }
     Ok(size as u64)
 }
 
 pub fn sys_mkdir(path: usize) -> Result<u64, SysCallError> {
-    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
+    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path))?;
     let user_path = user_path_ptr.read_c_string()?;
 
     mkdir_root(current_task().rootdir(), &user_path).map_err(SysCallError::from)?;
@@ -169,7 +168,7 @@ pub fn sys_mkdir(path: usize) -> Result<u64, SysCallError> {
 }
 
 pub fn sys_rmdir(path: usize) -> Result<u64, SysCallError> {
-    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
+    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path))?;
     let user_path = user_path_ptr.read_c_string()?;
 
     rmdir_root(current_task().rootdir(), &user_path).map_err(SysCallError::from)?;

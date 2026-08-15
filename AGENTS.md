@@ -69,8 +69,11 @@ This repository integrates formal verification using **Verus**.
 
 * Follow the rules in [CONTRIBUTING.md](Documentation/docs/developer/CONTRIBUTING.md)
   and linked files.
-* Wrap accesses to guest memory with `GuestPtr`. This type makes sure that an
-  access fault is handled and returned as a regular error.
+* Wrap fault-prone pointer accesses with `TryPtr`. This type makes sure that
+  an access fault is handled and returned as a regular error. For lower-VMPL
+  guest physical addresses use `GuestPtr`, which can be instantiated from a
+  `PerCPUPageMappingGuard`, and validates the physical region on construction.
+  For SVSM userspace memory use `UserPtr`.
 * Be exceedingly careful when accessing guest and host-shared memory. In
   general, shared memory may contain any bit combination and can be updated at
   any moment. We use `FromBytes` to make sure a type has no invalid bitwise
@@ -119,7 +122,8 @@ and potentially hostile.**
 
 * SVSM code must never dereference raw guest pointers directly. Any memory
   address (Guest Physical Address or GPA) provided by the guest must be wrapped
-  in `GuestPtr<T>`.
+  in `GuestPtr<T>`; any address in SVSM userspace must be wrapped in
+  `UserPtr<T>`.
 * Always validate that guest-provided buffers do not cross page boundaries
   unless explicitly handled, as page boundaries may map to disparate physical
   ranges.

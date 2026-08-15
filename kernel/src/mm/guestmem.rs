@@ -17,9 +17,10 @@ use crate::utils::MemoryRegion;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::arch::asm;
+use core::borrow::Borrow;
 use core::ffi::c_char;
 use core::mem::{MaybeUninit, size_of};
-use core::ptr::{NonNull, with_exposed_provenance, with_exposed_provenance_mut};
+use core::ptr::{self, NonNull};
 use core::slice;
 use syscall::PATH_MAX;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
@@ -314,12 +315,13 @@ unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
     unsafe { copy_bytes(src.cast(), dst.cast(), size) }
 }
 
+/// A pointer wrapper that safely handles faults when accessing memory.
 #[derive(Debug)]
-pub struct GuestPtr<T> {
+pub struct TryPtr<T: ?Sized> {
     ptr: *mut T,
 }
 
-impl<T> GuestPtr<T> {
+impl<T> TryPtr<T> {
     #[inline]
     pub fn new(v: VirtAddr) -> Self {
         Self {
@@ -340,7 +342,7 @@ impl<T> GuestPtr<T> {
     ///
     /// # Safety
     ///
-    /// See safety considerations for [`GuestPtr::read()`].
+    /// See safety considerations for [`TryPtr::read()`].
     ///
     /// # Errors
     ///
@@ -392,6 +394,9 @@ impl<T> GuestPtr<T> {
         }
     }
 
+    /// Writes `buf` into the memory pointed to by this `TryPtr`.
+    /// `buf` may be an owned instance of `T` or a reference.
+    ///
     /// # Safety
     ///
     /// The caller must verify not to corrupt arbitrary memory, as this function
@@ -402,68 +407,390 @@ impl<T> GuestPtr<T> {
     /// Returns an error if the specified address is not mapped or is not mapped
     /// with the appropriate write permissions.
     #[inline]
-    pub unsafe fn write(&self, buf: T) -> Result<(), SvsmError>
+    pub unsafe fn write<B>(&self, buf: B) -> Result<(), SvsmError>
     where
+        B: Borrow<T>,
         T: IntoBytes,
     {
+        let src = buf.borrow();
         // SAFETY: Safe when self.ptr does not point to SVSM memory because
         // then the write can not harm memory safety.
-        unsafe { do_movsb(&raw const buf, self.ptr) }
-    }
-
-    /// # Safety
-    ///
-    /// The caller must verify not to corrupt arbitrary memory, as this function
-    /// doesn't make any checks in that regard.
-    ///
-    /// # Returns
-    ///
-    /// Returns an error if the specified address is not mapped or is not mapped
-    /// with the appropriate write permissions.
-    #[inline]
-    pub unsafe fn write_ref(&self, buf: &T) -> Result<(), SvsmError>
-    where
-        T: IntoBytes,
-    {
-        // SAFETY: Safe when self.ptr does not point to SVSM memory because
-        // then the write can not harm memory safety.
-        unsafe { do_movsb(buf, self.ptr) }
+        unsafe { do_movsb(src, self.ptr) }
     }
 
     #[inline]
-    pub const fn cast<N>(&self) -> GuestPtr<N> {
-        GuestPtr::from_ptr(self.ptr.cast())
+    pub const fn cast<N>(&self) -> TryPtr<N> {
+        TryPtr::from_ptr(self.ptr.cast())
     }
 
     #[inline]
     pub fn offset(&self, count: isize) -> Self {
-        // SAFETY: Safe when self.ptr does not point to SVSM memory because
-        // then the write can not harm memory safety.
-        GuestPtr::from_ptr(self.ptr.wrapping_offset(count))
+        TryPtr::from_ptr(self.ptr.wrapping_offset(count))
     }
 }
 
-impl<T> From<NonNull<T>> for GuestPtr<T> {
+impl<T> TryPtr<[T]> {
+    /// Creates a `TryPtr<[T]>` pointing to `len` elements starting at `v`.
+    #[inline]
+    pub fn new(v: VirtAddr, len: usize) -> Self {
+        Self {
+            ptr: ptr::slice_from_raw_parts_mut(v.as_mut_ptr::<T>(), len),
+        }
+    }
+
+    /// Returns the number of elements in the slice.
+    #[inline]
+    pub const fn len(&self) -> usize {
+        self.ptr.len()
+    }
+
+    /// Returns `true` if the slice contains no elements.
+    #[inline]
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Reads element at `index`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must verify that the entire slice is appropriate to read,
+    /// as this function does not validate the address range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::InvalidAddress`] if `index >= len`, or
+    /// [`SvsmError::Fault`] if the access faults.
+    pub unsafe fn read(&self, index: usize) -> Result<T, SvsmError>
+    where
+        T: FromBytes,
+    {
+        if index >= self.len() {
+            return Err(SvsmError::InvalidAddress);
+        }
+        // SAFETY: bounds-checked above; remaining requirements from caller.
+        unsafe { TryPtr::from_ptr((self.ptr as *mut T).wrapping_add(index)).read() }
+    }
+
+    /// Writes `val` to element at `index`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must verify that the entire slice is appropriate to write,
+    /// as this function does not validate the address range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::InvalidAddress`] if `index >= len`, or
+    /// [`SvsmError::Fault`] if the access faults.
+    pub unsafe fn write(&self, index: usize, val: T) -> Result<(), SvsmError>
+    where
+        T: IntoBytes,
+    {
+        if index >= self.len() {
+            return Err(SvsmError::InvalidAddress);
+        }
+        // SAFETY: bounds-checked above; remaining requirements from caller.
+        unsafe { TryPtr::from_ptr((self.ptr as *mut T).wrapping_add(index)).write(val) }
+    }
+
+    /// Reads all elements and copies them into `dst`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must verify that the entire backing memory is appropriate
+    /// to read.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::Mem`] if `dst.len() != self.len()`, or
+    /// [`SvsmError::Fault`] if the copy faults.
+    pub unsafe fn read_to_slice(&self, dst: &mut [T]) -> Result<(), SvsmError>
+    where
+        T: FromBytes,
+    {
+        if dst.len() != self.len() {
+            return Err(SvsmError::Mem);
+        }
+        // SAFETY: dst is a valid slice; source requirements come from caller.
+        unsafe {
+            copy_bytes(
+                (self.ptr as *const T).cast::<u8>(),
+                dst.as_mut_ptr().cast::<u8>(),
+                self.len() * size_of::<T>(),
+            )
+        }
+    }
+
+    /// Reads all elements and copies them into a newly allocated `Vec`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must verify that the entire backing memory is appropriate
+    /// to read.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::Fault`] if the copy faults.
+    pub unsafe fn read_to_vec(&self) -> Result<Vec<T>, SvsmError>
+    where
+        T: FromBytes,
+    {
+        let mut v = Vec::with_capacity(self.len());
+        let dst = v.spare_capacity_mut();
+        // SAFETY: `dst` is guaranteed to point to valid and large enough
+        // memory. If `copy_bytes()` succeeds, `self.len()` elements have
+        // been successfully initialized.
+        unsafe {
+            copy_bytes(
+                self.ptr.cast_const().cast::<u8>(),
+                dst.as_mut_ptr().cast::<u8>(),
+                self.len() * size_of::<T>(),
+            )?;
+            v.set_len(self.len());
+        }
+        Ok(v)
+    }
+
+    /// Writes all elements from `src`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must verify that the entire backing memory is appropriate
+    /// to write.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::Mem`] if `src.len() != self.len()`, or
+    /// [`SvsmError::Fault`] if the copy faults.
+    pub unsafe fn write_from_slice(&self, src: &[T]) -> Result<(), SvsmError>
+    where
+        T: IntoBytes,
+    {
+        if src.len() != self.len() {
+            return Err(SvsmError::Mem);
+        }
+        // SAFETY: src is a valid slice; destination requirements come from caller.
+        unsafe {
+            copy_bytes(
+                src.as_ptr().cast::<u8>(),
+                (self.ptr as *mut T).cast::<u8>(),
+                self.len() * size_of::<T>(),
+            )
+        }
+    }
+}
+
+impl TryPtr<[u8]> {
+    /// # Safety
+    ///
+    /// The caller must verify that the entire backing memory is appropriate
+    /// to write.
+    pub unsafe fn zero_fill(&self) -> Result<(), SvsmError> {
+        // SAFETY: bounds limited to `self.len()`, the rest is delegated to
+        // the caller
+        unsafe { clear_bytes(self.ptr.cast::<u8>(), self.len()) }
+    }
+}
+
+impl<T> From<NonNull<T>> for TryPtr<T> {
     fn from(value: NonNull<T>) -> Self {
         Self::from_ptr(value.as_ptr())
     }
 }
 
-impl<T: FromBytes + IntoBytes> InsnMachineMem<T> for GuestPtr<T> {
+impl<T: FromBytes + IntoBytes> InsnMachineMem<T> for TryPtr<T> {
     /// # Safety
     ///
-    /// See the GuestPtr's read() method documentation for safety requirements.
+    /// See the TryPtr's read() method documentation for safety requirements.
     unsafe fn mem_read(&self) -> Result<T, InsnError> {
-        // SAFETY: Safe when GuestPtr::read safety requirements are met.
+        // SAFETY: Safe when TryPtr::read safety requirements are met.
         unsafe { self.read().map_err(|_| InsnError::MemRead) }
     }
 
     /// # Safety
     ///
-    /// See the GuestPtr's write() method documentation for safety requirements.
+    /// See the TryPtr's write() method documentation for safety requirements.
     unsafe fn mem_write(&mut self, data: T) -> Result<(), InsnError> {
-        // SAFETY: Safe when GuestPtr::write safety requirements are met.
+        // SAFETY: Safe when TryPtr::write safety requirements are met.
         unsafe { self.write(data).map_err(|_| InsnError::MemWrite) }
+    }
+}
+
+impl PerCPUPageMappingGuard {
+    /// Returns a [`GuestPtr<T>`] at `offset` bytes into the mapped region.
+    ///
+    /// # Errors
+    ///
+    /// * [`SvsmError::InvalidAddress`] if the access would exceed the mapped region or
+    ///   fall outside guest memory.
+    /// * [`SvsmError::Mem`] if integer overflow occurs.
+    pub fn guest_ptr<T>(&self, offset: usize) -> Result<GuestPtr<'_, T>, SvsmError> {
+        let start = self.phys_base().checked_add(offset).ok_or(SvsmError::Mem)?;
+        let region = checked_guest_region(start, size_of::<T>())?;
+        if !self.phys_region().contains_region(&region) {
+            return Err(SvsmError::InvalidAddress);
+        }
+        Ok(GuestPtr {
+            _guard: self,
+            ptr: TryPtr::<T>::new(self.virt_addr() + offset),
+        })
+    }
+
+    /// Returns a [`GuestPtr<[T]>`] for `len` elements at `offset` bytes into
+    /// the mapped region.
+    ///
+    /// # Errors
+    ///
+    /// * [`SvsmError::InvalidAddress`] if the access would exceed the mapped region or
+    ///   fall outside guest memory.
+    /// * [`SvsmError::Mem`] if integer overflow occurs.
+    pub fn guest_slice<T>(
+        &self,
+        offset: usize,
+        len: usize,
+    ) -> Result<GuestPtr<'_, [T]>, SvsmError> {
+        let start = self.phys_base().checked_add(offset).ok_or(SvsmError::Mem)?;
+        let size = len.checked_mul(size_of::<T>()).ok_or(SvsmError::Mem)?;
+        let region = checked_guest_region(start, size)?;
+        if !self.phys_region().contains_region(&region) {
+            return Err(SvsmError::InvalidAddress);
+        }
+        Ok(GuestPtr {
+            _guard: self,
+            ptr: TryPtr::<[T]>::new(self.virt_addr() + offset, len),
+        })
+    }
+}
+
+/// A pointer to a validated region of lower-VMPL guest memory, anchored to a
+/// [`PerCPUPageMappingGuard`] that keeps the underlying page mapping live.
+///
+/// Created via [`PerCPUPageMappingGuard::guest_ptr`] or
+/// [`PerCPUPageMappingGuard::guest_slice`].
+#[derive(Debug)]
+pub struct GuestPtr<'a, T: ?Sized> {
+    _guard: &'a PerCPUPageMappingGuard,
+    ptr: TryPtr<T>,
+}
+
+impl<T> GuestPtr<'_, T> {
+    /// Reads the value from guest memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::Fault`] if the access faults unexpectedly.
+    pub fn read(&self) -> Result<T, SvsmError>
+    where
+        T: FromBytes,
+    {
+        // SAFETY: bounds were verified at construction
+        unsafe { self.ptr.read() }
+    }
+
+    /// Attempts to read the value from guest memory, validating its bit
+    /// pattern.
+    ///
+    /// # Errors
+    ///
+    /// * [`SvsmError::Fault`] if the access faults.
+    /// * [`SvsmError::Mem`] if the data is not a valid instance of `T`.
+    pub fn try_read(&self) -> Result<T, SvsmError>
+    where
+        T: TryFromBytes,
+    {
+        // SAFETY: bounds were verified at construction
+        unsafe { self.ptr.try_read() }
+    }
+
+    /// Writes `val` to guest memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::Fault`] if the access faults.
+    pub fn write<B>(&self, val: B) -> Result<(), SvsmError>
+    where
+        B: Borrow<T>,
+        T: IntoBytes,
+    {
+        // SAFETY: bounds were verified at construction
+        unsafe { self.ptr.write(val) }
+    }
+}
+
+impl<T> GuestPtr<'_, [T]> {
+    /// Returns the number of elements in the slice.
+    pub const fn len(&self) -> usize {
+        self.ptr.len()
+    }
+
+    /// Returns `true` if the slice contains no elements.
+    pub const fn is_empty(&self) -> bool {
+        self.ptr.is_empty()
+    }
+
+    /// Reads element at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::InvalidAddress`] if `index >= len`, or
+    /// [`SvsmError::Fault`] if the access faults.
+    pub fn read(&self, index: usize) -> Result<T, SvsmError>
+    where
+        T: FromBytes,
+    {
+        // SAFETY: bounds were verified at construction
+        unsafe { self.ptr.read(index) }
+    }
+
+    /// Writes `val` to element at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::InvalidAddress`] if `index >= len`, or
+    /// [`SvsmError::Fault`] if the access faults.
+    pub fn write(&self, index: usize, val: T) -> Result<(), SvsmError>
+    where
+        T: IntoBytes,
+    {
+        // SAFETY: bounds were verified at construction
+        unsafe { self.ptr.write(index, val) }
+    }
+
+    /// Reads all elements and copies them into `dst`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::Mem`] if `dst.len() != self.len()`, or
+    /// [`SvsmError::Fault`] if the copy faults.
+    pub fn read_to_slice(&self, dst: &mut [T]) -> Result<(), SvsmError>
+    where
+        T: FromBytes,
+    {
+        // SAFETY: bounds were verified at construction
+        unsafe { self.ptr.read_to_slice(dst) }
+    }
+
+    pub fn read_to_vec(&self) -> Result<Vec<T>, SvsmError>
+    where
+        T: FromBytes,
+    {
+        // SAFETY: bounds were verified at construction
+        unsafe { self.ptr.read_to_vec() }
+    }
+
+    /// Writes all elements from `src`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::Mem`] if `src.len() != self.len()`, or
+    /// [`SvsmError::Fault`] if the copy faults.
+    pub fn write_from_slice(&self, src: &[T]) -> Result<(), SvsmError>
+    where
+        T: IntoBytes,
+    {
+        // SAFETY: bounds were verified at construction
+        unsafe { self.ptr.write_from_slice(src) }
     }
 }
 
@@ -483,23 +810,24 @@ impl Drop for UserAccessGuard {
 }
 
 #[derive(Debug)]
-pub struct UserPtr<T> {
-    guest_ptr: GuestPtr<T>,
+pub struct UserPtr<T: ?Sized> {
+    ptr: TryPtr<T>,
 }
 
 impl<T> UserPtr<T> {
+    /// Constructs a `UserPtr` pointing to `v`, checking that the entire object
+    /// falls within userspace.
     #[inline]
-    pub fn new(v: VirtAddr) -> Self {
-        Self {
-            guest_ptr: GuestPtr::new(v),
+    pub fn new(v: VirtAddr) -> Result<Self, SvsmError> {
+        let userspace = MemoryRegion::from_addresses(USER_MEM_START, USER_MEM_END);
+        let region =
+            MemoryRegion::checked_new(v, size_of::<T>()).ok_or(SvsmError::InvalidAddress)?;
+        if !userspace.contains_region(&region) {
+            return Err(SvsmError::InvalidAddress);
         }
-    }
-
-    fn check_bounds(&self) -> bool {
-        let v = VirtAddr::from(self.guest_ptr.ptr);
-
-        (USER_MEM_START..USER_MEM_END).contains(&v)
-            && (USER_MEM_START..USER_MEM_END).contains(&(v + size_of::<T>()))
+        Ok(Self {
+            ptr: TryPtr::<T>::new(v),
+        })
     }
 
     #[inline]
@@ -507,62 +835,43 @@ impl<T> UserPtr<T> {
     where
         T: FromBytes,
     {
-        if !self.check_bounds() {
-            return Err(SvsmError::InvalidAddress);
-        }
         let _guard = UserAccessGuard::new();
-        // SAFETY: Target pointer is guaranteed to point to user memory.
-        unsafe { self.guest_ptr.read() }
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.read() }
     }
 
     /// Attempts to read the `T` behind the pointer, verifying it has a valid
-    /// representation in the process (see [`GuestPtr::try_read`]).
+    /// representation in the process (see [`TryPtr::try_read`]).
     #[inline]
     pub fn try_read(&self) -> Result<T, SvsmError>
     where
         T: TryFromBytes,
     {
-        if !self.check_bounds() {
-            return Err(SvsmError::InvalidAddress);
-        }
         let _guard = UserAccessGuard::new();
-        // SAFETY: Target pointer is guaranteed to point to user memory.
-        unsafe { self.guest_ptr.try_read() }
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.try_read() }
     }
 
     #[inline]
-    pub fn write(&self, buf: T) -> Result<(), SvsmError>
+    pub fn write<B>(&self, buf: B) -> Result<(), SvsmError>
     where
+        B: Borrow<T>,
         T: IntoBytes,
     {
-        self.write_ref(&buf)
-    }
-
-    #[inline]
-    pub fn write_ref(&self, buf: &T) -> Result<(), SvsmError>
-    where
-        T: IntoBytes,
-    {
-        if !self.check_bounds() {
-            return Err(SvsmError::InvalidAddress);
-        }
         let _guard = UserAccessGuard::new();
-        // SAFETY: Target pointer is guaranteed to point to user memory.
-        unsafe { self.guest_ptr.write_ref(buf) }
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.write(buf) }
     }
 
     #[inline]
-    pub const fn cast<N>(&self) -> UserPtr<N> {
-        UserPtr {
-            guest_ptr: self.guest_ptr.cast(),
-        }
+    pub fn cast<N>(&self) -> Result<UserPtr<N>, SvsmError> {
+        let vaddr = VirtAddr::from(self.ptr.ptr);
+        UserPtr::<N>::new(vaddr)
     }
 
     #[inline]
-    pub fn offset(&self, count: isize) -> UserPtr<T> {
-        UserPtr {
-            guest_ptr: self.guest_ptr.offset(count),
-        }
+    pub fn offset(&self, count: isize) -> Result<Self, SvsmError> {
+        Self::new(VirtAddr::from(self.ptr.offset(count).ptr))
     }
 }
 
@@ -573,7 +882,7 @@ impl UserPtr<c_char> {
         let mut buffer = Vec::new();
 
         for offset in 0..PATH_MAX {
-            let current_ptr = self.offset(offset as isize);
+            let current_ptr = self.offset(offset as isize)?;
             let char_result = current_ptr.read()?;
             match char_result {
                 0 => return String::from_utf8(buffer).map_err(|_| SvsmError::InvalidUtf8),
@@ -584,57 +893,119 @@ impl UserPtr<c_char> {
     }
 }
 
-fn check_bounds_user(start: usize, len: usize) -> Result<(), SvsmError> {
-    let end: usize = start.checked_add(len).ok_or(SvsmError::InvalidAddress)?;
+impl<T> UserPtr<[T]> {
+    /// Constructs a `UserPtr<[T]>` pointing to `len` elements at `v`,
+    /// checking that the entire object falls within userspace.
+    #[inline]
+    pub fn new(v: VirtAddr, len: usize) -> Result<Self, SvsmError> {
+        let userspace = MemoryRegion::from_addresses(USER_MEM_START, USER_MEM_END);
+        let region = len
+            .checked_mul(size_of::<T>())
+            .and_then(|size| MemoryRegion::checked_new(v, size))
+            .ok_or(SvsmError::InvalidAddress)?;
+        if !userspace.contains_region(&region) {
+            return Err(SvsmError::InvalidAddress);
+        }
+        Ok(Self {
+            ptr: TryPtr::<[T]>::new(v, len),
+        })
+    }
 
-    if end > USER_MEM_END.bits() {
-        Err(SvsmError::InvalidAddress)
-    } else {
-        Ok(())
+    /// Returns the number of elements in the slice.
+    #[inline]
+    pub const fn len(&self) -> usize {
+        self.ptr.len()
+    }
+
+    /// Returns `true` if the slice contains no elements.
+    #[inline]
+    pub const fn is_empty(&self) -> bool {
+        self.ptr.is_empty()
+    }
+
+    /// Reads element at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::InvalidAddress`] if `index >= len`, or
+    /// [`SvsmError::Fault`] if the access faults.
+    #[inline]
+    pub fn read(&self, index: usize) -> Result<T, SvsmError>
+    where
+        T: FromBytes,
+    {
+        let _guard = UserAccessGuard::new();
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.read(index) }
+    }
+
+    /// Writes `val` to element at `index`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::InvalidAddress`] if `index >= len`, or
+    /// [`SvsmError::Fault`] if the access faults.
+    #[inline]
+    pub fn write(&self, index: usize, val: T) -> Result<(), SvsmError>
+    where
+        T: IntoBytes,
+    {
+        let _guard = UserAccessGuard::new();
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.write(index, val) }
+    }
+
+    /// Copies all elements into `dst`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::Mem`] if `dst.len() != self.len()`, or
+    /// [`SvsmError::Fault`] if the access faults.
+    #[inline]
+    pub fn read_to_slice(&self, dst: &mut [T]) -> Result<(), SvsmError>
+    where
+        T: FromBytes,
+    {
+        let _guard = UserAccessGuard::new();
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.read_to_slice(dst) }
+    }
+
+    /// Copies all elements from `src` into the slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError::Mem`] if `src.len() != self.len()`, or
+    /// [`SvsmError::Fault`] if the access faults.
+    #[inline]
+    pub fn write_from_slice(&self, src: &[T]) -> Result<(), SvsmError>
+    where
+        T: IntoBytes,
+    {
+        let _guard = UserAccessGuard::new();
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.write_from_slice(src) }
+    }
+}
+
+impl UserPtr<[u8]> {
+    pub fn zero_fill(&self) -> Result<(), SvsmError> {
+        let _guard = UserAccessGuard::new();
+        // SAFETY: bounds were verified at construction.
+        unsafe { self.ptr.zero_fill() }
     }
 }
 
 pub fn zero_user_mem(dst: VirtAddr, size: usize) -> Result<(), SvsmError> {
-    let destination = with_exposed_provenance_mut::<u8>(dst.bits());
-
-    check_bounds_user(dst.bits(), size)?;
-
-    // SAFETY: As per above check this clears only the requested memory in
-    // user-mode memory.
-    unsafe {
-        let _guard = UserAccessGuard::new();
-        clear_bytes(destination, size)
-    }
+    UserPtr::<[u8]>::new(dst, size)?.zero_fill()
 }
 
 pub fn copy_from_user(src: VirtAddr, dst: &mut [u8]) -> Result<(), SvsmError> {
-    let destination = dst.as_mut_ptr();
-    let size = dst.len();
-
-    check_bounds_user(src.bits(), size)?;
-
-    // SAFETY: Safe because the copy only happens to the memory belonging to
-    // the dst slice from user-mode memory.
-    unsafe {
-        let _guard = UserAccessGuard::new();
-        let source = with_exposed_provenance::<u8>(src.bits());
-        copy_bytes(source, destination, size)
-    }
+    UserPtr::<[u8]>::new(src, dst.len())?.read_to_slice(dst)
 }
 
 pub fn copy_to_user(src: &[u8], dst: VirtAddr) -> Result<(), SvsmError> {
-    let source = src.as_ptr();
-    let size = src.len();
-
-    check_bounds_user(dst.bits(), size)?;
-
-    // SAFETY: Only reads data from with the slice and copies to an address
-    // guaranteed to be in user-space.
-    unsafe {
-        let _guard = UserAccessGuard::new();
-        let destination = with_exposed_provenance_mut::<u8>(dst.bits());
-        copy_bytes(source, destination, size)
-    }
+    UserPtr::<[u8]>::new(dst, src.len())?.write_from_slice(src)
 }
 
 fn checked_guest_region(start: PhysAddr, size: usize) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
@@ -643,41 +1014,6 @@ fn checked_guest_region(start: PhysAddr, size: usize) -> Result<MemoryRegion<Phy
         return Err(SvsmError::InvalidAddress);
     }
     Ok(region)
-}
-
-/// Reads a slice of bytes from a physical address region outside of SVSM use.
-///
-/// # Safety
-///
-/// The caller must ensure that dst..dst+size is memory that it owns.
-///
-/// # Arguments
-///
-/// * `src`: The physical address designating the start of continguous physical
-///   memory to read from.
-/// * `dst`: The pointer to the beginning of the SVSM memory range to populate.
-/// * `size`: The number of bytes to write from src to dst.
-///
-/// # Returns
-///
-/// This function returns a `Result` that indicates the success or failure of the operation.
-/// If the physical address region cannot be mapped, it returns `Err(SvsmError::Mem)`.
-/// If the physical address region cannot be read, it returns `Err(SvsmError::Fault)`.
-/// If the physical address region is not allocated to the guest, it returns
-///   `Err(SvsmError::InvalidAddress)`.
-pub unsafe fn copy_from_guest(src: PhysAddr, dst: *mut u8, size: usize) -> Result<(), SvsmError> {
-    let region = checked_guest_region(src, size)?;
-    let start = region.start().page_align();
-    // Offset will always be 0..4K, so this is infallible.
-    let offset = region.start().page_offset() as isize;
-    let end = region.end().page_align_up();
-
-    // SAFETY: Only reads data from a region outside the SVSM.
-    unsafe {
-        let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
-        let source = with_exposed_provenance::<u8>(guard.virt_addr().bits()).offset(offset);
-        copy_bytes(source, dst, size)
-    }
 }
 
 /// Reads a slice of bytes from a physical address region outside of SVSM use.
@@ -696,8 +1032,13 @@ pub unsafe fn copy_from_guest(src: PhysAddr, dst: *mut u8, size: usize) -> Resul
 /// If the physical address region is not allocated to the guest, it returns
 ///   `Err(SvsmError::InvalidAddress)`.
 pub fn copy_slice_from_guest(src: PhysAddr, dst: &mut [u8]) -> Result<(), SvsmError> {
-    // SAFETY: The safety property of slices ensures the memory is owned and mutable.
-    unsafe { copy_from_guest(src, dst.as_mut_ptr(), dst.len()) }
+    let src_end = src
+        .checked_add(dst.len())
+        .and_then(|end| end.checked_page_align_up())
+        .ok_or(SvsmError::Mem)?;
+    PerCPUPageMappingGuard::create(src.page_align(), src_end, 0)?
+        .guest_slice::<u8>(src.page_offset(), dst.len())?
+        .read_to_slice(dst)
 }
 
 /// Writes a slice of bytes to a physical address region outside of SVSM use.
@@ -716,20 +1057,13 @@ pub fn copy_slice_from_guest(src: PhysAddr, dst: &mut [u8]) -> Result<(), SvsmEr
 /// If the physical address region is not allocated to the guest, it returns
 ///   `Err(SvsmError::InvalidAddress)`.
 pub fn copy_slice_to_guest(src: &[u8], dst: PhysAddr) -> Result<(), SvsmError> {
-    let size = src.len();
-    let region = checked_guest_region(dst, src.len())?;
-    let start = region.start().page_align();
-    // Offset will always be 0..4K so this is infallible.
-    let offset = region.start().page_offset() as isize;
-    let end = region.end().page_align_up();
-
-    // SAFETY: Only reads data from a region outside the SVSM.
-    unsafe {
-        let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
-        let destination =
-            with_exposed_provenance_mut::<u8>(guard.virt_addr().bits()).offset(offset);
-        copy_bytes(src.as_ptr(), destination, size)
-    }
+    let dst_end = dst
+        .checked_add(src.len())
+        .and_then(|end| end.checked_page_align_up())
+        .ok_or(SvsmError::Mem)?;
+    PerCPUPageMappingGuard::create(dst.page_align(), dst_end, 0)?
+        .guest_slice::<u8>(dst.page_offset(), src.len())?
+        .write_from_slice(src)
 }
 
 /// Reads a vector of bytes from a physical address region outside of SVSM use.
@@ -749,14 +1083,13 @@ pub fn copy_slice_to_guest(src: &[u8], dst: PhysAddr) -> Result<(), SvsmError> {
 /// If the physical address region is not allocated to the guest, it returns
 ///   `Err(SvsmError::InvalidAddress)`.
 pub fn read_bytes_from_guest(src: PhysAddr, size: usize) -> Result<Vec<u8>, SvsmError> {
-    let mut result = Vec::with_capacity(size);
-    // SAFETY: The vector's capacity, `size` has been populated by copy_from_guest.
-    // The translation of bytes to T are checked.
-    unsafe {
-        copy_from_guest(src, result.as_mut_ptr(), size)?;
-        result.set_len(size);
-    }
-    Ok(result)
+    let src_end = src
+        .checked_add(size)
+        .and_then(|end| end.checked_page_align_up())
+        .ok_or(SvsmError::Mem)?;
+    PerCPUPageMappingGuard::create(src.page_align(), src_end, 0)?
+        .guest_slice::<u8>(src.page_offset(), size)?
+        .read_to_vec()
 }
 
 /// Reads an instance of T from a physical address region outside of SVSM use.
@@ -775,15 +1108,13 @@ pub fn read_bytes_from_guest(src: PhysAddr, size: usize) -> Result<Vec<u8>, Svsm
 /// If the physical address region is not allocated to the guest, it returns
 ///   `Err(SvsmError::InvalidAddress)`.
 pub fn read_from_guest<T: KnownLayout + FromBytes + Sized>(src: PhysAddr) -> Result<T, SvsmError> {
-    let mut t: MaybeUninit<T> = MaybeUninit::uninit();
-    // SAFETY: copy_from_guest does not read `t`, so it's safe to take a mutable pointer.
-    // The `t` layout is known, so populating through the casted *mut u8 is safe.
-    // The size of T is allocated on the SVSM stack, so it is fully owned.
-    // copy_from_guest populates the full contents of t so it is same to assume t is initialized.
-    unsafe {
-        copy_from_guest(src, t.as_mut_ptr().cast::<u8>(), size_of::<T>())?;
-        Ok(t.assume_init())
-    }
+    let src_end = src
+        .checked_add(size_of::<T>())
+        .and_then(|end| end.checked_page_align_up())
+        .ok_or(SvsmError::Mem)?;
+    PerCPUPageMappingGuard::create(src.page_align(), src_end, 0)?
+        .guest_ptr::<T>(src.page_offset())?
+        .read()
 }
 
 /// Writes a value to a physical address region outside of SVSM use.
@@ -803,7 +1134,13 @@ pub fn read_from_guest<T: KnownLayout + FromBytes + Sized>(src: PhysAddr) -> Res
 ///   `Err(SvsmError::InvalidAddress)`.
 #[inline]
 pub fn write_to_guest<T: IntoBytes + Immutable>(v: &T, dst: PhysAddr) -> Result<(), SvsmError> {
-    copy_slice_to_guest(v.as_bytes(), dst)
+    let dst_end = dst
+        .checked_add(size_of::<T>())
+        .and_then(|end| end.checked_page_align_up())
+        .ok_or(SvsmError::Mem)?;
+    PerCPUPageMappingGuard::create(dst.page_align(), dst_end, 0)?
+        .guest_ptr::<T>(dst.page_offset())?
+        .write(v)
 }
 
 #[cfg(test)]
@@ -844,7 +1181,7 @@ mod tests {
     fn test_read_15_bytes_valid_address() {
         let test_buffer = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
         let test_addr = VirtAddr::from(test_buffer.as_ptr());
-        let ptr: GuestPtr<[u8; 15]> = GuestPtr::new(test_addr);
+        let ptr = TryPtr::<[u8; 15]>::new(test_addr);
         // SAFETY: ptr points to test_buffer's virtual address
         let result = unsafe { ptr.read().unwrap() };
 
@@ -855,7 +1192,7 @@ mod tests {
     #[cfg_attr(miri, ignore = "inline assembly")]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_read_invalid_address() {
-        let ptr: GuestPtr<u8> = GuestPtr::new(VirtAddr::new(0xDEAD_BEEF));
+        let ptr = TryPtr::<u8>::new(VirtAddr::new(0xDEAD_BEEF));
         // SAFETY: ptr points to an invalid virtual address (0xDEADBEEF is
         // unmapped). ptr.read() will return an error but this is expected.
         let err = unsafe { ptr.read() };
@@ -867,7 +1204,7 @@ mod tests {
     fn test_read_valid_bit_pattern() {
         // Valid bit pattern for `bool`
         let mut buffer = [1u8];
-        let ptr = GuestPtr::<bool>::from_ptr(buffer.as_mut_ptr().cast());
+        let ptr = TryPtr::<bool>::from_ptr(buffer.as_mut_ptr().cast());
         // SAFETY: the pointer points to a buffer on the stack with a size of 1
         // which is also the size of a bool, so we cannot read, out of bounds.
         let val = unsafe { ptr.try_read() };
@@ -879,7 +1216,7 @@ mod tests {
     fn test_read_invalid_bit_pattern() {
         // Invalid bit pattern for `bool`
         let mut buffer = [2u8];
-        let ptr = GuestPtr::<bool>::from_ptr(buffer.as_mut_ptr().cast());
+        let ptr = TryPtr::<bool>::from_ptr(buffer.as_mut_ptr().cast());
         // SAFETY: the pointer points to a buffer on the stack with a size of 1
         // which is also the size of a bool, so we cannot read, out of bounds.
         let val = unsafe { ptr.try_read() };

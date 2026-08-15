@@ -10,7 +10,7 @@ use crate::acpi::tables::{ACPICPUInfo, ACPITable, load_acpi_cpu_info};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::alloc::free_multiple_pages;
-use crate::mm::{GuestPtr, PAGE_SIZE, PerCPUPageMappingGuard};
+use crate::mm::{PAGE_SIZE, PerCPUPageMappingGuard, TryPtr};
 use crate::platform::{PageStateChangeOp, PageValidateOp, SVSM_PLATFORM, SevFWMetaData};
 use crate::utils::{MemoryRegion, page_align_up, round_to_pages};
 use alloc::vec::Vec;
@@ -245,39 +245,41 @@ impl BootParams<'_> {
         }
 
         // Generate a guest pointer range to hold the memory map.
-        let mem_map = GuestPtr::new(mem_map_va + mem_map_gpa.page_offset());
+        let mem_map_addr = mem_map_va + mem_map_gpa.page_offset();
+        let mem_map = TryPtr::<[IGVM_VHS_MEMORY_MAP_ENTRY]>::new(mem_map_addr, max_entries);
 
         for (i, entry) in map.iter().enumerate() {
             // SAFETY: mem_map_va points to newly mapped memory, whose physical
-            // address is defined in the IGVM config.
+            // address is defined in the IGVM config; i < map.len() <= max_entries.
             unsafe {
-                mem_map
-                    .offset(i as isize)
-                    .write(IGVM_VHS_MEMORY_MAP_ENTRY {
+                mem_map.write(
+                    i,
+                    IGVM_VHS_MEMORY_MAP_ENTRY {
                         starting_gpa_page_number: u64::from(entry.start()) / PAGE_SIZE as u64,
                         number_of_pages: (entry.len() / PAGE_SIZE) as u64,
                         entry_type: MemoryMapEntryType::default(),
                         flags: 0,
                         reserved: 0,
-                    })?;
+                    },
+                )?;
             }
         }
 
         // Write a zero page count into the last entry to terminate the list.
         let index = map.len();
         if index < max_entries {
-            // SAFETY: mem_map_va points to newly mapped memory, whose physical
-            // address is defined in the IGVM config.
+            // SAFETY: as above; index < max_entries == mem_map.len().
             unsafe {
-                mem_map
-                    .offset(index as isize)
-                    .write(IGVM_VHS_MEMORY_MAP_ENTRY {
+                mem_map.write(
+                    index,
+                    IGVM_VHS_MEMORY_MAP_ENTRY {
                         starting_gpa_page_number: 0,
                         number_of_pages: 0,
                         entry_type: MemoryMapEntryType::default(),
                         flags: 0,
                         reserved: 0,
-                    })?;
+                    },
+                )?;
             }
         }
 

@@ -11,7 +11,7 @@ use crate::cpu::tlb::flush_tlb_global_percpu_range;
 use crate::error::SvsmError;
 use crate::mm::virtualrange::VRangeAlloc;
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
-use crate::utils::align_up;
+use crate::utils::{MemoryRegion, align_up};
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
@@ -22,6 +22,7 @@ use zerocopy::FromBytes;
 #[must_use = "if unused the mapping will immediately be unmapped"]
 pub struct PerCPUPageMappingGuard {
     mapping: VRangeAlloc,
+    phys_base: PhysAddr,
 }
 
 impl PerCPUPageMappingGuard {
@@ -48,6 +49,10 @@ impl PerCPUPageMappingGuard {
         paddr_end: PhysAddr,
         alignment: usize,
     ) -> Result<Self, SvsmError> {
+        if paddr_start >= paddr_end {
+            return Err(SvsmError::InvalidAddress);
+        }
+
         let align_mask = (PAGE_SIZE << alignment) - 1;
         let size = paddr_end - paddr_start;
         assert_eq!((size & align_mask), 0);
@@ -72,13 +77,19 @@ impl PerCPUPageMappingGuard {
             range
         };
 
-        Ok(Self { mapping })
+        Ok(Self {
+            mapping,
+            phys_base: paddr_start,
+        })
     }
 
     /// Creates a new [`PerCPUPageMappingGuard`] for a 4KB page at the
     /// specified physical address, or an `SvsmError` if an error occurs.
     pub fn create_4k(paddr: PhysAddr) -> Result<Self, SvsmError> {
-        Self::create(paddr, paddr + PAGE_SIZE, 0)
+        let end = paddr
+            .checked_add(PAGE_SIZE)
+            .ok_or(SvsmError::InvalidAddress)?;
+        Self::create(paddr, end, 0)
     }
 
     /// Returns the virtual address associated with the guard.
@@ -86,35 +97,14 @@ impl PerCPUPageMappingGuard {
         self.mapping.region().start()
     }
 
-    /// Creates a virtual contigous mapping for the given 4k physical pages which
-    /// may not be contiguous in physical memory.
-    ///
-    /// # Arguments
-    ///
-    /// * `pages`: A slice of tuple containing `PhysAddr` objects representing the
-    ///   4k page to map and its shareability.
-    ///
-    /// # Returns
-    ///
-    /// This function returns a `Result` that contains a `PerCPUPageMappingGuard`
-    /// object on success. The `PerCPUPageMappingGuard` object represents the page
-    /// mapping that was created. If an error occurs while creating the page
-    /// mapping, it returns a `SvsmError`.
-    pub fn create_4k_pages(pages: &[(PhysAddr, bool)]) -> Result<Self, SvsmError> {
-        let mapping = VRangeAlloc::new_4k(pages.len() * PAGE_SIZE, 0)?;
-        let flags = PTEntryFlags::data();
+    /// Returns the physical base address of the mapped region.
+    pub const fn phys_base(&self) -> PhysAddr {
+        self.phys_base
+    }
 
-        let pgtable = this_cpu().get_pgtable();
-        for (vaddr, (paddr, shared)) in mapping
-            .region()
-            .iter_pages(PageSize::Regular)
-            .zip(pages.iter().copied())
-        {
-            assert!(paddr.is_page_aligned());
-            pgtable.map_4k(vaddr, paddr, flags, shared)?;
-        }
-
-        Ok(Self { mapping })
+    /// Returns the physical address region mapped by this guard
+    pub fn phys_region(&self) -> MemoryRegion<PhysAddr> {
+        MemoryRegion::new(self.phys_base, self.mapping.region().len())
     }
 }
 

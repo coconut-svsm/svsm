@@ -9,7 +9,7 @@ use crate::cpu::percpu::{PERCPU_AREAS, PerCpuShared, current_ghcb, this_cpu};
 use crate::cpu::x86::apic_post_irq;
 use crate::error::ApicError::{Emulation, InvalidRegister};
 use crate::error::SvsmError;
-use crate::mm::GuestPtr;
+use crate::mm::TryPtr;
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::requests::SvsmCaa;
 use crate::sev::hv_doorbell::HVExtIntStatus;
@@ -138,7 +138,7 @@ impl LocalApic {
         // reset the guest lazy EOI flag.
         if self.lazy_eoi_pending {
             if let Some(caa_ptr) = caa {
-                let calling_area = GuestPtr::<SvsmCaa>::from(caa_ptr);
+                let calling_area = TryPtr::<SvsmCaa>::from(caa_ptr);
                 // SAFETY: guest vmsa and ca are always validated before being
                 // updated (core_remap_ca(), core_create_vcpu() or
                 // prepare_fw_launch()) so they're safe to use.
@@ -169,9 +169,9 @@ impl LocalApic {
         self.get_ppr_with_tpr(cpu_state.get_tpr())
     }
 
-    fn clear_guest_eoi_pending(caa: Option<NonNull<SvsmCaa>>) -> Option<GuestPtr<SvsmCaa>> {
+    fn clear_guest_eoi_pending(caa: Option<NonNull<SvsmCaa>>) -> Option<TryPtr<SvsmCaa>> {
         let ptr = caa?;
-        let calling_area = GuestPtr::<SvsmCaa>::from(ptr);
+        let calling_area = TryPtr::<SvsmCaa>::from(ptr);
         // Ignore errors here, since nothing can be done if an error occurs.
         // SAFETY: guest vmsa and ca are always validated before being updated
         // (core_remap_ca(), core_create_vcpu() or prepare_fw_launch()) so

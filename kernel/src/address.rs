@@ -97,6 +97,15 @@ pub trait Address: Copy + From<InnerAddr> + Into<InnerAddr> + Ord {
         self.align_up(PAGE_SIZE)
     }
 
+    fn checked_align_up(&self, align: InnerAddr) -> Option<Self> {
+        let mask = align.checked_sub(1)?;
+        self.bits().checked_add(mask).map(|v| Self::from(v & !mask))
+    }
+
+    fn checked_page_align_up(&self) -> Option<Self> {
+        self.checked_align_up(PAGE_SIZE)
+    }
+
     #[inline]
     #[verus_spec(ret =>
         requires
