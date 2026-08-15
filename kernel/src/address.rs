@@ -98,7 +98,7 @@ pub trait Address: Copy + From<InnerAddr> + Into<InnerAddr> + Ord {
     }
 
     fn checked_align_up(&self, align: InnerAddr) -> Option<Self> {
-        let mask = align - 1;
+        let mask = align.checked_sub(1)?;
         self.bits().checked_add(mask).map(|v| Self::from(v & !mask))
     }
 
