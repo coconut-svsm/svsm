@@ -218,10 +218,8 @@ fn unwrap_epk(resp: &Response) -> anyhow::Result<EcP256PublicKey> {
 #[serde(untagged)]
 enum KbsEvidence {
     Snp {
-        #[serde(rename = "snp-report")]
-        snp_report: String,
-        #[serde(rename = "certs-buf")]
-        certs_buf: Option<String>,
+        attestation_report: String,
+        cert_chain: Option<String>,
     },
 }
 
@@ -235,16 +233,18 @@ impl TryFrom<&AttestationRequest> for KbsEvidence {
         match data.tee {
             Tee::Snp => {
                 let AttestationEvidence::Snp {
-                    ref report,
-                    ref certs_buf,
+                    ref attestation_report,
+                    ref cert_chain,
                 } = data.evidence
                 else {
                     bail!("invalid SEV-SNP evidence")
                 };
 
                 Ok(Self::Snp {
-                    snp_report: BASE64_STANDARD.encode(report),
-                    certs_buf: certs_buf.clone().map(|certs| BASE64_STANDARD.encode(certs)),
+                    attestation_report: BASE64_STANDARD.encode(attestation_report),
+                    cert_chain: cert_chain
+                        .clone()
+                        .map(|certs| BASE64_STANDARD.encode(certs)),
                 })
             }
             _ => Err(anyhow!("invalid TEE")),

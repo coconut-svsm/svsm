@@ -360,12 +360,12 @@ fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<AttestationEvidence, Attestation
 
             // Get the attestation report as bytes for serialization in the
             // AttestationRequest.
-            let report =
+            let attestation_report =
                 try_to_vec(resp.report().as_bytes()).or(Err(AttestationError::VecAlloc))?;
 
             AttestationEvidence::Snp {
-                report,
-                certs_buf: None,
+                attestation_report,
+                cert_chain: None,
             }
         }
         // We check for supported TEE architectures in the AttestationDriver's constructor.
