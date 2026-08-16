@@ -28,7 +28,7 @@ use cocoon_tpm_tpm2_interface::{TpmEccCurve, TpmsEccPoint};
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
-use sha2::{Digest, Sha512};
+use sha2::{Digest, Sha256, Sha384, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
 #[cfg(feature = "attest-serial")]
@@ -375,26 +375,40 @@ fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<AttestationEvidence, Attestation
     Ok(evidence)
 }
 
+fn run_digest<D: Digest>(data: &[u8]) -> Result<Vec<u8>, AttestationError> {
+    let mut h = D::new();
+    h.update(data);
+    try_to_vec(&h.finalize()).or(Err(AttestationError::VecAlloc))
+}
+
+trait HashAlgoExt {
+    fn digest(&self, data: &[u8]) -> Result<Vec<u8>, AttestationError>;
+}
+
+impl HashAlgoExt for HashAlgo {
+    fn digest(&self, data: &[u8]) -> Result<Vec<u8>, AttestationError> {
+        match self {
+            HashAlgo::Sha256 => run_digest::<Sha256>(data),
+            HashAlgo::Sha384 => run_digest::<Sha384>(data),
+            HashAlgo::Sha512 => run_digest::<Sha512>(data),
+        }
+    }
+}
+
 /// Hash the negotiation parameters from the attestation server for inclusion in the
 /// attestation evidence.
 fn hash(
     n: &NegotiationResponse,
     pub_key: &TpmsEccPoint<'static>,
 ) -> Result<Vec<u8>, AttestationError> {
-    let mut sha = Sha512::new();
-
-    for p in &n.params {
-        match p {
-            NegotiationParam::Challenge => {
-                sha.update(&n.challenge);
-            }
-            #[allow(irrefutable_let_patterns)]
-            NegotiationParam::EcPublicKeyBytes => {
-                sha.update(&*pub_key.x.buffer);
-                sha.update(&*pub_key.y.buffer);
-            }
+    match n.payload_format {
+        PayloadFormat::RawBinary => {
+            let mut buffer = Vec::new();
+            buffer.extend_from_slice(&pub_key.x.buffer);
+            buffer.extend_from_slice(&pub_key.y.buffer);
+            buffer.extend_from_slice(&n.challenge);
+            n.hash_algo.digest(&buffer)
         }
+        PayloadFormat::JwsJson => Err(AttestationError::UnsupportedTee),
     }
-
-    try_to_vec(&sha.finalize()).or(Err(AttestationError::VecAlloc))
 }

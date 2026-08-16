@@ -60,18 +60,12 @@ impl AttestationProtocol for KbsProtocol {
         let challenge: Challenge =
             serde_json::from_str(&text).context("unable to convert KBS /auth response to JSON")?;
 
-        // Challenge nonce is a base64-encoded byte vector. Inform SVSM of this so it could
-        // decode the bytes and hash them into the TEE evidence.
-        let params = vec![
-            NegotiationParam::EcPublicKeyBytes,
-            NegotiationParam::Challenge,
-        ];
-
         let resp = NegotiationResponse {
             challenge: BASE64_STANDARD
                 .decode(challenge.nonce)
                 .context("unable to decode challenge nonce from base64")?,
-            params,
+            hash_algo: HashAlgo::Sha512,
+            payload_format: PayloadFormat::RawBinary,
         };
 
         Ok(resp)
