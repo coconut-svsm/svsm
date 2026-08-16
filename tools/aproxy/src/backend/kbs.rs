@@ -6,7 +6,7 @@
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
 use super::*;
-use anyhow::{Context, bail};
+use anyhow::Context;
 use base64::{
     Engine,
     prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD},
@@ -212,8 +212,8 @@ fn unwrap_epk(resp: &Response) -> anyhow::Result<EcP256PublicKey> {
 #[serde(untagged)]
 enum KbsEvidence {
     Snp {
-        attestation_report: String,
-        cert_chain: Option<String>,
+        attestation_report: sev::firmware::guest::AttestationReport,
+        cert_chain: Option<Vec<u8>>,
     },
 }
 
@@ -228,17 +228,18 @@ impl TryFrom<&AttestationRequest> for KbsEvidence {
             Tee::Snp => {
                 let AttestationEvidence::Snp {
                     ref attestation_report,
-                    ref cert_chain,
-                } = data.evidence
-                else {
-                    bail!("invalid SEV-SNP evidence")
-                };
+                    cert_chain: _,
+                } = data.evidence;
+
+                use sev::parser::Decoder;
+                let mut reader = std::io::Cursor::new(&attestation_report[..]);
+                let report_struct =
+                    sev::firmware::guest::AttestationReport::decode(&mut reader, ())
+                        .context("unable to decode AttestationReport using sev::parser::Decoder")?;
 
                 Ok(Self::Snp {
-                    attestation_report: BASE64_STANDARD.encode(attestation_report),
-                    cert_chain: cert_chain
-                        .clone()
-                        .map(|certs| BASE64_STANDARD.encode(certs)),
+                    attestation_report: report_struct,
+                    cert_chain: None,
                 })
             }
             _ => Err(anyhow!("invalid TEE")),
