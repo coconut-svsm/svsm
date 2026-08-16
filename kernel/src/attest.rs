@@ -19,7 +19,7 @@ use crate::{io::DEFAULT_IO_DRIVER, serial::SerialPort};
 use crate::{vsock::VMADDR_CID_HOST, vsock::stream::VsockStream};
 use aes_gcm::{AeadInPlace, Aes256Gcm, KeyInit, Nonce, aead::generic_array::GenericArray};
 use aes_kw::{KeyInit as _, KwAes256};
-use alloc::{string::ToString, vec::Vec};
+use alloc::{collections::BTreeMap, string::ToString, vec::Vec};
 use cocoon_tpm_crypto::{
     CryptoError,
     ecc::{EccKey, curve::Curve, ecdh::ecdh_c_1_1_cdh_compute_z},
@@ -28,12 +28,14 @@ use cocoon_tpm_tpm2_interface::{TpmEccCurve, TpmsEccPoint};
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
+use serde_json::json;
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
 #[cfg(feature = "attest-serial")]
 // TODO: Make the IO port configurable/discoverable or drop the support entirely.
 const ATTEST_DEFAULT_SERIAL_IO_ADDR: u16 = 0x3e8; // COM3
+const TEE_REPORT_DATA_LEN: usize = 64;
 
 enum Transport {
     Vsock(VsockStream),
@@ -160,7 +162,8 @@ impl AttestationDriver {
             .to_tpms_ecc_point(&curve.curve_ops().map_err(AttestationError::Crypto)?)
             .map_err(AttestationError::Crypto)?;
 
-        let evidence = evidence(&self.tee, hash(&n, &pub_key)?)?;
+        let digest = hash(&n, &pub_key)?;
+        let evidence = evidence(&self.tee, prepare_report_data(&digest)?)?;
 
         let req = AttestationRequest {
             tee: self.tee,
@@ -292,6 +295,8 @@ pub enum AttestationError {
     Crypto(CryptoError),
     /// Guest has failed attestation.
     Failed,
+    /// Negotiation Response challenge length from KBS is invalid
+    InvalidChallengeLength,
     // Unable to derive wrap key.
     KeyDerivation(concat_kdf::Error),
     /// Error deserializing the negotiation response from JSON bytes.
@@ -381,6 +386,14 @@ fn run_digest<D: Digest>(data: &[u8]) -> Result<Vec<u8>, AttestationError> {
     try_to_vec(&h.finalize()).or(Err(AttestationError::VecAlloc))
 }
 
+fn base64_encode(input: &[u8]) -> alloc::string::String {
+    BASE64_STANDARD.encode(input)
+}
+
+fn base64url_encode(input: &[u8]) -> alloc::string::String {
+    BASE64_URL_SAFE_NO_PAD.encode(input)
+}
+
 trait HashAlgoExt {
     fn digest(&self, data: &[u8]) -> Result<Vec<u8>, AttestationError>;
 }
@@ -419,6 +432,34 @@ impl PayloadFormatter for RawBinaryFormatter {
     }
 }
 
+struct JwsJsonFormatter;
+
+impl PayloadFormatter for JwsJsonFormatter {
+    fn format(
+        &self,
+        challenge: &[u8],
+        pub_key: &TpmsEccPoint<'_>,
+    ) -> Result<Vec<u8>, AttestationError> {
+        let x_encoded = base64url_encode(&pub_key.x.buffer);
+        let y_encoded = base64url_encode(&pub_key.y.buffer);
+        let nonce_encoded = base64_encode(challenge);
+
+        let mut key_map = BTreeMap::new();
+        key_map.insert("alg".to_string(), json!("ECDH-ES+A256KW"));
+        key_map.insert("crv".to_string(), json!("P-521"));
+        key_map.insert("kty".to_string(), json!("EC"));
+        key_map.insert("x".to_string(), json!(x_encoded));
+        key_map.insert("y".to_string(), json!(y_encoded));
+
+        let mut runtime_data = BTreeMap::new();
+        runtime_data.insert("additional-evidence".to_string(), json!(""));
+        runtime_data.insert("nonce".to_string(), json!(nonce_encoded));
+        runtime_data.insert("tee-pubkey".to_string(), json!(key_map));
+
+        serde_json::to_vec(&runtime_data).map_err(|_| AttestationError::NegotiationSerialize)
+    }
+}
+
 /// Hash the negotiation parameters from the attestation server for inclusion in the
 /// attestation evidence.
 fn hash(
@@ -427,9 +468,22 @@ fn hash(
 ) -> Result<Vec<u8>, AttestationError> {
     let formatter: &dyn PayloadFormatter = match n.payload_format {
         PayloadFormat::RawBinary => &RawBinaryFormatter,
-        PayloadFormat::JwsJson => return Err(AttestationError::UnsupportedTee),
+        PayloadFormat::JwsJson => &JwsJsonFormatter,
     };
 
     let formatted_bytes = formatter.format(&n.challenge, pub_key)?;
     n.hash_algo.digest(&formatted_bytes)
+}
+
+/// Take variable-sized negotiation challenge nonce from aproxy into 64 byte array required
+/// for the TEE attestation evidence report
+fn prepare_report_data(challenge_digest: &[u8]) -> Result<Vec<u8>, AttestationError> {
+    if challenge_digest.len() > TEE_REPORT_DATA_LEN {
+        return Err(AttestationError::InvalidChallengeLength);
+    }
+
+    let mut report_data = [0u8; TEE_REPORT_DATA_LEN];
+    report_data[..challenge_digest.len()].copy_from_slice(challenge_digest);
+
+    Ok(report_data.to_vec())
 }
