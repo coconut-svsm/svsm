@@ -395,20 +395,41 @@ impl HashAlgoExt for HashAlgo {
     }
 }
 
+trait PayloadFormatter {
+    fn format(
+        &self,
+        challenge: &[u8],
+        pub_key: &TpmsEccPoint<'_>,
+    ) -> Result<Vec<u8>, AttestationError>;
+}
+
+struct RawBinaryFormatter;
+
+impl PayloadFormatter for RawBinaryFormatter {
+    fn format(
+        &self,
+        challenge: &[u8],
+        pub_key: &TpmsEccPoint<'_>,
+    ) -> Result<Vec<u8>, AttestationError> {
+        let mut buffer = Vec::new();
+        buffer.extend_from_slice(&pub_key.x.buffer);
+        buffer.extend_from_slice(&pub_key.y.buffer);
+        buffer.extend_from_slice(challenge);
+        Ok(buffer)
+    }
+}
+
 /// Hash the negotiation parameters from the attestation server for inclusion in the
 /// attestation evidence.
 fn hash(
     n: &NegotiationResponse,
     pub_key: &TpmsEccPoint<'static>,
 ) -> Result<Vec<u8>, AttestationError> {
-    match n.payload_format {
-        PayloadFormat::RawBinary => {
-            let mut buffer = Vec::new();
-            buffer.extend_from_slice(&pub_key.x.buffer);
-            buffer.extend_from_slice(&pub_key.y.buffer);
-            buffer.extend_from_slice(&n.challenge);
-            n.hash_algo.digest(&buffer)
-        }
-        PayloadFormat::JwsJson => Err(AttestationError::UnsupportedTee),
-    }
+    let formatter: &dyn PayloadFormatter = match n.payload_format {
+        PayloadFormat::RawBinary => &RawBinaryFormatter,
+        PayloadFormat::JwsJson => return Err(AttestationError::UnsupportedTee),
+    };
+
+    let formatted_bytes = formatter.format(&n.challenge, pub_key)?;
+    n.hash_algo.digest(&formatted_bytes)
 }
