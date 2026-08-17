@@ -13,8 +13,6 @@ use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::ptr::NonNull;
 use svsm::address::{Address, PhysAddr, VirtAddr};
-#[cfg(feature = "attest")]
-use svsm::attest::AttestationDriver;
 use svsm::boot_params::BootParamBox;
 use svsm::boot_params::BootParams;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
@@ -77,9 +75,6 @@ use svsm::virtio::probe_mmio_slots;
 use svsm::vtpm::vtpm_init;
 
 use release::COCONUT_VERSION;
-
-#[cfg(feature = "attest")]
-use kbs_types::Tee;
 
 unsafe extern "C" {
     static bsp_stack: u64;
@@ -551,8 +546,11 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     #[cfg(feature = "virtio-drivers")]
     initialize_virtio_mmio(&boot_params).expect("Failed to initialize virtio-mmio drivers");
 
-    #[cfg(feature = "attest")]
+    #[cfg(all(feature = "attest", not(test_in_svsm)))]
     {
+        use kbs_types::Tee;
+        use svsm::attest::AttestationDriver;
+
         // Obtain the persistence metadata first. It's not the case yet,
         // but it likely will be needed as input to the attestation.
         #[cfg(feature = "persistence")]
