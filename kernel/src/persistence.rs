@@ -1075,11 +1075,37 @@ pub fn persistence_read_inode_sync(inode: u64) -> Result<Option<Zeroizing<Vec<u8
     }
 }
 
-/// Persistence inode numbers allocated statically for specific SVSM uses.
+/// The 64-bit CocoonFS inode number is split into two halves: the upper
+/// 32 bits are statically assigned to each service here, and the lower
+/// 32 bits are managed by the service itself. Namespace 0 is reserved:
+/// although CocoonFS currently only reserves the first 16 inodes for
+/// internal use, all inodes with the upper 32 bits set to zero are kept
+/// reserved for simplicity.
+#[derive(Clone, Copy, Debug)]
+#[repr(u32)]
+pub enum InodeNamespace {
+    Reserved = 0,
+}
+
+impl InodeNamespace {
+    fn inode(self, local: u32) -> u64 {
+        (self as u64) << 32 | local as u64
+    }
+}
+
+/// Trait for subsystem-specific inode enums.
 ///
-/// Usable inode numbers start at `16`.
-#[derive(Debug)]
-#[repr(u64)]
-pub enum SvsmPersistenceStaticInode {
-    Demo = 16u64,
+/// SVSM services can define their own enum of local inode numbers and
+/// implement this trait to bind it to an [`InodeNamespace`]. The
+/// [`inode()`](Inode::inode) method combines the namespace and local
+/// index into a full 64-bit inode number.
+pub trait Inode: Into<u32> {
+    const NAMESPACE: InodeNamespace;
+
+    fn inode(self) -> u64 {
+        const {
+            assert!(!matches!(Self::NAMESPACE, InodeNamespace::Reserved));
+        }
+        Self::NAMESPACE.inode(self.into())
+    }
 }
