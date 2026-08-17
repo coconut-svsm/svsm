@@ -50,9 +50,9 @@ attestation for all its persistence needs. In particular:
 
 Current development state and caveats
 -------------------------------------
-The persistence functionality is under development, the core subsystem itself
-has been implemented, but none of the components which could potentially make
-use of it have been adapted yet to actually do so.
+The persistence functionality is under development. The core subsystem itself
+has been implemented and is being progressively adopted by SVSM components
+(e.g. vTPM NV state).
 
 Furthermore, the exact details on how the symmetric key material used for
 securing the externally stored data is to get derived from the secret received
@@ -61,9 +61,11 @@ persistence volume images accessible from the SVSM at some code version will
 continue to work with past or future releases.
 
 Currently, the secret key material received from the KBS is not authenticated in
-any way, making the persistence subsystem prone to MITM attacks. The details on
-how to resolve this have not been settled yet, for reference and further details
-c.f. [this mail thread](https://lore.kernel.org/r/877bwxyiqv.fsf@).
+any way, which means that anyone could provide a key and trigger TPM
+manufacturing. It is therefore recommended to perform TPM manufacturing either
+with offline tools (when available) or with the SVSM in a trusted environment.
+The details on how to resolve this have not been settled yet, for reference and
+further details c.f. [this mail thread](https://lore.kernel.org/r/877bwxyiqv.fsf@).
 
 Setup/Testing
 -------------
