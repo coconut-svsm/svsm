@@ -607,6 +607,16 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
             Err(e) => log::info!("Failed to launch /init: {e:?}"),
         }
 
+        #[cfg(feature = "ocp-test")]
+        {
+            log::info!("Adding SVSM OCP object");
+            svsm::ocp_test::add_svsm_object();
+            // repeating just for testing, they will have a
+            // different primary index
+            svsm::ocp_test::add_svsm_object();
+            svsm::ocp_test::add_svsm_object();
+        }
+
         // Start request processing on this CPU if required.
         if SVSM_PLATFORM.start_svsm_request_loop() {
             start_kernel_task(
