@@ -472,7 +472,8 @@ impl<T> TryPtr<[T]> {
         unsafe { TryPtr::from_ptr((self.ptr as *mut T).wrapping_add(index)).read() }
     }
 
-    /// Writes `val` to element at `index`.
+    /// Writes `val` to element at `index` in this `TryPtr<[T]>`.
+    /// `val` may be an owned instance of `T` or a reference.
     ///
     /// # Safety
     ///
@@ -483,8 +484,9 @@ impl<T> TryPtr<[T]> {
     ///
     /// Returns [`SvsmError::InvalidAddress`] if `index >= len`, or
     /// [`SvsmError::Fault`] if the access faults.
-    pub unsafe fn write(&self, index: usize, val: T) -> Result<(), SvsmError>
+    pub unsafe fn write<B>(&self, index: usize, val: B) -> Result<(), SvsmError>
     where
+        B: Borrow<T>,
         T: IntoBytes,
     {
         if index >= self.len() {
@@ -744,13 +746,15 @@ impl<T> GuestPtr<'_, [T]> {
     }
 
     /// Writes `val` to element at `index`.
+    /// `val` may be an owned instance of `T` or a reference.
     ///
     /// # Errors
     ///
     /// Returns [`SvsmError::InvalidAddress`] if `index >= len`, or
     /// [`SvsmError::Fault`] if the access faults.
-    pub fn write(&self, index: usize, val: T) -> Result<(), SvsmError>
+    pub fn write<B>(&self, index: usize, val: B) -> Result<(), SvsmError>
     where
+        B: Borrow<T>,
         T: IntoBytes,
     {
         // SAFETY: bounds were verified at construction
@@ -940,14 +944,16 @@ impl<T> UserPtr<[T]> {
     }
 
     /// Writes `val` to element at `index`.
+    /// `val` may be an owned instance of `T` or a reference.
     ///
     /// # Errors
     ///
     /// Returns [`SvsmError::InvalidAddress`] if `index >= len`, or
     /// [`SvsmError::Fault`] if the access faults.
     #[inline]
-    pub fn write(&self, index: usize, val: T) -> Result<(), SvsmError>
+    pub fn write<B>(&self, index: usize, val: B) -> Result<(), SvsmError>
     where
+        B: Borrow<T>,
         T: IntoBytes,
     {
         let _guard = UserAccessGuard::new();
