@@ -12,17 +12,17 @@ use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
 use crate::mm::{PerCPUMapping, PerCPUPageMappingGuard};
 use crate::mm::{valid_phys_region, writable_phys_addr};
-#[cfg(all(feature = "uefivars", not(test)))]
+#[cfg(feature = "uefivars")]
 use crate::protocols::SVSM_UEFI_MM_PROTOCOL;
 use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::attest::{ATTEST_PROTOCOL_VERSION_MAX, ATTEST_PROTOCOL_VERSION_MIN};
 use crate::protocols::errors::SvsmReqError;
-#[cfg(all(feature = "uefivars", not(test)))]
+#[cfg(feature = "uefivars")]
 use crate::protocols::uefivars::{UEFI_MM_PROTOCOL_VERSION_MAX, UEFI_MM_PROTOCOL_VERSION_MIN};
 use crate::protocols::{
     RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
 };
-#[cfg(all(feature = "vtpm", not(test)))]
+#[cfg(feature = "vtpm")]
 use crate::protocols::{
     SVSM_VTPM_PROTOCOL,
     vtpm::{VTPM_PROTOCOL_VERSION_MAX, VTPM_PROTOCOL_VERSION_MIN},
@@ -265,13 +265,13 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
             ATTEST_PROTOCOL_VERSION_MIN,
             ATTEST_PROTOCOL_VERSION_MAX,
         ),
-        #[cfg(all(feature = "vtpm", not(test)))]
+        #[cfg(feature = "vtpm")]
         SVSM_VTPM_PROTOCOL => protocol_supported(
             version,
             VTPM_PROTOCOL_VERSION_MIN,
             VTPM_PROTOCOL_VERSION_MAX,
         ),
-        #[cfg(all(feature = "uefivars", not(test)))]
+        #[cfg(feature = "uefivars")]
         SVSM_UEFI_MM_PROTOCOL => protocol_supported(
             version,
             UEFI_MM_PROTOCOL_VERSION_MIN,

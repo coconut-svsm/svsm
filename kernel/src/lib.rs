@@ -59,7 +59,7 @@ pub mod virtio;
 pub mod vmm;
 #[cfg(feature = "vsock")]
 pub mod vsock;
-#[cfg(all(feature = "vtpm", not(test)))]
+#[cfg(feature = "vtpm")]
 pub mod vtpm;
 
 #[test]

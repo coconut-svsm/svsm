@@ -15,9 +15,9 @@ use crate::protocols::attest::attest_protocol_request;
 use crate::protocols::{
     RequestOutput, RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
 };
-#[cfg(all(feature = "uefivars", not(test)))]
+#[cfg(feature = "uefivars")]
 use crate::protocols::{SVSM_UEFI_MM_PROTOCOL, uefivars::uefi_mm_protocol_request};
-#[cfg(all(feature = "vtpm", not(test)))]
+#[cfg(feature = "vtpm")]
 use crate::protocols::{SVSM_VTPM_PROTOCOL, vtpm::vtpm_protocol_request};
 
 use zerocopy::{FromBytes, IntoBytes};
@@ -79,10 +79,10 @@ fn request_loop_once(
     match protocol {
         SVSM_CORE_PROTOCOL => core_protocol_request(request, params),
         SVSM_ATTEST_PROTOCOL => attest_protocol_request(request, params),
-        #[cfg(all(feature = "vtpm", not(test)))]
+        #[cfg(feature = "vtpm")]
         SVSM_VTPM_PROTOCOL => vtpm_protocol_request(request, params),
         SVSM_APIC_PROTOCOL => apic_protocol_request(request, params),
-        #[cfg(all(feature = "uefivars", not(test)))]
+        #[cfg(feature = "uefivars")]
         SVSM_UEFI_MM_PROTOCOL => uefi_mm_protocol_request(request, params),
         _ => Err(SvsmReqError::unsupported_protocol()),
     }
