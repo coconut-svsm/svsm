@@ -33,4 +33,4 @@ pub use global_memory::{
     GlobalRangeGuard, map_global_range, map_global_range_2m_private, map_global_range_2m_shared,
     map_global_range_4k_private, map_global_range_4k_shared,
 };
-pub use mappings::{VMMappingGuard, mmap_kernel, mmap_user, munmap_kernel, munmap_user};
+pub use mappings::{mmap_kernel, mmap_user, munmap_kernel, munmap_user};

@@ -40,7 +40,7 @@ use crate::locking::SpinLockIrqSafe;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR, VMRMapping};
 use crate::mm::{
-    PageBox, SVSM_PERTASK_BASE, SVSM_PERTASK_END, USER_MEM_END, USER_MEM_START, VMMappingGuard,
+    PageBox, SVSM_PERTASK_BASE, SVSM_PERTASK_END, USER_MEM_END, USER_MEM_START,
     mappings::create_anon_mapping, mappings::create_file_mapping,
 };
 use crate::syscall::{Obj, ObjError, ObjHandle};
@@ -868,14 +868,14 @@ impl Task {
         Some(guard)
     }
 
-    pub fn mmap_common(
-        vmr: &VMR,
+    pub fn mmap_common<'a>(
+        vmr: &'a VMR,
         addr: VirtAddr,
         file: Option<&FileHandle>,
         offset: usize,
         size: usize,
         flags: VMFileMappingFlags,
-    ) -> Result<VirtAddr, SvsmError> {
+    ) -> Result<VMRMapping<&'a VMR>, SvsmError> {
         let mapping = if let Some(f) = file {
             create_file_mapping(f, offset, size, flags)?
         } else {
@@ -883,9 +883,9 @@ impl Task {
         };
 
         if flags.contains(VMFileMappingFlags::Fixed) {
-            Ok(vmr.insert_at(addr, mapping)?)
+            VMRMapping::new_at(vmr, addr, mapping)
         } else {
-            Ok(vmr.insert_hint(addr, mapping)?)
+            VMRMapping::new_hint(vmr, addr, mapping)
         }
     }
 
@@ -897,7 +897,8 @@ impl Task {
         size: usize,
         flags: VMFileMappingFlags,
     ) -> Result<VirtAddr, SvsmError> {
-        Self::mmap_common(self.mm.kernel_range(), addr, file, offset, size, flags)
+        let guard = Self::mmap_common(self.mm.kernel_range(), addr, file, offset, size, flags)?;
+        Ok(guard.leak())
     }
 
     pub fn mmap_kernel_guard<'a>(
@@ -907,9 +908,8 @@ impl Task {
         offset: usize,
         size: usize,
         flags: VMFileMappingFlags,
-    ) -> Result<VMMappingGuard<'a>, SvsmError> {
-        let vaddr = Self::mmap_common(self.mm.kernel_range(), addr, file, offset, size, flags)?;
-        Ok(VMMappingGuard::new(self.mm.kernel_range(), vaddr))
+    ) -> Result<VMRMapping<&'a VMR>, SvsmError> {
+        Self::mmap_common(self.mm.kernel_range(), addr, file, offset, size, flags)
     }
 
     pub fn mmap_user(
@@ -921,7 +921,8 @@ impl Task {
         flags: VMFileMappingFlags,
     ) -> Result<VirtAddr, SvsmError> {
         let vmr = self.mm.user_range().ok_or(SvsmError::Mem)?;
-        Self::mmap_common(vmr, addr, file, offset, size, flags)
+        let guard = Self::mmap_common(vmr, addr, file, offset, size, flags)?;
+        Ok(guard.leak())
     }
 
     pub fn munmap_kernel(&self, addr: VirtAddr) -> Result<(), SvsmError> {

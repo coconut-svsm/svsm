@@ -15,6 +15,8 @@ use crate::utils::{MemoryRegion, align_down, align_up};
 
 use core::borrow::Borrow;
 use core::cmp::max;
+use core::mem::ManuallyDrop;
+use core::ops::Deref;
 
 use intrusive_collections::Bound;
 use intrusive_collections::rbtree::{CursorMut, RBTree};
@@ -532,8 +534,31 @@ impl<V: Borrow<VMR>> VMRMapping<V> {
         Ok(Self { vmr, va })
     }
 
+    pub fn new_at(vmr: V, addr: VirtAddr, mapping: Mapping) -> Result<Self, SvsmError> {
+        let va = vmr.borrow().insert_at(addr, mapping)?;
+        Ok(Self { vmr, va })
+    }
+
+    pub fn new_hint(vmr: V, addr: VirtAddr, mapping: Mapping) -> Result<Self, SvsmError> {
+        let va = vmr.borrow().insert_hint(addr, mapping)?;
+        Ok(Self { vmr, va })
+    }
+
+    pub fn leak(self) -> VirtAddr {
+        let md = ManuallyDrop::new(self);
+        md.va
+    }
+
     pub fn virt_addr(&self) -> VirtAddr {
         self.va
+    }
+}
+
+impl<V: Borrow<VMR>> Deref for VMRMapping<V> {
+    type Target = VirtAddr;
+
+    fn deref(&self) -> &VirtAddr {
+        &self.va
     }
 }
 
