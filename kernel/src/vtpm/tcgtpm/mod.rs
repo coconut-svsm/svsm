@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 use core::ffi::c_void;
 use libtcgtpm::bindings::{
     _plat__LocalitySet, _plat__NVDisable, _plat__NVEnable, _plat__RunCommand, _plat__SetNvAvail,
-    _plat__Signal_PowerOn, _plat__Signal_Reset, TPM_Manufacture, TPM_TearDown,
+    _plat__Signal_PowerOn, _plat__Signal_Reset, TPM_Manufacture,
 };
 
 use crate::{
@@ -48,32 +48,38 @@ impl TcgTpm {
         }
     }
 
-    fn teardown(&self) -> Result<(), SvsmReqError> {
-        // SAFETY: FFI call. Return value is checked.
-        let result = unsafe { TPM_TearDown() };
-        match result {
-            0 => Ok(()),
-            rc => {
-                log::error!("TPM_Teardown failed rc={rc}");
-                Err(SvsmReqError::incomplete())
-            }
-        }
-    }
+    fn manufacture(&self) -> Result<(), SvsmReqError> {
+        // Wipe stale NV state and re-enable to get a fresh buffer with the
+        // correct size (e.g. after a config change). NVDisable resets s_NvFile,
+        // which is needed because NVEnable is a no-op when s_NvFile is already
+        // set.
 
-    fn manufacture(&self, first_time: i32) -> Result<i32, SvsmReqError> {
-        // SAFETY: FFI call. Parameter and return values are checked.
-        let result = unsafe { TPM_Manufacture(first_time) };
-        match result {
-            // TPM manufactured successfully
-            0 => Ok(0),
-            // TPM already manufactured
-            1 => Ok(1),
-            // TPM failed to manufacture
-            rc => {
-                log::error!("TPM_Manufacture failed rc={rc}");
-                Err(SvsmReqError::incomplete())
-            }
+        // SAFETY: FFI call. Parameter checked, no return value.
+        unsafe { _plat__NVDisable(core::ptr::without_provenance_mut::<c_void>(1), 0) };
+
+        // SAFETY: FFI call. Parameters and return values are checked.
+        let rc = unsafe { _plat__NVEnable(VirtAddr::null().as_mut_ptr::<c_void>(), 0) };
+        if rc != 0 {
+            log::error!("_plat__NVEnable failed rc={rc}");
+            return Err(SvsmReqError::incomplete());
         }
+
+        // The TCG TPM Simulator code runs additional manufacturing coverage
+        // tests (re-manufacture, teardown, re-manufacture) that are not needed
+        // in production.
+        // SAFETY: FFI call. Parameter and return value are checked.
+        let result = unsafe { TPM_Manufacture(1) };
+        if result < 0 {
+            log::error!("TPM_Manufacture failed rc={result}");
+            // If the manufacture didn't work, then make sure that the NV file
+            // doesn't survive. This prevents manufacturing failures from being
+            // ignored the next time the code is run.
+            // SAFETY: FFI call. Parameter checked, no return value.
+            unsafe { _plat__NVDisable(core::ptr::without_provenance_mut::<c_void>(1), 0) };
+            return Err(SvsmReqError::incomplete());
+        }
+
+        Ok(())
     }
 }
 
@@ -187,39 +193,14 @@ impl VtpmInterface for TcgTpm {
     }
 
     fn init(&mut self) -> Result<(), SvsmReqError> {
-        // Initialize the TPM TCG following the same steps done in the Simulator:
-        //
-        // 1. Manufacture it for the first time
-        // 2. Make sure it does not fail if it is re-manufactured
-        // 3. Teardown to indicate it needs to be manufactured
-        // 4. Manufacture it for the first time
-        // 5. Power it on indicating it requires startup. By default, OVMF will start
-        //    and selftest it.
-
         // SAFETY: FFI call. Parameters and return values are checked.
-        let mut rc = unsafe { _plat__NVEnable(VirtAddr::null().as_mut_ptr::<c_void>(), 0) };
+        let rc = unsafe { _plat__NVEnable(VirtAddr::null().as_mut_ptr::<c_void>(), 0) };
         if rc != 0 {
             log::error!("_plat__NVEnable failed rc={rc}");
             return Err(SvsmReqError::incomplete());
         }
 
-        rc = self.manufacture(1)?;
-        if rc != 0 {
-            // SAFETY: FFI call. Parameter checked, no return value.
-            unsafe { _plat__NVDisable(core::ptr::without_provenance_mut::<c_void>(1), 0) };
-            return Err(SvsmReqError::incomplete());
-        }
-
-        rc = self.manufacture(0)?;
-        if rc != 1 {
-            return Err(SvsmReqError::incomplete());
-        }
-
-        self.teardown()?;
-        rc = self.manufacture(1)?;
-        if rc != 0 {
-            return Err(SvsmReqError::incomplete());
-        }
+        self.manufacture()?;
 
         self.signal_poweron(false)?;
         self.signal_nvon()?;

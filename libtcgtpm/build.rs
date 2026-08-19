@@ -37,7 +37,6 @@ fn main() {
         .allowlist_function("_plat__NVDisable")
         .allowlist_function("_plat__NVEnable")
         .allowlist_function("TPM_Manufacture")
-        .allowlist_function("TPM_TearDown")
         .use_core()
         .clang_arg("-Wno-incompatible-library-redeclaration")
         .clang_arg("-nostdinc")
