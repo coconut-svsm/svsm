@@ -6,13 +6,15 @@
 // Author: Joerg Roedel <joerg.roedel@amd.com>
 
 extern crate alloc;
+use core::borrow::Borrow;
+
 use alloc::sync::Arc;
 
 use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::vm::{Mapping, VMR, VMReserved};
+use crate::mm::vm::{VMR, VMReserved};
 use crate::mm::{SIZE_LEVEL3, SVSM_PERTASK_BASE, SVSM_PERTASK_END, alloc::AllocError};
 use crate::utils::MemoryRegion;
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
@@ -50,6 +52,7 @@ impl Drop for TaskVirtualRegionGuard {
     }
 }
 
+#[derive(Debug)]
 pub struct TaskMM {
     /// Virtual address region that has been allocated for this task.
     /// This is not referenced but must be stored so that it is dropped when
@@ -129,46 +132,8 @@ impl TaskMM {
     }
 }
 
-/// Guard a per-task kernel mapping and unmap it when going out of scope.
-pub struct TaskKernelMapping {
-    /// Pointer the struct `[TaskMM]` which contains the mapping.
-    mm: Arc<TaskMM>,
-    /// Virtual address of the mapping.
-    va: VirtAddr,
-}
-
-impl TaskKernelMapping {
-    /// Insert a given `[Mapping]` into the kernel address part of the task and
-    /// return a new `[TaskKernelMapping]`.
-    ///
-    /// # Arguments
-    ///
-    /// * `mm` - Pointer to struct `[TaskMM]` to map into.
-    /// * `mapping` - Pointer to `[Mapping]` to put into the kernel-part of the `TaskMM`.
-    ///
-    /// # Returns
-    ///
-    /// `Some(TaskKernelMapping)` on success, `Err(SvsmError)` on failure.
-    pub fn new(mm: Arc<TaskMM>, mapping: Mapping) -> Result<Self, SvsmError> {
-        let va = mm.kernel_range().insert(mapping)?;
-        Ok(Self { mm, va })
-    }
-
-    /// Get the virtual address the guarded mapping starts at.
-    ///
-    /// # Returns
-    ///
-    /// Virtual start address of contained mapping.
-    pub fn virt_addr(&self) -> VirtAddr {
-        self.va
-    }
-}
-
-impl Drop for TaskKernelMapping {
-    fn drop(&mut self) {
-        self.mm
-            .kernel_range()
-            .remove(self.va)
-            .expect("Error removing TaskKernelMapping");
+impl Borrow<VMR> for Arc<TaskMM> {
+    fn borrow(&self) -> &VMR {
+        self.kernel_range()
     }
 }
