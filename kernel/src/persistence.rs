@@ -1086,6 +1086,7 @@ pub fn persistence_read_inode_sync(inode: u64) -> Result<Option<Zeroizing<Vec<u8
 pub enum InodeNamespace {
     Reserved = 0,
     Tpm = 1,
+    Uefi = 2,
 }
 
 impl InodeNamespace {
