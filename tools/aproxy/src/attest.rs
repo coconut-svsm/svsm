@@ -5,76 +5,91 @@
 // Author: Stefano Garzarella <sgarzare@redhat.com>
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
-use crate::backend;
-use anyhow::Context;
+use crate::ArgsBackend;
+use anyhow::{Context, anyhow};
 use libaproxy::*;
+use reqwest::blocking::Client;
 use serde::Serialize;
 use std::io::{Read, Write};
 
 /// Attest an SVSM client session.
 pub fn attest(
     stream: &mut (impl Read + Write),
-    http: &mut backend::HttpClient,
+    http_client: &Client,
+    backend_url: &str,
+    backend: ArgsBackend,
+    auth_endpoint: String,
+    attest_endpoint: String,
+    resource_endpoint: String,
 ) -> anyhow::Result<()> {
-    negotiation(stream, http)?;
-    attestation(stream, http)?;
-
-    let mut buf = Vec::new();
-    stream.read_to_end(&mut buf)?;
-
-    Ok(())
-}
-
-/// Negotiation phase of SVSM attestation. SVSM will send a negotiation request indicating the
-/// version that it would like to use. The proxy will then reach out to the respective attestation
-/// server and gather all data required (i.e. a nonce) that should be hashed into the attestation
-/// evidence. The proxy will also reply with the type of hash algorithm to use for the negotiation
-/// parameters.
-fn negotiation(
-    stream: &mut (impl Read + Write),
-    http: &mut backend::HttpClient,
-) -> anyhow::Result<()> {
-    // Read the negotiation parameters from SVSM.
-    let request: NegotiationRequest = {
-        let payload = proxy_read(stream)?;
-
-        serde_json::from_slice(&payload)
-            .context("unable to deserialize negotiation request from JSON")?
-    };
-
-    // Gather negotiation parameters from the attestation server.
-    let response: NegotiationResponse = http.negotiation(request)?;
-
-    // Write the response from the attestation server to SVSM.
-    proxy_write(stream, response)?;
-
-    Ok(())
-}
-
-/// Attestation phase of SVSM attestation. SVSM will send an attestation request containing the TEE
-/// evidence. Proxy will respond with an attestation response containing the status
-/// (success/failure) and an optional secret upon successful attestation.
-fn attestation(
-    stream: &mut (impl Read + Write),
-    http: &mut backend::HttpClient,
-) -> anyhow::Result<()> {
-    let request: AttestationRequest = {
+    let config_req: ConfigRequest = {
         let payload = proxy_read(stream)?;
         serde_json::from_slice(&payload)
-            .context("unable to deserialize attestation request from JSON")?
+            .context("unable to deserialize config request from JSON")?
     };
 
-    // Attest the TEE evidence with the server.
-    let response = http.attestation(request)?;
+    if config_req.version != (0, 1, 0) {
+        return Err(anyhow!("unsupported SVSM attestation protocol version"));
+    }
 
-    // Write the response from the attestation server to SVSM.
-    proxy_write(stream, response)?;
+    let (hash_algo, payload_format) = match backend {
+        ArgsBackend::Kbs => (HashAlgo::Sha512, PayloadFormat::RawBinary),
+        ArgsBackend::KbsTrustee => (HashAlgo::Sha384, PayloadFormat::JwsJson),
+    };
+
+    let config_resp = ConfigResponse {
+        hash_algo,
+        payload_format,
+        auth_endpoint,
+        attest_endpoint,
+        resource_endpoint,
+    };
+
+    proxy_write(stream, config_resp)?;
+
+    loop {
+        let payload = match proxy_read(stream) {
+            Ok(payload) => payload,
+            Err(_) => {
+                // EOF is expected when SVSM disconnects after completing attestation
+                break;
+            }
+        };
+
+        let req: ProxyRequest = match serde_json::from_slice(&payload) {
+            Ok(req) => req,
+            Err(_) => break,
+        };
+
+        let url_req = format!("{}{}", backend_url, req.endpoint);
+        let http_req = match req.method {
+            HttpMethod::GET => http_client.get(&url_req).json(&req.body),
+            HttpMethod::POST => http_client.post(&url_req).json(&req.body),
+        };
+
+        let http_resp = match http_req.send() {
+            Ok(resp) => resp,
+            Err(e) => {
+                let resp = ProxyResponse {
+                    status: 500,
+                    body: e.to_string(),
+                };
+                proxy_write(stream, resp)?;
+                continue;
+            }
+        };
+
+        let resp = ProxyResponse {
+            status: http_resp.status().as_u16(),
+            body: http_resp.text().unwrap_or_default(),
+        };
+
+        proxy_write(stream, resp)?;
+    }
 
     Ok(())
 }
 
-/// Read bytes from the stream connected to SVSM. With each write, SVSM first writes an 8-byte
-/// header indicating the length of the buffer. Once the length is read, the buffer can be read.
 fn proxy_read(stream: &mut impl Read) -> anyhow::Result<Vec<u8>> {
     let len = {
         let mut bytes = [0u8; 8];
@@ -95,8 +110,6 @@ fn proxy_read(stream: &mut impl Read) -> anyhow::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Write bytes to the stream connected to SVSM. With each write, an 8-byte header indicating
-/// the length of the buffer is written. Once the length is written, the buffer is written.
 fn proxy_write(stream: &mut impl Write, buf: impl Serialize) -> anyhow::Result<()> {
     let bytes = serde_json::to_vec(&buf).context("unable to convert buffer to JSON bytes")?;
     let len = bytes.len().to_ne_bytes();
