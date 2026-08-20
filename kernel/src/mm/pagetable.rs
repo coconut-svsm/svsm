@@ -373,7 +373,7 @@ impl PTEntry {
 
     /// Inserts the private address mask if the page is present.
     pub fn make_private_if_present(&mut self) {
-        if self.flags().contains(PTEntryFlags::PRESENT) {
+        if self.present() {
             self.0 = make_private_address(self.0);
         }
     }
@@ -450,8 +450,7 @@ impl PTPage {
     /// Converts a pagetable entry to a mutable reference to a [`PTPage`],
     /// if the entry is present and not huge.
     fn from_entry(entry: PTEntry) -> Option<&'static mut Self> {
-        let flags = entry.flags();
-        if !flags.contains(PTEntryFlags::PRESENT) || flags.contains(PTEntryFlags::HUGE) {
+        if !entry.present() || entry.huge() {
             return None;
         }
 
@@ -1094,16 +1093,14 @@ impl PageTable {
         match mapping {
             Mapping::Level0(entry) => {
                 let offset = vaddr.page_offset();
-                if !entry.flags().contains(PTEntryFlags::PRESENT) {
+                if !entry.present() {
                     return Err(SvsmError::Mem);
                 }
                 Ok(entry.address() + offset)
             }
             Mapping::Level1(entry) => {
                 let offset = vaddr.bits() & (PAGE_SIZE_2M - 1);
-                if !entry.flags().contains(PTEntryFlags::PRESENT)
-                    || !entry.flags().contains(PTEntryFlags::HUGE)
-                {
+                if !entry.present() || !entry.huge() {
                     return Err(SvsmError::Mem);
                 }
 
