@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MANUFACTURED_MARKER"],"struct":["ManufacturedMarker"]};
