@@ -11,6 +11,7 @@
     - [Backend](#backend)
     - [Host Proxy Diagram](#host-proxy-diagram)
   - [Transport Methods](#transport-methods)
+  - [Known Limitations](#known-limitations)
   - [Try for yourself](#try-for-yourself)
 <!--toc:end-->
 
@@ -254,10 +255,36 @@ SVSM communicates with the attestation proxy using one of two transport methods:
   SVSM falls back to the COM3 serial port if the vsock connection fails. This
   is intended for testing purposes only.
 
-## Try for yourself
+## Known Limitations
 
-Please keep in mind that the attestation services in SVSM are **experimental**
-at present.
+The attestation services in SVSM are **experimental** at present and have the
+following known security limitations:
+
+* **Unauthenticated KBS key material:** The secret key material received from
+  the KBS is currently not authenticated, which means that anyone could provide
+  a key and trigger TPM manufacturing. It is therefore recommended to perform
+  TPM manufacturing either with offline tools (when available) or with the SVSM
+  in a trusted environment. After manufacturing, this is not a concern: if an
+  attacker provides a different key, the CocoonFs volume would fail to open and
+  the CVM would detect the mismatch. Even if the attacker also substituted the
+  persistent state with one encrypted under the new key, the resulting TPM
+  instance would be different and would no longer be able to unseal secrets
+  sealed to the original TPM. See [PERSISTENCE.md](PERSISTENCE.md) for more
+  details.
+
+* **No rollback protection:** There is currently no mechanism to prevent
+  starting two CVMs from the same persistent state, which violates the TPM spec
+  requirement for unique TPM instances. An adversary could spin up a "good" VM
+  yielding expected PCRs and a rogue one, both from the same state, and mix
+  TPM2_Quote results from either. Since both would contain the same resetCount
+  (from NV) in the TPMS_ATTEST clockinfo field, a relying party would wrongly
+  assume that the quotes originate from the same _TPM_Init cycle of a unique
+  instance, potentially encrypting secrets to a TPM key controlled by the rogue
+  VM. Note that using Secure Boot with UKI and TPM Measured Boot would
+  constrain both CVMs to be practically identical, and runtime verification
+  within the CVM could detect this scenario.
+
+## Try for yourself
 
 To try for yourself, we provide a test KBS server that requires no configuration
 and simply indicates if attestation was successful or not. This requires a

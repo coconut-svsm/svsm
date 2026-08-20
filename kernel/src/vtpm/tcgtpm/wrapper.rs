@@ -17,7 +17,7 @@ use crate::{
 
 use core::{
     alloc::Layout,
-    ffi::{c_char, c_int, c_ulong, c_void},
+    ffi::{CStr, c_char, c_int, c_long, c_ulong, c_void},
     ptr,
     slice::from_raw_parts,
     str::from_utf8,
@@ -25,6 +25,9 @@ use core::{
 
 extern crate alloc;
 use alloc::alloc::{alloc, alloc_zeroed, dealloc, realloc as _realloc};
+use alloc::boxed::Box;
+
+use super::persistence::CFile;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn malloc(size: c_ulong) -> *mut c_void {
@@ -122,4 +125,117 @@ pub unsafe extern "C" fn serial_out(s: *const c_char, size: c_int) {
 #[unsafe(no_mangle)]
 pub extern "C" fn abort() -> ! {
     request_termination_msr();
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fopen(path: *const c_char, mode: *const c_char) -> *mut c_void {
+    // SAFETY: caller must provide valid null-terminated C strings
+    let (path, mode) = unsafe { (CStr::from_ptr(path), CStr::from_ptr(mode)) };
+    let (Ok(path), Ok(mode)) = (path.to_str(), mode.to_str()) else {
+        return ptr::null_mut();
+    };
+
+    match CFile::fopen(path, mode) {
+        Some(nv) => Box::into_raw(Box::new(nv)).cast(),
+        None => ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fclose(file: *mut c_void) -> c_int {
+    if file.is_null() {
+        return -1;
+    }
+    // SAFETY: caller must pass a pointer previously returned by fopen
+    let mut nv = unsafe {
+        // Reclaim ownership so the CFile is dropped (and its buffer
+        // zeroized) when `nv` goes out of scope.
+        Box::from_raw(file.cast::<CFile>())
+    };
+    if nv.save().is_err() {
+        return -1;
+    }
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fread(
+    buf: *mut c_void,
+    size: usize,
+    count: usize,
+    file: *mut c_void,
+) -> usize {
+    // SAFETY: caller must pass a pointer previously returned by fopen
+    let Some(nv) = (unsafe { file.cast::<CFile>().as_mut() }) else {
+        return 0;
+    };
+    if buf.is_null() || size == 0 {
+        return 0;
+    }
+    let Some(total) = size.checked_mul(count) else {
+        return 0;
+    };
+    // SAFETY: buf is non-null (checked above); caller must guarantee
+    // it points to at least `size * count` valid bytes
+    let dst = unsafe { core::slice::from_raw_parts_mut(buf.cast::<u8>(), total) };
+    nv.fread(dst, size).unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fwrite(
+    buf: *const c_void,
+    size: usize,
+    count: usize,
+    file: *mut c_void,
+) -> usize {
+    // SAFETY: caller must pass a pointer previously returned by fopen
+    let Some(nv) = (unsafe { file.cast::<CFile>().as_mut() }) else {
+        return 0;
+    };
+    if buf.is_null() || size == 0 {
+        return 0;
+    }
+    let Some(total) = size.checked_mul(count) else {
+        return 0;
+    };
+    // SAFETY: buf is non-null (checked above); caller must guarantee
+    // it points to at least `size * count` valid bytes
+    let src = unsafe { core::slice::from_raw_parts(buf.cast::<u8>(), total) };
+    nv.fwrite(src, size).unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fseek(file: *mut c_void, offset: c_long, whence: c_int) -> c_int {
+    // SAFETY: caller must pass a pointer previously returned by fopen
+    let Some(nv) = (unsafe { file.cast::<CFile>().as_mut() }) else {
+        return -1;
+    };
+    if nv.fseek(offset as isize, whence).is_err() {
+        return -1;
+    }
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ftell(file: *mut c_void) -> c_long {
+    // SAFETY: caller must pass a pointer previously returned by fopen
+    let Some(nv) = (unsafe { file.cast::<CFile>().as_ref() }) else {
+        return -1;
+    };
+    match nv.ftell() {
+        Ok(pos) => pos.try_into().unwrap_or(-1),
+        Err(_) => -1,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn fflush(file: *mut c_void) -> c_int {
+    // SAFETY: caller must pass a pointer previously returned by fopen
+    let Some(nv) = (unsafe { file.cast::<CFile>().as_mut() }) else {
+        return -1;
+    };
+    if nv.save().is_err() {
+        return -1;
+    }
+    0
 }
