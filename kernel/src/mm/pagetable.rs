@@ -809,28 +809,17 @@ impl PageTable {
         Mapping::new(entry, 0)
     }
 
-    /// Allocates a 4KB page table entry for a given virtual address.
+    /// Allocates a page table entry for the given virtual address and
+    /// the given page size.
     ///
     /// # Parameters
     /// - `vaddr`: The virtual address for which to allocate the PTE.
     ///
     /// # Returns
     /// A `Mapping` representing the allocated or existing PTE for the address.
-    fn alloc_pte_4k(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
+    fn alloc_pte(&mut self, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
-        Self::alloc_intermediate_ptes(m, vaddr, PageSize::Regular)
-    }
-
-    /// Allocates a 2MB page table entry for a given virtual address.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address for which to allocate the PTE.
-    ///
-    /// # Returns
-    /// A `Mapping` representing the allocated or existing PTE for the address.
-    fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
-        let m = self.walk_addr(vaddr);
-        Self::alloc_intermediate_ptes(m, vaddr, PageSize::Huge)
+        Self::alloc_intermediate_ptes(m, vaddr, size)
     }
 
     /// Splits a 2MB page into 4KB pages.
@@ -967,7 +956,7 @@ impl PageTable {
         assert!(vaddr.is_aligned(PAGE_SIZE_2M));
         assert!(paddr.is_aligned(PAGE_SIZE_2M));
 
-        let mapping = self.alloc_pte_2m(vaddr);
+        let mapping = self.alloc_pte(vaddr, PageSize::Huge);
         let addr = if !shared {
             make_private_address(paddr)
         } else {
@@ -1018,7 +1007,7 @@ impl PageTable {
         flags: PTEntryFlags,
         shared: bool,
     ) -> Result<(), SvsmError> {
-        let mapping = self.alloc_pte_4k(vaddr);
+        let mapping = self.alloc_pte(vaddr, PageSize::Regular);
         let addr = if !shared {
             make_private_address(paddr)
         } else {
@@ -1328,7 +1317,8 @@ impl RawPageTablePart {
         PageTable::walk_addr_lvl2(&mut self.page, vaddr)
     }
 
-    /// Allocates a 4KB page table entry for a given virtual address.
+    /// Allocates a page table entry for a given virtual address and
+    /// the given page size.
     ///
     /// # Parameters
     /// - `vaddr`: The virtual address for which to allocate the PTE.
@@ -1338,28 +1328,12 @@ impl RawPageTablePart {
     ///
     /// # Panics
     /// Panics if a level 3 mapping is attempted in a [`RawPageTablePart`].
-    fn alloc_pte_4k(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
+    fn alloc_pte(&mut self, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
         if m.level >= 3 {
             panic!("PT level >= 3 not possible in PageTablePart");
         }
-        PageTable::alloc_intermediate_ptes(m, vaddr, PageSize::Regular)
-    }
-
-    /// Allocates a 2MB page table entry for a given virtual address.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address for which to allocate the PTE.
-    ///
-    /// # Returns
-    /// The [`Mapping`] representing the allocated or existing PTE for the
-    /// address.
-    fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
-        let m = self.walk_addr(vaddr);
-        if m.level >= 3 {
-            panic!("PT level >= 3 not possible in PageTablePart");
-        }
-        PageTable::alloc_intermediate_ptes(m, vaddr, PageSize::Huge)
+        PageTable::alloc_intermediate_ptes(m, vaddr, size)
     }
 
     /// Maps a 4KB page.
@@ -1379,7 +1353,7 @@ impl RawPageTablePart {
         flags: PTEntryFlags,
         shared: bool,
     ) -> Result<(), SvsmError> {
-        let mapping = self.alloc_pte_4k(vaddr);
+        let mapping = self.alloc_pte(vaddr, PageSize::Regular);
 
         let addr = if !shared {
             make_private_address(paddr)
@@ -1442,7 +1416,7 @@ impl RawPageTablePart {
         assert!(vaddr.is_aligned(PAGE_SIZE_2M));
         assert!(paddr.is_aligned(PAGE_SIZE_2M));
 
-        let mapping = self.alloc_pte_2m(vaddr);
+        let mapping = self.alloc_pte(vaddr, PageSize::Huge);
         let addr = if !shared {
             make_private_address(paddr)
         } else {
