@@ -617,6 +617,11 @@ impl PageTable {
         //vaddr.bits() >> (12 + L * 9) & 0x1ff
     }
 
+    /// A non-const version of [`Self::index()`].
+    fn index_at(vaddr: VirtAddr, level: usize) -> usize {
+        vaddr.bits() >> (12 + level * 9) & 0x1ff
+    }
+
     /// Walks a page table at level 0 to find a mapping.
     ///
     /// # Parameters
@@ -779,55 +784,29 @@ impl PageTable {
             | PTEntryFlags::DIRTY
     }
 
-    fn alloc_pte_lvl3(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
-        let flags = entry.flags();
+    fn alloc_intermediate_ptes(
+        mapping: Mapping<'_>,
+        vaddr: VirtAddr,
+        size: PageSize,
+    ) -> Mapping<'_> {
+        let level = mapping.level;
+        let mut entry = mapping.entry;
 
-        if flags.contains(PTEntryFlags::PRESENT) {
-            return Mapping::new(entry, 3);
+        for lvl in (1..=level).rev() {
+            if entry.present() || (lvl == 1 && size == PageSize::Huge) {
+                return Mapping::new(entry, lvl);
+            }
+
+            let Ok((page, paddr)) = PTPage::alloc() else {
+                return Mapping::new(entry, lvl);
+            };
+
+            entry.set(make_private_address(paddr), Self::parent_flags());
+            let idx = Self::index_at(vaddr, lvl - 1);
+            entry = &mut page[idx];
         }
 
-        let Ok((page, paddr)) = PTPage::alloc() else {
-            return Mapping::new(entry, 3);
-        };
-
-        entry.set(make_private_address(paddr), Self::parent_flags());
-
-        let idx = Self::index::<2>(vaddr);
-        Self::alloc_pte_lvl2(&mut page[idx], vaddr, size)
-    }
-
-    fn alloc_pte_lvl2(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
-        let flags = entry.flags();
-
-        if flags.contains(PTEntryFlags::PRESENT) {
-            return Mapping::new(entry, 2);
-        }
-
-        let Ok((page, paddr)) = PTPage::alloc() else {
-            return Mapping::new(entry, 2);
-        };
-
-        entry.set(make_private_address(paddr), Self::parent_flags());
-
-        let idx = Self::index::<1>(vaddr);
-        Self::alloc_pte_lvl1(&mut page[idx], vaddr, size)
-    }
-
-    fn alloc_pte_lvl1(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
-        let flags = entry.flags();
-
-        if size == PageSize::Huge || flags.contains(PTEntryFlags::PRESENT) {
-            return Mapping::new(entry, 1);
-        }
-
-        let Ok((page, paddr)) = PTPage::alloc() else {
-            return Mapping::new(entry, 1);
-        };
-
-        entry.set(make_private_address(paddr), Self::parent_flags());
-
-        let idx = Self::index::<0>(vaddr);
-        Mapping::new(&mut page[idx], 0)
+        Mapping::new(entry, 0)
     }
 
     /// Allocates a 4KB page table entry for a given virtual address.
@@ -839,14 +818,7 @@ impl PageTable {
     /// A `Mapping` representing the allocated or existing PTE for the address.
     fn alloc_pte_4k(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
-
-        match m.level {
-            0 => Mapping::new(m.entry, 0),
-            1 => Self::alloc_pte_lvl1(m.entry, vaddr, PageSize::Regular),
-            2 => Self::alloc_pte_lvl2(m.entry, vaddr, PageSize::Regular),
-            3 => Self::alloc_pte_lvl3(m.entry, vaddr, PageSize::Regular),
-            _ => unreachable!(),
-        }
+        Self::alloc_intermediate_ptes(m, vaddr, PageSize::Regular)
     }
 
     /// Allocates a 2MB page table entry for a given virtual address.
@@ -858,14 +830,7 @@ impl PageTable {
     /// A `Mapping` representing the allocated or existing PTE for the address.
     fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
-
-        match m.level {
-            0 => Mapping::new(m.entry, 0),
-            1 => Mapping::new(m.entry, 1),
-            2 => Self::alloc_pte_lvl2(m.entry, vaddr, PageSize::Huge),
-            3 => Self::alloc_pte_lvl3(m.entry, vaddr, PageSize::Huge),
-            _ => unreachable!(),
-        }
+        Self::alloc_intermediate_ptes(m, vaddr, PageSize::Huge)
     }
 
     /// Splits a 2MB page into 4KB pages.
@@ -1375,13 +1340,10 @@ impl RawPageTablePart {
     /// Panics if a level 3 mapping is attempted in a [`RawPageTablePart`].
     fn alloc_pte_4k(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
-
-        match m.level {
-            0 => Mapping::new(m.entry, 0),
-            1 => PageTable::alloc_pte_lvl1(m.entry, vaddr, PageSize::Regular),
-            2 => PageTable::alloc_pte_lvl2(m.entry, vaddr, PageSize::Regular),
-            _ => panic!("PT level >= 3 not possible in PageTablePart"),
+        if m.level >= 3 {
+            panic!("PT level >= 3 not possible in PageTablePart");
         }
+        PageTable::alloc_intermediate_ptes(m, vaddr, PageSize::Regular)
     }
 
     /// Allocates a 2MB page table entry for a given virtual address.
@@ -1394,14 +1356,10 @@ impl RawPageTablePart {
     /// address.
     fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
-
-        match m.level {
-            0 => Mapping::new(m.entry, 0),
-            1 => Mapping::new(m.entry, 1),
-            2 => PageTable::alloc_pte_lvl2(m.entry, vaddr, PageSize::Huge),
-            3 => PageTable::alloc_pte_lvl3(m.entry, vaddr, PageSize::Huge),
-            _ => unreachable!(),
+        if m.level >= 3 {
+            panic!("PT level >= 3 not possible in PageTablePart");
         }
+        PageTable::alloc_intermediate_ptes(m, vaddr, PageSize::Huge)
     }
 
     /// Maps a 4KB page.
