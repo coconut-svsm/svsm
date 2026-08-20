@@ -31,6 +31,7 @@ use crate::address::{Address, PhysAddr};
 use crate::locking::SpinLock;
 use crate::mm::guestmem::{copy_slice_to_guest, read_bytes_from_guest, read_from_guest};
 use crate::mm::valid_phys_address;
+use crate::persistence::persistence_available;
 use crate::protocols::RequestParams;
 use crate::protocols::errors::SvsmReqError;
 
@@ -43,6 +44,83 @@ pub const UEFI_MM_PROTOCOL_VERSION_MAX: u32 = 1;
 const UEFI_MM_BUFFER_LIMIT: usize = 256 * 1024;
 
 static STORE: SpinLock<EfiVarStore> = SpinLock::new(EfiVarStore::new());
+
+#[cfg(feature = "persistence")]
+mod persistance {
+    extern crate alloc;
+    use alloc::vec::Vec;
+
+    use virtfw_varstore::fs::FsIndexParser;
+    use virtfw_varstore::store::EfiVarStore;
+
+    use crate::error::SvsmError;
+    use crate::persistence::{
+        Inode, InodeNamespace, persistence_read_inode_sync, persistence_write_inode_sync,
+    };
+
+    struct UefiInode {
+        inode: u32,
+    }
+
+    impl UefiInode {
+        fn new(inode: u32) -> Self {
+            Self { inode }
+        }
+    }
+
+    impl From<UefiInode> for u32 {
+        fn from(val: UefiInode) -> u32 {
+            val.inode
+        }
+    }
+
+    impl Inode for UefiInode {
+        const NAMESPACE: InodeNamespace = InodeNamespace::Uefi;
+    }
+
+    pub(crate) fn write(store: &mut EfiVarStore) -> Result<(), SvsmError> {
+        if !store.fs_is_modified() {
+            return Ok(());
+        }
+        let Ok(index) = store.fs_make_index() else {
+            return Err(SvsmError::InvalidFormat);
+        };
+        for (entry, name) in FsIndexParser::new(&index) {
+            if let Some(data) = store.fs_get_variable(&entry, &name) {
+                let inode = UefiInode::new(entry.inode());
+                let vec: Vec<u8> = data.into();
+                persistence_write_inode_sync(inode.inode(), vec.into(), true)?;
+            }
+        }
+
+        let inode = UefiInode::new(store.fs_inode_index());
+        persistence_write_inode_sync(inode.inode(), index.into(), true)?;
+        store.fs_clear_modified();
+        Ok(())
+    }
+
+    pub(crate) fn read(store: &mut EfiVarStore) -> Result<(), SvsmError> {
+        let inode = UefiInode::new(store.fs_inode_index());
+        let index_opt = persistence_read_inode_sync(inode.inode())?;
+        let Some(index) = index_opt else {
+            return Ok(());
+        };
+        for (entry, name) in FsIndexParser::new(&index) {
+            let inode = UefiInode::new(entry.inode());
+            if let Some(data) = persistence_read_inode_sync(inode.inode())? {
+                store.fs_set_variable(&entry, &name, &data);
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn garbage_collect(_store: &mut EfiVarStore) {
+        // TODO
+        // - loop over all inodes in namespace
+        // - check store.fs_inode_is_used(inode)
+        // - delete unused inodes
+    }
+}
 
 fn check_buffer(addr: u64, size: usize) -> Result<(), SvsmReqError> {
     let paddr = PhysAddr::from(addr);
@@ -81,10 +159,16 @@ fn uefi_mm_request(params: &RequestParams) -> Result<(), SvsmReqError> {
         return Err(SvsmReqError::invalid_parameter());
     }
 
+    let mut store = STORE.lock();
     let req = read_bytes_from_guest(paddr + boffset, bsize)?;
-    let rsp = core_request_dispatch(&mut STORE.lock(), &mmcore.guid, &req);
+    let rsp = core_request_dispatch(&mut store, &mmcore.guid, &req);
     assert!(rsp.len() <= bsize);
     copy_slice_to_guest(&rsp, paddr + boffset)?;
+
+    #[cfg(feature = "persistence")]
+    if persistence_available() {
+        self::persistance::write(&mut store)?;
+    }
 
     Ok(())
 }
@@ -101,23 +185,37 @@ pub fn uefi_mm_protocol_request(
 
 pub fn uefi_mm_protocol_init() -> Result<(), SvsmReqError> {
     let mut store = STORE.lock();
-    store.reset();
+
+    #[cfg(feature = "persistence")]
+    if persistence_available() {
+        log::info!("loading uefi variable store");
+        self::persistance::read(&mut store)?;
+        self::persistance::garbage_collect(&mut store);
+    }
 
     #[cfg(feature = "secureboot")]
-    {
+    if store.get_setup_mode() {
         // hard coded configuration for now.
+        log::info!("enroll secure boot certificates");
         store.enroll_pk_mgmt();
         store.enroll_kek_microsoft();
         store.enroll_db_microsoft_uefi();
         store.enroll_dbx_native();
     }
 
-    // In case a TPM is present, shim's fallback.efi will setup efi
-    // boot variables then reboot.  This is not going to work until we
-    // have persistence support for the UEFI variable store.  So turn
-    // off that behaviour for now (via EFI variable).
-    store.quirk_disable_shim_reboot(true);
+    // In case a TPM is present, shim's fallback.efi will setup
+    // efi boot variables then reboot.  This is not going to work
+    // unless there is a persistence UEFI variable store.  So turn
+    // off that behaviour if needed.
+    #[cfg(feature = "persistence")]
+    let need_quirk = !persistence_available();
+    #[cfg(not(feature = "persistence"))]
+    let need_quirk = true;
+    if need_quirk {
+        store.quirk_disable_shim_reboot(true);
+    }
 
+    store.reset();
     Ok(())
 }
 
