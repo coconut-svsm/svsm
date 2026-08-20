@@ -100,8 +100,8 @@ serde = { version = "1.0.215", default-features = false }
 serde_json = { version = "1.0", default-features = false }
 sha2 = { version = "0.10.8", default-features = false }
 uuid = { version = "1.6.1", default-features = false }
-virtfw-libefi = { version = "0.6" }
-virtfw-varstore = { version = "0.6.1" }
+virtfw-libefi = { version = "0.6", git = "https://gitlab.com/kraxel/virt-firmware-rs.git", branch = "storage" }
+virtfw-varstore = { version = "0.6.1", git = "https://gitlab.com/kraxel/virt-firmware-rs.git", branch = "storage" }
 # We can pull virtio-drivers from crates.io once the vsock connection manager
 # changes have been released.
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers.git", rev = "c8786e83e6a64e46ed5cab301048dbaf3aab1444" }
