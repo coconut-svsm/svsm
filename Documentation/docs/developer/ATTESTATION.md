@@ -13,6 +13,7 @@
   - [Transport Methods](#transport-methods)
   - [Known Limitations](#known-limitations)
   - [Try for yourself](#try-for-yourself)
+  - [Try with Trustee KBS](#try-with-trustee-kbs)
 <!--toc:end-->
 
 ## Background
@@ -61,25 +62,20 @@ A `NegotiationResponse` is sent from the proxy to SVSM.
 An example `NegotiationResponse` is shown below.
 ```json
 {
-    "challenge": "oFlY92ZdS3ymzxokYuDzxw==\",
-    "params": [
-                "EcPublicKeyBytes",
-                "Challenge"
-              ]
+    "challenge": "oFlY92ZdS3ymzxokYuDzxw==",
+    "hash_algo": "Sha384",
+    "payload_format": "JwsJson"
 }
 ```
 - `challenge`: The challenge nonce returned by the remote attestation server
 that will likely need to be hashed into the attestation evidence to ensure
 freshness. Represented as variably-sized array of bytes.
-- `params`: The negotiation parameters. Each `NegotiationParam` represents some
-form of data that must be hashed into the attestation evidence. This hash will
-be reconstructed by the remote attestation server when the evidence is presented
-from SVSM.
+- `hash_algo`: The cryptographic hash algorithm that SVSM must use (`Sha256`, `Sha384`, or `Sha512`).
+- `payload_format`: The structural layout format SVSM must construct before hashing (`RawBinary` or `JwsJson`).
 
-The valid negotiation parameters are as follows:
-- `Challenge`: The bytes represented in the `challenge`.
-- `EcPublicKeyBytes`: The byte buffers of the public key's x and y coordinates
-(in that order).
+The valid payload formats are as follows:
+  *   `RawBinary`: Instructs SVSM to format the public key coordinates and challenge nonce as a sequential binary layout.
+  *   `JwsJson`: Instructs SVSM to format, serialize, and hash a standard, JWS JSON map containing the public key and challenge nonce (specifically required by Trustee KBS).
 
 SVSM can then collect the attestation evidence (with the negotiation parameters
 embedded within the report data) and continue to the attestation phase.
@@ -127,7 +123,7 @@ An example `AttestationRequest` is shown below.
                        AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
                        AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
                        AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\",
-            "certs_buf": null
+            "cert_chain": null
         }
     },
     "challenge": "oFlY92ZdS3ymzxokYuDzxw==\",
@@ -147,8 +143,8 @@ example).
 
 Valid evidence formats are the following:
 - `Snp`: SEV-SNP
-    - `report`: Attestation report bytes.
-    - `certs_buf`: Optional byte buffer representing SEV-SNP certificate chain
+    - `attestation_report`: Attestation report bytes.
+    - `cert_chain`: Optional byte buffer representing SEV-SNP certificate chain
                    (ARK, ASK, VEK) set by the host hypervisor.
 
 - `challenge`: The original challenge nonce given in the `NegotiationResponse`.
@@ -417,3 +413,7 @@ SEV-SNP machine with an SVSM-enabled kernel.
     cd kbs-test
     cargo run -- --measurement 9ef6c500d19addcd5937c6c8bd4e51b1893f048eea03d5407cfb0692c06615e3f6c044c667c32e520913d93234e836fe
     ```
+
+## Try with Trustee KBS
+
+You can also try with the official Trustee KBS and SVSM setup. See [KBS-SVSM](KBS-SVSM.md)

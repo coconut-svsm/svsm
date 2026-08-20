@@ -20,13 +20,21 @@ pub struct NegotiationRequest {
     pub tee: kbs_types::Tee,
 }
 
-/// A parameter that must be hashed into the negotiation hash.
-#[derive(Serialize, Deserialize, Debug)]
-pub enum NegotiationParam {
-    /// Hash the challenge returned from attestation server.
-    Challenge,
-    /// Hash the EC public key's `Elliptic-Curve-Point-to-Octet-String` encoding.
-    EcPublicKeyBytes,
+/// The cryptographic hashing algorithm SVSM should use to digest the formatted payload.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HashAlgo {
+    Sha256,
+    Sha384,
+    Sha512,
+}
+
+/// The payload serialization format SVSM should use to organize public key components and nonces.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PayloadFormat {
+    /// Raw sequential binary representation of public key coordinates and challenge.
+    RawBinary,
+    /// JWS-compliant JSON formatted representation of runtime_data.
+    JwsJson,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -37,6 +45,8 @@ pub struct NegotiationResponse {
         deserialize_with = "deserialize_base64"
     )]
     pub challenge: Vec<u8>,
-    /// Parameters to be hashed in the specific order defined by the array
-    pub params: Vec<NegotiationParam>,
+    /// The hashing algorithm to use.
+    pub hash_algo: HashAlgo,
+    /// The payload formatting to use.
+    pub payload_format: PayloadFormat,
 }
