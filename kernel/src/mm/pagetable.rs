@@ -925,6 +925,21 @@ impl PageTable {
         entry.set(make_private_address(addr), flags);
     }
 
+    fn set_pte_visibility_4k(&mut self, vaddr: VirtAddr, shared: bool) -> Result<(), SvsmError> {
+        let mapping = self.walk_addr(vaddr);
+        Self::split_4k(mapping)?;
+
+        let Mapping::Level0(entry) = self.walk_addr(vaddr) else {
+            return Err(SvsmError::Mem);
+        };
+
+        match shared {
+            true => Self::make_pte_shared(entry),
+            false => Self::make_pte_private(entry),
+        }
+        Ok(())
+    }
+
     /// Sets the shared state for a 4KB page.
     ///
     /// # Parameters
@@ -934,15 +949,7 @@ impl PageTable {
     /// A result indicating success or an error [`SvsmError`] if the
     /// operation fails.
     pub fn set_shared_4k(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
-        let mapping = self.walk_addr(vaddr);
-        Self::split_4k(mapping)?;
-
-        if let Mapping::Level0(entry) = self.walk_addr(vaddr) {
-            Self::make_pte_shared(entry);
-            Ok(())
-        } else {
-            Err(SvsmError::Mem)
-        }
+        self.set_pte_visibility_4k(vaddr, true)
     }
 
     /// Sets the encryption state for a 4KB page.
@@ -953,15 +960,7 @@ impl PageTable {
     /// # Returns
     /// A result indicating success or an error [`SvsmError`].
     pub fn set_encrypted_4k(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
-        let mapping = self.walk_addr(vaddr);
-        Self::split_4k(mapping)?;
-
-        if let Mapping::Level0(entry) = self.walk_addr(vaddr) {
-            Self::make_pte_private(entry);
-            Ok(())
-        } else {
-            Err(SvsmError::Mem)
-        }
+        self.set_pte_visibility_4k(vaddr, false)
     }
 
     /// Gets the physical address for a mapped `vaddr` or `None` if
