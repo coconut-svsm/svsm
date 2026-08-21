@@ -59,16 +59,27 @@ fn accept_loop<S: Read + Write>(
 ) -> anyhow::Result<()> {
     for stream in incoming {
         let mut stream = stream.context("Failed to accept connection")?;
+        log::info!("accepted incoming connection from SVSM");
         let mut http_client = backend::HttpClient::new(url.to_string(), backend.into())?;
-        attest::attest(&mut stream, &mut http_client)?;
+        if let Err(e) = attest::attest(&mut stream, &mut http_client) {
+            log::error!("attestation failed: {e:#}");
+            continue;
+        }
+
+        log::info!("attestation successful");
     }
     Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
+    env_logger::Builder::new()
+        .filter_level(log::LevelFilter::Info)
+        .parse_default_env()
+        .init();
     let args = Args::parse();
 
     if let Some(port) = args.vsock {
+        log::info!("listening on vsock port {port}");
         let listener = VsockListener::bind(&VsockAddr::new(VMADDR_CID_ANY, port))
             .context("bind and listen failed")?;
         accept_loop(listener.incoming(), &args.url, args.backend)?;
@@ -77,7 +88,8 @@ fn main() -> anyhow::Result<()> {
             let _ = fs::remove_file(&unix);
         }
 
-        let listener = UnixListener::bind(unix).context("unable to bind to UNIX socket")?;
+        let listener = UnixListener::bind(&unix).context("unable to bind to UNIX socket")?;
+        log::info!("listening on unix socket {unix}");
         accept_loop(listener.incoming(), &args.url, args.backend)?;
     }
 
