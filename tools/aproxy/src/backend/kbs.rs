@@ -113,6 +113,7 @@ impl AttestationProtocol for KbsProtocol {
             .context("unable to POST to KBS /attest endpoint")?;
 
         if http_resp.status() != StatusCode::OK {
+            log::warn!("KBS /attest returned {}", http_resp.status());
             return Ok(AttestationResponse {
                 success: false,
                 secret: None,
@@ -146,6 +147,7 @@ impl AttestationProtocol for KbsProtocol {
 
         // Unsuccessful attempt at retrieving secret.
         if http_resp.status() != StatusCode::OK {
+            log::warn!("KBS /resource returned {}", http_resp.status());
             return Ok(AttestationResponse {
                 success: false,
                 secret: None,
