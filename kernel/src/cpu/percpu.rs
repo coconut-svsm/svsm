@@ -1190,7 +1190,7 @@ impl PerCpu {
     /// the mapping which remains valid until the ['VRMapping'] is dropped.
     ///
     /// On error, an ['SvsmError'].
-    pub fn new_mapping(&self, mapping: Mapping) -> Result<VMRMapping<'_>, SvsmError> {
+    pub fn new_mapping(&self, mapping: Mapping) -> Result<VMRMapping<&VMR>, SvsmError> {
         VMRMapping::new(&self.vm_range, mapping)
     }
 

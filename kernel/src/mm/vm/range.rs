@@ -13,7 +13,10 @@ use crate::mm::virt_from_idx;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE, PageSize};
 use crate::utils::{MemoryRegion, align_down, align_up};
 
+use core::borrow::Borrow;
 use core::cmp::max;
+use core::mem::ManuallyDrop;
+use core::ops::Deref;
 
 use intrusive_collections::Bound;
 use intrusive_collections::rbtree::{CursorMut, RBTree};
@@ -517,16 +520,33 @@ impl VMR {
     }
 }
 
+/// A mapping in a [`VMR`], holding a reference `V` to that `VMR`.
+/// The mapping is torn down on drop.
 #[derive(Debug)]
-pub struct VMRMapping<'a> {
-    vmr: &'a VMR,
+pub struct VMRMapping<V: Borrow<VMR>> {
+    vmr: V,
     va: VirtAddr,
 }
 
-impl<'a> VMRMapping<'a> {
-    pub fn new(vmr: &'a VMR, mapping: Mapping) -> Result<Self, SvsmError> {
-        let va = vmr.insert(mapping)?;
+impl<V: Borrow<VMR>> VMRMapping<V> {
+    pub fn new(vmr: V, mapping: Mapping) -> Result<Self, SvsmError> {
+        let va = vmr.borrow().insert(mapping)?;
         Ok(Self { vmr, va })
+    }
+
+    pub fn new_at(vmr: V, addr: VirtAddr, mapping: Mapping) -> Result<Self, SvsmError> {
+        let va = vmr.borrow().insert_at(addr, mapping)?;
+        Ok(Self { vmr, va })
+    }
+
+    pub fn new_hint(vmr: V, addr: VirtAddr, mapping: Mapping) -> Result<Self, SvsmError> {
+        let va = vmr.borrow().insert_hint(addr, mapping)?;
+        Ok(Self { vmr, va })
+    }
+
+    pub fn leak(self) -> VirtAddr {
+        let md = ManuallyDrop::new(self);
+        md.va
     }
 
     pub fn virt_addr(&self) -> VirtAddr {
@@ -534,9 +554,18 @@ impl<'a> VMRMapping<'a> {
     }
 }
 
-impl Drop for VMRMapping<'_> {
+impl<V: Borrow<VMR>> Deref for VMRMapping<V> {
+    type Target = VirtAddr;
+
+    fn deref(&self) -> &VirtAddr {
+        &self.va
+    }
+}
+
+impl<V: Borrow<VMR>> Drop for VMRMapping<V> {
     fn drop(&mut self) {
         self.vmr
+            .borrow()
             .remove(self.va)
             .expect("Error removing VRMapping virtual memory range");
     }
