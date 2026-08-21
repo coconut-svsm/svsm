@@ -466,6 +466,28 @@ fn free_init_bsp_stack() {
     free_multiple_pages(stack_base, stack_pages);
 }
 
+#[cfg(all(feature = "attest", not(test_in_svsm)))]
+fn run_attestation() {
+    use kbs_types::Tee;
+    use svsm::attest::AttestationDriver;
+
+    // Obtain the persistence metadata first. It's not the case yet,
+    // but it likely will be needed as input to the attestation.
+    #[cfg(feature = "persistence")]
+    let persistence_bootstrap_info = persistence_discover().unwrap();
+
+    let mut proxy = AttestationDriver::try_from(Tee::Snp).unwrap();
+    let secret = proxy.attest().unwrap();
+    log::info!("attestation successful");
+
+    #[cfg(not(feature = "persistence"))]
+    let _ = secret;
+    #[cfg(feature = "persistence")]
+    if let Some(persistence_bootstrap_info) = persistence_bootstrap_info {
+        persistence_init(persistence_bootstrap_info, &secret).unwrap();
+    }
+}
+
 fn svsm_init(launch_info: &KernelLaunchInfo) {
     // If required, the GDB stub can be started earlier, just after the console
     // is initialised in svsm_start() above.
@@ -547,26 +569,7 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     initialize_virtio_mmio(&boot_params).expect("Failed to initialize virtio-mmio drivers");
 
     #[cfg(all(feature = "attest", not(test_in_svsm)))]
-    {
-        use kbs_types::Tee;
-        use svsm::attest::AttestationDriver;
-
-        // Obtain the persistence metadata first. It's not the case yet,
-        // but it likely will be needed as input to the attestation.
-        #[cfg(feature = "persistence")]
-        let persistence_bootstrap_info = persistence_discover().unwrap();
-
-        let mut proxy = AttestationDriver::try_from(Tee::Snp).unwrap();
-        let secret = proxy.attest().unwrap();
-        log::info!("attestation successful");
-
-        #[cfg(not(feature = "persistence"))]
-        let _ = secret;
-        #[cfg(feature = "persistence")]
-        if let Some(persistence_bootstrap_info) = persistence_bootstrap_info {
-            persistence_init(persistence_bootstrap_info, &secret).unwrap();
-        }
-    }
+    run_attestation();
 
     #[cfg(feature = "vtpm")]
     vtpm_init().expect("vTPM failed to initialize");
