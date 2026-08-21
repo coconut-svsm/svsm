@@ -622,68 +622,29 @@ impl PageTable {
         vaddr.bits() >> (12 + level * 9) & 0x1ff
     }
 
-    /// Walks a page table at level 0 to find a mapping.
+    /// Walk the virtual address and return the corresponding mapping,
+    /// starting at the specified level in the hierarchy.
     ///
     /// # Parameters
     /// - `page`: A mutable reference to the root page table.
     /// - `vaddr`: The virtual address to find a mapping for.
+    /// - `level`: the level in the page table hierarchy at which to
+    ///   start the walk.
     ///
     /// # Returns
     /// A `Mapping` representing the found mapping.
-    fn walk_addr_lvl0(page: &mut PTPage, vaddr: VirtAddr) -> Mapping<'_> {
+    fn walk_addr_at(mut page: &mut PTPage, vaddr: VirtAddr, level: usize) -> Mapping<'_> {
+        for level in (1..=level).rev() {
+            let idx = Self::index_at(vaddr, level);
+            let entry = &mut page[idx];
+            match PTPage::from_entry(*entry) {
+                Some(p) => page = p,
+                None => return Mapping::new(entry, level),
+            }
+        }
+
         let idx = Self::index::<0>(vaddr);
         Mapping::new(&mut page[idx], 0)
-    }
-
-    /// Walks a page table at level 1 to find a mapping.
-    ///
-    /// # Parameters
-    /// - `page`: A mutable reference to the root page table.
-    /// - `vaddr`: The virtual address to find a mapping for.
-    ///
-    /// # Returns
-    /// A `Mapping` representing the found mapping.
-    fn walk_addr_lvl1(page: &mut PTPage, vaddr: VirtAddr) -> Mapping<'_> {
-        let idx = Self::index::<1>(vaddr);
-        let entry = page[idx];
-        match PTPage::from_entry(entry) {
-            Some(page) => Self::walk_addr_lvl0(page, vaddr),
-            None => Mapping::new(&mut page[idx], 1),
-        }
-    }
-
-    /// Walks a page table at level 2 to find a mapping.
-    ///
-    /// # Parameters
-    /// - `page`: A mutable reference to the root page table.
-    /// - `vaddr`: The virtual address to find a mapping for.
-    ///
-    /// # Returns
-    /// A `Mapping` representing the found mapping.
-    fn walk_addr_lvl2(page: &mut PTPage, vaddr: VirtAddr) -> Mapping<'_> {
-        let idx = Self::index::<2>(vaddr);
-        let entry = page[idx];
-        match PTPage::from_entry(entry) {
-            Some(page) => Self::walk_addr_lvl1(page, vaddr),
-            None => Mapping::new(&mut page[idx], 2),
-        }
-    }
-
-    /// Walks the page table to find a mapping for a given virtual address.
-    ///
-    /// # Parameters
-    /// - `page`: A mutable reference to the root page table.
-    /// - `vaddr`: The virtual address to find a mapping for.
-    ///
-    /// # Returns
-    /// A `Mapping` representing the found mapping.
-    fn walk_addr_lvl3(page: &mut PTPage, vaddr: VirtAddr) -> Mapping<'_> {
-        let idx = Self::index::<3>(vaddr);
-        let entry = page[idx];
-        match PTPage::from_entry(entry) {
-            Some(page) => Self::walk_addr_lvl2(page, vaddr),
-            None => Mapping::new(&mut page[idx], 3),
-        }
     }
 
     /// Walk the virtual address and return the corresponding mapping.
@@ -694,7 +655,7 @@ impl PageTable {
     /// # Returns
     /// A `Mapping` representing the found mapping.
     fn walk_addr(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
-        Self::walk_addr_lvl3(&mut self.root, vaddr)
+        Self::walk_addr_at(&mut self.root, vaddr, 3)
     }
 
     /// Calculate the virtual address of a PTE in the self-map, which maps a
@@ -1314,7 +1275,7 @@ impl RawPageTablePart {
     /// # Returns
     /// The [`Mapping`] for the given virtual address.
     fn walk_addr(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
-        PageTable::walk_addr_lvl2(&mut self.page, vaddr)
+        PageTable::walk_addr_at(&mut self.page, vaddr, 2)
     }
 
     /// Allocates a page table entry for a given virtual address and
