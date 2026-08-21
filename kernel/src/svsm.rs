@@ -470,13 +470,25 @@ fn free_init_bsp_stack() {
 fn run_attestation() {
     use kbs_types::Tee;
     use svsm::attest::AttestationDriver;
+    use svsm::error::SvsmError;
+    use svsm::vsock::error::VsockError;
 
     // Obtain the persistence metadata first. It's not the case yet,
     // but it likely will be needed as input to the attestation.
     #[cfg(feature = "persistence")]
     let persistence_bootstrap_info = persistence_discover().unwrap();
 
-    let mut proxy = AttestationDriver::try_from(Tee::Snp).unwrap();
+    let mut proxy = match AttestationDriver::try_from(Tee::Snp) {
+        Ok(p) => p,
+        Err(SvsmError::Vsock(VsockError::DeviceNotAvailable)) => {
+            log::warn!(
+                "attestation: vsock device not available, skipping attestation and persistence"
+            );
+            return;
+        }
+        Err(e) => panic!("attestation: failed to initialize transport: {e:?}"),
+    };
+
     let secret = proxy.attest().unwrap();
     log::info!("attestation successful");
 
