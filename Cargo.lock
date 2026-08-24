@@ -1416,6 +1416,7 @@ dependencies = [
  "cocoon-tpm-tpm2-interface",
  "kbs-types",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
