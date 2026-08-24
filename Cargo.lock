@@ -134,7 +134,6 @@ dependencies = [
  "base64",
  "clap",
  "const_format",
- "kbs-types",
  "libaproxy",
  "reqwest",
  "serde",
