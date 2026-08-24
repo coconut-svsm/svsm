@@ -84,6 +84,7 @@ pub struct ProxyRequest {
     pub endpoint: String,
     pub method: HttpMethod,
     pub body: serde_json::Value,
+    pub token: Option<String>,
 }
 
 /// A generic HTTP response sent back from aproxy to SVSM.

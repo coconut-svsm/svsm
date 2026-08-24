@@ -26,14 +26,17 @@ use cocoon_tpm_crypto::{
 };
 use cocoon_tpm_tpm2_interface::{TpmEccCurve, TpmsEccPoint};
 use kbs_types::Tee;
-use libaproxy::*;
+use libaproxy::{
+    BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD, serialize_base64, serialize_base64_option, *,
+};
 use serde::Serialize;
-use sha2::{Digest, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
 #[cfg(feature = "attest-serial")]
 // TODO: Make the IO port configurable/discoverable or drop the support entirely.
 const ATTEST_DEFAULT_SERIAL_IO_ADDR: u16 = 0x3e8; // COM3
+
+const TEE_REPORT_DATA_LEN: usize = 64;
 
 enum Transport {
     Vsock(VsockStream),
@@ -101,6 +104,10 @@ pub struct AttestationDriver {
     transport: Transport,
     tee: Tee,
     ecc: EccKey,
+    auth_endpoint: alloc::string::String,
+    attest_endpoint: alloc::string::String,
+    resource_endpoint: alloc::string::String,
+    token: Option<alloc::string::String>,
 }
 
 impl TryFrom<Tee> for AttestationDriver {
@@ -120,6 +127,10 @@ impl TryFrom<Tee> for AttestationDriver {
             transport,
             tee,
             ecc,
+            auth_endpoint: "".to_string(),
+            attest_endpoint: "".to_string(),
+            resource_endpoint: "".to_string(),
+            token: None,
         })
     }
 }
@@ -127,30 +138,10 @@ impl TryFrom<Tee> for AttestationDriver {
 impl AttestationDriver {
     /// Attest SVSM's launch state by communicating with the attestation proxy.
     pub fn attest(&mut self) -> Result<SecretSlice, SvsmError> {
-        let negotiation = self.negotiation()?;
+        let config = self.handshake()?;
 
-        Ok(self.attestation(negotiation)?)
-    }
+        let (nonce, params) = self.auth(config.payload_format)?;
 
-    /// Send a negotiation request to the proxy. Proxy should reply with Negotiation parameters
-    /// that should be included in attestation evidence (e.g. through SEV-SNP's REPORT_DATA
-    /// mechanism).
-    fn negotiation(&mut self) -> Result<NegotiationResponse, AttestationError> {
-        let request = NegotiationRequest {
-            version: (0, 1, 0), // Only version supported at present.
-            tee: self.tee,
-        };
-
-        self.write(request)?;
-        let payload = self.read()?;
-
-        serde_json::from_slice(&payload).or(Err(AttestationError::NegotiationDeserialize))
-    }
-
-    /// Send an attestation request to the proxy. Proxy should reply with attestation response
-    /// containing the status (success/fail) and an optional secret returned from the server upon
-    /// successful attestation.
-    fn attestation(&mut self, n: NegotiationResponse) -> Result<SecretSlice, AttestationError> {
         let curve =
             Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
 
@@ -160,37 +151,208 @@ impl AttestationDriver {
             .to_tpms_ecc_point(&curve.curve_ops().map_err(AttestationError::Crypto)?)
             .map_err(AttestationError::Crypto)?;
 
-        let evidence = evidence(&self.tee, hash(&n, &pub_key)?)?;
-
-        let req = AttestationRequest {
-            tee: self.tee,
-            evidence,
-            challenge: n.challenge.clone(),
-            key: (self.ecc.pub_key().get_curve_id(), &pub_key).into(),
+        let formatted_bytes = match config.payload_format {
+            PayloadFormat::RawBinary => {
+                let params = params.ok_or(AttestationError::NegotiationDeserialize)?;
+                let formatter = RawBinaryFormatter { params };
+                formatter.format(&nonce, &pub_key)?
+            }
+            PayloadFormat::JwsJson => {
+                let formatter = JwsJsonFormatter;
+                formatter.format(&nonce, &pub_key)?
+            }
         };
 
-        self.write(req)?;
+        let digest = config.hash_algo.digest(&formatted_bytes);
+        let evidence = evidence(&self.tee, prepare_report_data(&digest)?)?;
+
+        let kbs_pub_key = (self.ecc.pub_key().get_curve_id(), &pub_key).into();
+        self.attest_kbs(&nonce, evidence, kbs_pub_key, config.payload_format)?;
+
+        let secret = self.retrieve_secret()?;
+
+        Ok(secret)
+    }
+
+    fn handshake(&mut self) -> Result<ConfigResponse, AttestationError> {
+        let request = ConfigRequest {
+            version: (0, 1, 0),
+            tee: self.tee,
+        };
+
+        self.write(request)?;
         let payload = self.read()?;
 
-        let response: AttestationResponse = serde_json::from_slice(&payload)
-            .map_err(|_| AttestationError::AttestationDeserialize)?;
+        let config: ConfigResponse =
+            serde_json::from_slice(&payload).or(Err(AttestationError::NegotiationDeserialize))?;
 
-        if !response.success {
+        self.auth_endpoint = config.auth_endpoint.clone();
+        self.attest_endpoint = config.attest_endpoint.clone();
+        self.resource_endpoint = config.resource_endpoint.clone();
+
+        Ok(config)
+    }
+
+    fn auth(
+        &mut self,
+        format: PayloadFormat,
+    ) -> Result<(Vec<u8>, Option<Vec<NegotiationParam>>), AttestationError> {
+        let req = kbs_types::Request {
+            version: "0.4.0".to_string(),
+            tee: self.tee,
+            extra_params: serde_json::Value::Null,
+        };
+
+        let proxy_req = ProxyRequest {
+            endpoint: self.auth_endpoint.clone(),
+            method: HttpMethod::POST,
+            body: serde_json::to_value(&req).map_err(|_| AttestationError::NegotiationSerialize)?,
+            token: None,
+        };
+
+        self.write(proxy_req)?;
+        let payload = self.read()?;
+
+        let proxy_resp: ProxyResponse = serde_json::from_slice(&payload)
+            .map_err(|_| AttestationError::NegotiationDeserialize)?;
+
+        if proxy_resp.status != 200 {
             return Err(AttestationError::Failed);
         }
 
-        let Some(decryption) = response.decryption else {
-            return Err(AttestationError::PublicKeyMissing)?;
+        let challenge: kbs_types::Challenge = serde_json::from_str(&proxy_resp.body)
+            .map_err(|_| AttestationError::NegotiationDeserialize)?;
+
+        let decoded_nonce = BASE64_STANDARD
+            .decode(&challenge.nonce)
+            .map_err(|_| AttestationError::NegotiationDeserialize)?;
+
+        match format {
+            PayloadFormat::JwsJson => Ok((decoded_nonce, None)),
+            PayloadFormat::RawBinary => {
+                let static_params = alloc::vec![
+                    NegotiationParam::EcPublicKeyBytes,
+                    NegotiationParam::Challenge,
+                ];
+                Ok((decoded_nonce, Some(static_params)))
+            }
+        }
+    }
+
+    fn attest_kbs(
+        &mut self,
+        challenge: &[u8],
+        evidence: AttestationEvidence,
+        pub_key: EcP256PublicKey,
+        format: PayloadFormat,
+    ) -> Result<(), AttestationError> {
+        use kbs_types::{Attestation, CompositeEvidence, RuntimeData};
+
+        let AttestationEvidence::Snp { report, certs_buf } = evidence;
+
+        let primary_evidence = match format {
+            PayloadFormat::JwsJson => {
+                let report_struct =
+                    *crate::greq::pld_report::AttestationReport::ref_from_bytes(&report)
+                        .map_err(|_| AttestationError::NegotiationDeserialize)?;
+
+                let trustee_evidence = TrusteeSnpEvidence {
+                    attestation_report: report_struct.to_wire(),
+                    cert_chain: certs_buf,
+                };
+                serde_json::to_value(&trustee_evidence)
+                    .map_err(|_| AttestationError::NegotiationSerialize)?
+            }
+            PayloadFormat::RawBinary => {
+                let legacy_evidence = LegacySnpEvidence {
+                    snp_report: report,
+                    certs_buf,
+                };
+                serde_json::to_value(&legacy_evidence)
+                    .map_err(|_| AttestationError::NegotiationSerialize)?
+            }
         };
 
-        let Some(secret_enc) = response.secret else {
-            return Err(AttestationError::SecretMissing);
+        let attestation = Attestation {
+            init_data: None,
+            runtime_data: RuntimeData {
+                nonce: BASE64_STANDARD.encode(challenge),
+                tee_pubkey: pub_key.into(),
+            },
+            tee_evidence: CompositeEvidence {
+                primary_evidence,
+                additional_evidence: "".to_string(),
+            },
         };
 
-        // `secret_enc` holds ciphertext from the attestation server. Move it
-        // into `SecretSlice` before decryption so the same buffer is decrypted
-        // in-place and zeroed on drop.
-        let mut secret_slice = SecretSlice::from(secret_enc.into_boxed_slice());
+        let proxy_req = ProxyRequest {
+            endpoint: self.attest_endpoint.clone(),
+            method: HttpMethod::POST,
+            body: serde_json::to_value(&attestation)
+                .map_err(|_| AttestationError::NegotiationSerialize)?,
+            token: None,
+        };
+
+        self.write(proxy_req)?;
+        let payload = self.read()?;
+
+        let proxy_resp: ProxyResponse = serde_json::from_slice(&payload)
+            .map_err(|_| AttestationError::NegotiationDeserialize)?;
+
+        if proxy_resp.status != 200 {
+            return Err(AttestationError::Failed);
+        }
+
+        #[derive(serde::Deserialize)]
+        struct AttestResponse {
+            token: alloc::string::String,
+        }
+
+        let attest_resp: AttestResponse = serde_json::from_str(&proxy_resp.body)
+            .map_err(|_| AttestationError::NegotiationDeserialize)?;
+
+        self.token = Some(attest_resp.token);
+
+        Ok(())
+    }
+
+    fn retrieve_secret(&mut self) -> Result<SecretSlice, AttestationError> {
+        let proxy_req = ProxyRequest {
+            endpoint: self.resource_endpoint.clone(),
+            method: HttpMethod::GET,
+            body: serde_json::Value::Null,
+            token: self.token.clone(),
+        };
+
+        self.write(proxy_req)?;
+        let payload = self.read()?;
+
+        let proxy_resp: ProxyResponse = serde_json::from_slice(&payload)
+            .map_err(|_| AttestationError::NegotiationDeserialize)?;
+
+        if proxy_resp.status != 200 {
+            return Err(AttestationError::Failed);
+        }
+
+        let kbs_resp: kbs_types::Response = serde_json::from_str(&proxy_resp.body)
+            .map_err(|_| AttestationError::NegotiationDeserialize)?;
+
+        let epk = unwrap_epk(&kbs_resp)?;
+
+        let aad = kbs_resp
+            .protected
+            .generate_aad()
+            .map_err(|_| AttestationError::CekUnwrap)?;
+
+        let mut secret_slice = SecretSlice::from(kbs_resp.ciphertext.into_boxed_slice());
+
+        let decryption = AesGcmData {
+            epk,
+            wrapped_cek: kbs_resp.encrypted_key,
+            aad,
+            iv: kbs_resp.iv,
+            tag: kbs_resp.tag,
+        };
 
         self.decrypt(&mut secret_slice, decryption)?;
 
@@ -292,6 +454,8 @@ pub enum AttestationError {
     Crypto(CryptoError),
     /// Guest has failed attestation.
     Failed,
+    /// Invalid challenge length detected.
+    InvalidChallengeLength,
     // Unable to derive wrap key.
     KeyDerivation(concat_kdf::Error),
     /// Error deserializing the negotiation response from JSON bytes.
@@ -375,28 +539,137 @@ fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<AttestationEvidence, Attestation
     Ok(evidence)
 }
 
-/// Hash the negotiation parameters from the attestation server for inclusion in the
-/// attestation evidence.
-fn hash(
-    n: &NegotiationResponse,
-    pub_key: &TpmsEccPoint<'static>,
-) -> Result<Vec<u8>, AttestationError> {
-    let mut sha = Sha512::new();
+trait PayloadFormatter {
+    fn format(
+        &self,
+        challenge: &[u8],
+        pub_key: &TpmsEccPoint<'_>,
+    ) -> Result<Vec<u8>, AttestationError>;
+}
 
-    for p in &n.params {
-        match p {
-            NegotiationParam::Challenge => {
-                sha.update(&n.challenge);
-            }
-            #[allow(irrefutable_let_patterns)]
-            NegotiationParam::EcPublicKeyBytes => {
-                sha.update(&*pub_key.x.buffer);
-                sha.update(&*pub_key.y.buffer);
+struct RawBinaryFormatter {
+    params: Vec<NegotiationParam>,
+}
+
+impl PayloadFormatter for RawBinaryFormatter {
+    fn format(
+        &self,
+        challenge: &[u8],
+        pub_key: &TpmsEccPoint<'_>,
+    ) -> Result<Vec<u8>, AttestationError> {
+        let mut buffer = Vec::new();
+
+        for p in &self.params {
+            match p {
+                NegotiationParam::Challenge => {
+                    buffer.extend_from_slice(challenge);
+                }
+                #[allow(irrefutable_let_patterns)]
+                NegotiationParam::EcPublicKeyBytes => {
+                    buffer.extend_from_slice(&pub_key.x.buffer);
+                    buffer.extend_from_slice(&pub_key.y.buffer);
+                }
             }
         }
+
+        Ok(buffer)
+    }
+}
+
+struct JwsJsonFormatter;
+
+impl PayloadFormatter for JwsJsonFormatter {
+    fn format(
+        &self,
+        challenge: &[u8],
+        pub_key: &TpmsEccPoint<'_>,
+    ) -> Result<Vec<u8>, AttestationError> {
+        use alloc::collections::BTreeMap;
+        use serde_json::json;
+
+        let x_encoded = BASE64_URL_SAFE_NO_PAD.encode(&*pub_key.x.buffer);
+        let y_encoded = BASE64_URL_SAFE_NO_PAD.encode(&*pub_key.y.buffer);
+        let nonce_encoded = BASE64_STANDARD.encode(challenge);
+
+        let mut key_map = BTreeMap::new();
+        key_map.insert("alg".to_string(), json!("ECDH-ES+A256KW"));
+        key_map.insert("crv".to_string(), json!("P-521"));
+        key_map.insert("kty".to_string(), json!("EC"));
+        key_map.insert("x".to_string(), json!(x_encoded));
+        key_map.insert("y".to_string(), json!(y_encoded));
+
+        let mut runtime_data = BTreeMap::new();
+        runtime_data.insert("additional-evidence".to_string(), json!(""));
+        runtime_data.insert("nonce".to_string(), json!(nonce_encoded));
+        runtime_data.insert("tee-pubkey".to_string(), json!(key_map));
+
+        serde_json::to_vec(&runtime_data).map_err(|_| AttestationError::NegotiationSerialize)
+    }
+}
+
+fn unwrap_epk(resp: &kbs_types::Response) -> Result<EcP256PublicKey, AttestationError> {
+    let epk = resp
+        .protected
+        .other_fields
+        .get("epk")
+        .ok_or(AttestationError::PublicKeyMissing)?;
+
+    let x_str = epk
+        .get("x")
+        .ok_or(AttestationError::PublicKeyMissing)?
+        .as_str()
+        .ok_or(AttestationError::PublicKeyMissing)?;
+
+    let y_str = epk
+        .get("y")
+        .ok_or(AttestationError::PublicKeyMissing)?
+        .as_str()
+        .ok_or(AttestationError::PublicKeyMissing)?;
+
+    let x = BASE64_URL_SAFE_NO_PAD
+        .decode(x_str)
+        .map_err(|_| AttestationError::PublicKeyMissing)?;
+
+    let y = BASE64_URL_SAFE_NO_PAD
+        .decode(y_str)
+        .map_err(|_| AttestationError::PublicKeyMissing)?;
+
+    Ok(EcP256PublicKey { x, y })
+}
+
+/// Take variable-sized negotiation challenge nonce from aproxy into 64 byte array required
+/// for the TEE attestation evidence report
+fn prepare_report_data(challenge_digest: &[u8]) -> Result<Vec<u8>, AttestationError> {
+    if challenge_digest.len() > TEE_REPORT_DATA_LEN {
+        return Err(AttestationError::InvalidChallengeLength);
     }
 
-    try_to_vec(&sha.finalize()).or(Err(AttestationError::VecAlloc))
+    let mut report_data = [0u8; TEE_REPORT_DATA_LEN];
+    report_data[..challenge_digest.len()].copy_from_slice(challenge_digest);
+
+    Ok(report_data.to_vec())
+}
+
+#[derive(Serialize)]
+struct TrusteeSnpEvidence {
+    attestation_report: crate::greq::pld_report::WireAttestationReport,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_base64_option"
+    )]
+    cert_chain: Option<Vec<u8>>,
+}
+
+#[derive(Serialize)]
+struct LegacySnpEvidence {
+    #[serde(rename = "snp-report", serialize_with = "serialize_base64")]
+    snp_report: Vec<u8>,
+    #[serde(
+        rename = "certs-buf",
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_base64_option"
+    )]
+    certs_buf: Option<Vec<u8>>,
 }
 
 #[cfg(test)]
@@ -416,57 +689,48 @@ mod tests {
         }
     }
 
-    mod negotiation_hash {
-        use super::*;
+    #[test]
+    fn test_raw_binary_formatter() {
+        let challenge = vec![0xdd; 48];
+        let x = vec![0x10; 66];
+        let y = vec![0x20; 66];
+        let pub_key = make_ecc_point(&x, &y);
 
-        // The challenge size is server-dictated; 48 is an arbitrary choice.
-        const CHALLENGE_LEN: usize = 48;
-        // P-521 coordinate size.
-        const COORD_LEN: usize = 66;
+        let formatter = RawBinaryFormatter {
+            params: vec![
+                NegotiationParam::EcPublicKeyBytes,
+                NegotiationParam::Challenge,
+            ],
+        };
+        let formatted = formatter.format(&challenge, &pub_key).unwrap();
 
-        /// hash() feeds NegotiationParams into SHA-512 in the order they
-        /// appear in `response.params`. Verify that [Challenge, EcPublicKeyBytes]
-        /// and [EcPublicKeyBytes, Challenge] each produce the correct digest and
-        /// that the two digests differ — the server-negotiated ordering must
-        /// affect the resulting attestation evidence.
-        #[test]
-        fn hash_respects_param_ordering() {
-            let challenge = vec![0xdd; CHALLENGE_LEN];
-            let x = vec![0x10; COORD_LEN];
-            let y = vec![0x20; COORD_LEN];
-            let pub_key = make_ecc_point(&x, &y);
+        let mut expected = Vec::new();
+        expected.extend_from_slice(&x);
+        expected.extend_from_slice(&y);
+        expected.extend_from_slice(&challenge);
 
-            let response_chal_first = NegotiationResponse {
-                challenge: challenge.clone(),
-                params: vec![
-                    NegotiationParam::Challenge,
-                    NegotiationParam::EcPublicKeyBytes,
-                ],
-            };
-            let response_key_first = NegotiationResponse {
-                challenge: challenge.clone(),
-                params: vec![
-                    NegotiationParam::EcPublicKeyBytes,
-                    NegotiationParam::Challenge,
-                ],
-            };
+        assert_eq!(formatted, expected);
+    }
 
-            let result_chal_first = hash(&response_chal_first, &pub_key).unwrap();
-            let result_key_first = hash(&response_key_first, &pub_key).unwrap();
+    #[test]
+    fn test_jws_json_formatter() {
+        let challenge = vec![0xdd; 48];
+        let x = vec![0x10; 66];
+        let y = vec![0x20; 66];
+        let pub_key = make_ecc_point(&x, &y);
 
-            let mut sha = Sha512::new();
-            sha.update(&challenge);
-            sha.update(&x);
-            sha.update(&y);
-            assert_eq!(result_chal_first, sha.finalize().as_slice());
+        let formatter = JwsJsonFormatter;
+        let formatted = formatter.format(&challenge, &pub_key).unwrap();
 
-            let mut sha = Sha512::new();
-            sha.update(&x);
-            sha.update(&y);
-            sha.update(&challenge);
-            assert_eq!(result_key_first, sha.finalize().as_slice());
-
-            assert_ne!(result_chal_first, result_key_first);
-        }
+        let json_val: serde_json::Value = serde_json::from_slice(&formatted).unwrap();
+        assert_eq!(
+            json_val["nonce"].as_str().unwrap(),
+            BASE64_STANDARD.encode(&challenge)
+        );
+        assert_eq!(
+            json_val["tee-pubkey"]["alg"].as_str().unwrap(),
+            "ECDH-ES+A256KW"
+        );
+        assert_eq!(json_val["additional-evidence"].as_str().unwrap(), "");
     }
 }
