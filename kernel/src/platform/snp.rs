@@ -409,7 +409,7 @@ impl SvsmPlatform for SnpPlatform {
         // external interrupts.
         false
     }
-    fn configure_secure_tsc(&mut self, secure_tsc_requested: bool) -> Result<(), SvsmError> {
+    fn configure_secure_tsc(&self, secure_tsc_requested: bool) -> Result<(), SvsmError> {
         if !secure_tsc_requested {
             return Ok(());
         }
