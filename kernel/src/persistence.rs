@@ -918,6 +918,38 @@ fn instantiate_cocoonfs_enumerate_cursor_next_fut(
     box_try_new(next_fut).map_err(NvFsError::from)
 }
 
+/// Instantiate a [`CocoonFs::UnlinkCursor::NextFut`](NvFsUnlinkCursor::NextFut).
+///
+/// The [`CocoonFs::UnlinkCursor::NextFut`](NvFsUnlinkCursor::NextFut) is not exactly small -- by
+/// instantiating it in an `inline(never)` function and `Box`ing it right after, the stack
+/// allocations required for the moves are hopefully getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_unlink_cursor_next_fut(
+    cursor: <SvsmCocoonFsType as NvFs>::UnlinkCursor,
+) -> Result<
+    Box<<<SvsmCocoonFsType as NvFs>::UnlinkCursor as NvFsUnlinkCursor<SvsmCocoonFsType>>::NextFut>,
+    NvFsError,
+> {
+    let next_fut = cursor.next();
+    box_try_new(next_fut).map_err(NvFsError::from)
+}
+
+/// Instantiate a [`CocoonFs::UnlinkCursor::UnlinkInodeFut`](NvFsUnlinkCursor::UnlinkInodeFut).
+///
+/// The [`CocoonFs::UnlinkCursor::UnlinkInodeFut`](NvFsUnlinkCursor::UnlinkInodeFut) is not exactly small --
+/// by instantiating it in an `inline(never)` function and `Box`ing it right after, the stack
+/// allocations required for the moves are hopefully getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_unlink_cursor_unlink_inode_fut(
+    cursor: <SvsmCocoonFsType as NvFs>::UnlinkCursor,
+) -> Result<
+        Box<<<SvsmCocoonFsType as NvFs>::UnlinkCursor as NvFsUnlinkCursor<SvsmCocoonFsType>>::UnlinkInodeFut>,
+        NvFsError,
+>{
+    let unlink_inode_fut = cursor.unlink_current_inode();
+    box_try_new(unlink_inode_fut).map_err(NvFsError::from)
+}
+
 /// Synchronously write data to an inode on persistent storage.
 ///
 /// If the `inode` does not exist yet, it will get created. All of the inode's contents will get
@@ -1114,6 +1146,153 @@ pub fn persistence_read_inode_sync(inode: u64) -> Result<Option<Zeroizing<Vec<u8
             }
         }
     }
+}
+
+/// Synchronously unlink an inode from persistent storage.
+///
+/// If the `inode` does not exist on storage, the operation will complete with success.
+///
+/// Any error propagated back to the caller indicates an actual problem -- in particular requests to
+/// retry received from the backing filesystem implementation are handled transparently within
+/// `persistence_unlink_inode_sync()` itself.
+///
+/// # Arguments:
+///
+/// * `inode` - Number of the inode to unlink.
+/// * `issue_sync` - Whether or not to issue a sync request to the underlying storage after the
+///   write has completed. That's best effort though and relies on the host to behave well.
+///
+/// # See also:
+///
+/// * [`PersistenceMultiOp`].
+#[allow(unused)]
+pub fn persistence_unlink_inode_sync(inode: u64, issue_sync: bool) -> Result<(), SvsmError> {
+    let fs_instance = match SVSM_COCOONFS_INSTANCE.try_get_inner().ok() {
+        Some(fs_instance) => <pin::Pin<SvsmCocoonFsSyncRcPtrType> as sync_types::SyncRcPtr<
+            SvsmCocoonFsType,
+        >>::as_ref(fs_instance),
+        None => {
+            return Err(SvsmError::FileSystem(FsError::NotSupported));
+        }
+    };
+
+    let mut rng = match get_svsm_rng() {
+        Ok(rng) => rng,
+        Err(e) => {
+            log::error!("persistence write: failed to get rng instance: {e:?}");
+            return Err(nvfs_error_to_svsm_error(NvFsError::from(e)));
+        }
+    };
+
+    loop {
+        let mut transaction = match instantiate_cocoonfs_start_transaction_fut(&fs_instance)
+            .and_then(|mut start_transaction_fut| {
+                task_busypoll_to_completion(|cx| {
+                    NvFsFuture::poll(
+                        pin::Pin::new(&mut *start_transaction_fut),
+                        &fs_instance,
+                        &mut rng,
+                        cx,
+                    )
+                })
+            }) {
+            Ok(transaction) => transaction,
+            Err(NvFsError::Retry) => continue,
+            Err(e) => {
+                log::error!("persistence inode unlinking: failed to start transaction: {e:?}");
+                return Err(nvfs_error_to_svsm_error(e));
+            }
+        };
+
+        let cursor = match CocoonFs::unlink_cursor(&fs_instance, transaction, inode..=inode) {
+            Ok(Ok(cursor)) => cursor,
+            Err(e) | Ok(Err((_, e))) => {
+                if e == NvFsError::Retry {
+                    continue;
+                }
+
+                log::error!("persistence inode unlinking: failed to instantiate cursor: {e:?}");
+                return Err(nvfs_error_to_svsm_error(e));
+            }
+        };
+
+        // Advance the cursor to the first and only inode in the range.
+        let (cursor, inode) =
+            match instantiate_cocoonfs_unlink_cursor_next_fut(cursor).and_then(|mut next_fut| {
+                match task_busypoll_to_completion(|cx| {
+                    NvFsFuture::poll(pin::Pin::new(&mut *next_fut), &fs_instance, &mut rng, cx)
+                }) {
+                    Ok((cursor, Ok(inode))) => Ok((cursor, inode)),
+                    Err(e) | Ok((_, Err(e))) => Err(e),
+                }
+            }) {
+                Ok((cursor, inode)) => (cursor, inode),
+                Err(NvFsError::Retry) => continue,
+                Err(e) => {
+                    log::error!("persistence inode unlinking: failed to advance cursor: {e:?}");
+                    return Err(nvfs_error_to_svsm_error(e));
+                }
+            };
+
+        if inode.is_none() {
+            // No such inode exists.
+            return Ok(());
+        }
+
+        // Unlink the inode, which the cursor is pointing to, and obtain the transaction back.
+        let transaction = match instantiate_cocoonfs_unlink_cursor_unlink_inode_fut(cursor)
+            .and_then(|mut unlink_inode_fut| {
+                match task_busypoll_to_completion(|cx| {
+                    NvFsFuture::poll(
+                        pin::Pin::new(&mut *unlink_inode_fut),
+                        &fs_instance,
+                        &mut rng,
+                        cx,
+                    )
+                }) {
+                    Ok((cursor, Ok(()))) => Ok(cursor),
+                    Err(e) | Ok((_, Err(e))) => Err(e),
+                }
+            })
+            .and_then(|cursor| cursor.into_transaction())
+        {
+            Ok(transaction) => transaction,
+            Err(NvFsError::Retry) => continue,
+            Err(e) => {
+                log::error!("persistence inode unlinking: failed to unlink inode: {e:?}");
+                return Err(nvfs_error_to_svsm_error(e));
+            }
+        };
+
+        if let Err(e) =
+            instantiate_cocoonfs_commit_transaction_fut(&fs_instance, transaction, issue_sync)
+                .and_then(|mut commit_transaction_fut| {
+                    task_busypoll_to_completion(|cx| {
+                        NvFsFuture::poll(
+                            pin::Pin::new(&mut *commit_transaction_fut),
+                            &fs_instance,
+                            &mut rng,
+                            cx,
+                        )
+                    })
+                    .map_err(|e| match e {
+                        TransactionCommitError::LogStateClean { reason } => reason,
+                        TransactionCommitError::LogStateIndeterminate { reason } => reason,
+                    })
+                })
+        {
+            if e == NvFsError::Retry {
+                continue;
+            }
+
+            log::error!("persistence inode unlinking: failed to commit transaction: {e:?}");
+            return Err(nvfs_error_to_svsm_error(e));
+        }
+
+        break;
+    }
+
+    Ok(())
 }
 
 /// Error returned by various [`PersistenceMultiOp`] primitives.
