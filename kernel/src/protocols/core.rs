@@ -374,10 +374,6 @@ fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
         // down the #NPF loops.
         //
         if writable_phys_addr(paddr) {
-            // FIXME: This check leaves a window open for the attack described
-            // above. Remove the check once OVMF and Linux have been fixed and
-            // no longer try to pvalidate MMIO memory.
-
             // SAFETY: paddr is validated at the beginning of the function, and
             // we trust PerCPUPageMappingGuard::create() to return a valid
             // vaddr pointing to a mapped region of at least page_size_bytes
@@ -386,7 +382,8 @@ fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
                 zero_mem_region(vaddr, vaddr + page_size_bytes);
             }
         } else {
-            log::warn!("Not clearing possible read-only page at PA {paddr:#x}");
+            log::warn!("Refusing PVALIDATE grant on non-writable PA {paddr:#x}");
+            return Err(SvsmReqError::invalid_address());
         }
         // SAFETY: the address was validated earlier as a guest page and thus
         // memory safety is not affected.
