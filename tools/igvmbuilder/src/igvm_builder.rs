@@ -274,7 +274,7 @@ impl IgvmBuilder {
                 .get_param_size(BootParamType::GuestContext),
             firmware: fw_info,
             vmsa_in_kernel_range: self.gpa_map.vmsa_in_kernel_range as u8,
-            use_secure_tsc: 0,
+            use_secure_tsc: 1,
             _reserved: Default::default(),
             kernel_base: self.gpa_map.kernel.get_start(),
             kernel_min_size: self.gpa_map.kernel_min_size,

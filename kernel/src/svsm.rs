@@ -71,6 +71,7 @@ use svsm::svsm_paging::invalidate_early_boot_memory;
 use svsm::task::{
     KernelThreadStartInfo, current_stack, schedule_init, set_current_stack, start_kernel_task,
 };
+use svsm::time::init_monotonic_clock;
 use svsm::types::PAGE_SIZE;
 use svsm::utils::MemoryRegion;
 use svsm::utils::ScopedMut;
@@ -428,10 +429,6 @@ unsafe fn svsm_start(
         .configure_alternate_injection(launch_info.use_alternate_injection)
         .expect("Alternate injection required but not available");
 
-    platform
-        .configure_secure_tsc(launch_info.use_secure_tsc)
-        .expect("Secure TSC required but not available");
-
     platform_cell.global_init();
 
     sse_init();
@@ -519,6 +516,10 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     SVSM_PLATFORM
         .env_setup_svsm()
         .expect("SVSM platform environment setup failed");
+
+    if let Err(e) = SVSM_PLATFORM.configure_secure_tsc(launch_info.use_secure_tsc) {
+        log::warn!("Secure TSC config failed: {e:#?}");
+    }
 
     hyperv_setup().expect("failed to complete Hyper-V setup");
 
@@ -616,6 +617,8 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
             "SVSM test task",
         );
     }
+
+    init_monotonic_clock().expect("failed to initialize monotonic clock");
 
     #[cfg(not(test))]
     {
