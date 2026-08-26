@@ -21,7 +21,8 @@ use cocoon_tpm_storage::{
         NvBlkDev, NvBlkDevFuture, NvBlkDevIoError, NvBlkDevReadRequest, NvBlkDevWriteRequest,
     },
     fs::{
-        NvFs, NvFsError, NvFsFuture, NvFsIoError, NvFsUnlinkCursor, TransactionCommitError,
+        NvFs, NvFsEnumerateCursor, NvFsError, NvFsFuture, NvFsIoError, NvFsReadContext,
+        NvFsUnlinkCursor, TransactionCommitError,
         cocoonfs::{self, CocoonFs},
     },
     nvblkdev_err_internal, nvfs_err_internal,
@@ -828,6 +829,19 @@ pub fn persistence_available() -> bool {
     SVSM_COCOONFS_INSTANCE.try_get_inner().is_ok()
 }
 
+/// Instantiate a [`CocoonFs::StartReadSequenceFut`].
+///
+/// The [`CocoonFs::StartReadSequenceFut`] is not exactly small -- by instantiating it in an
+/// `inline(never)` function and `Box`ing it right after, the stack allocations required for the
+/// moves are hopefully getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_start_read_sequence_fut(
+    fs_instance: &pin::Pin<SvsmCocoonFsSyncRcPtrRefType<'_>>,
+) -> Result<Box<<SvsmCocoonFsType as NvFs>::StartReadSequenceFut>, NvFsError> {
+    let start_read_sequence_fut = SvsmCocoonFsType::start_read_sequence(fs_instance);
+    box_try_new(start_read_sequence_fut).map_err(NvFsError::from)
+}
+
 /// Instantiate a [`CocoonFs::StartTransactionFut`].
 ///
 /// The [`CocoonFs::StartTransactionFut`] is not exactly small -- by instantiating it in an
@@ -886,6 +900,22 @@ fn instantiate_cocoonfs_read_inode_fut(
 ) -> Result<Box<<SvsmCocoonFsType as NvFs>::ReadInodeFut>, NvFsError> {
     let read_inode_fut = SvsmCocoonFsType::read_inode(fs_instance, None, inode);
     box_try_new(read_inode_fut).map_err(NvFsError::from)
+}
+
+/// Instantiate a [`CocoonFs::EnumerateCursor::NextFut`](NvFsEnumerateCursor::NextFut).
+///
+/// The [`CocoonFs::EnumerateCursor::NextFut`](NvFsEnumerateCursor::NextFut) is not exactly small
+/// -- by instantiating it in an `inline(never)` function and `Box`ing it right after, the stack
+/// allocations required for the moves are hopefully getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_enumerate_cursor_next_fut(
+    cursor: <SvsmCocoonFsType as NvFs>::EnumerateCursor,
+) -> Result<
+        Box<<<SvsmCocoonFsType as NvFs>::EnumerateCursor as NvFsEnumerateCursor<SvsmCocoonFsType>>::NextFut>,
+        NvFsError,
+>{
+    let next_fut = cursor.next();
+    box_try_new(next_fut).map_err(NvFsError::from)
 }
 
 /// Synchronously write data to an inode on persistent storage.
@@ -1792,6 +1822,135 @@ pub fn persistence_commit_multi_op_sync(
             })
         })
         .map_err(nvfs_error_to_svsm_error)
+}
+
+/// Enumerate existing inodes, invoking a callback on each.
+///
+/// Iterate over all existing inodes within `inode_range` and invoke the provided callback `f` on
+/// each. The callback is provided the respective inode number and supposed to return an
+/// `Option`. If `None`, the enumeration continues. If `Some`, the enumeration stops and the value
+/// is passed upwards.
+///
+/// Note that while it would be possible to commit changes to the underlying storage from the
+/// callback `f`, that would be terribly inefficient. In such situations it's recommended to
+/// accumulate an in-memory representation of the required modifications and apply them only after
+/// the enumeration has completed.
+///
+/// Any error propagated back to the caller indicates an actual problem -- in particular requests to
+/// retry received from the backing filesystem implementation are handled transparently within
+/// `persistence_enumerate_inodes_sync()` itself: the enumeration gets restarted transparently at
+/// the current point in that case.
+///
+/// # Arguments:
+///
+/// * `inode_range` - The range to restrict the enumeration to.
+/// * `f` - The callback to invoke on each existing inode.
+pub fn persistence_enumerate_inodes_sync<R>(
+    inode_range: RangeInclusive<u64>,
+    f: &mut dyn FnMut(u64) -> Option<R>,
+) -> Result<Option<R>, SvsmError> {
+    if inode_range.is_empty() {
+        return Ok(None);
+    }
+
+    let fs_instance = match SVSM_COCOONFS_INSTANCE.try_get_inner().ok() {
+        Some(fs_instance) => <pin::Pin<SvsmCocoonFsSyncRcPtrType> as sync_types::SyncRcPtr<
+            SvsmCocoonFsType,
+        >>::as_ref(fs_instance),
+        None => {
+            return Err(SvsmError::FileSystem(FsError::NotSupported));
+        }
+    };
+
+    let mut rng = match get_svsm_rng() {
+        Ok(rng) => rng,
+        Err(e) => {
+            log::error!("persistence read: failed to get rng instance: {e:?}");
+            return Err(nvfs_error_to_svsm_error(NvFsError::from(e)));
+        }
+    };
+
+    let mut last_visited_inode = None;
+
+    'restart_read_sequence: loop {
+        // Determine the remaining range.
+        let inode_range = match last_visited_inode {
+            Some(last_visited_inode) => {
+                if last_visited_inode == *inode_range.end() {
+                    // All done.
+                    return Ok(None);
+                }
+                RangeInclusive::new(last_visited_inode + 1, *inode_range.end())
+            }
+            None => inode_range.clone(),
+        };
+
+        let read_sequence = instantiate_cocoonfs_start_read_sequence_fut(&fs_instance)
+            .and_then(|mut start_read_sequence_fut| {
+                task_busypoll_to_completion(|cx| {
+                    NvFsFuture::poll(
+                        pin::Pin::new(&mut *start_read_sequence_fut),
+                        &fs_instance,
+                        &mut rng,
+                        cx,
+                    )
+                })
+            })
+            .map_err(nvfs_error_to_svsm_error)?;
+        let mut cursor = match SvsmCocoonFsType::enumerate_cursor(
+            &fs_instance,
+            NvFsReadContext::Committed { seq: read_sequence },
+            inode_range,
+        ) {
+            Ok(Ok(cursor)) => cursor,
+            Err(e) | Ok(Err((_, e))) => {
+                if e == NvFsError::Retry {
+                    // The read_sequence became stale due to some concurrent transaction
+                    // commit. Restart at the current point.
+                    continue 'restart_read_sequence;
+                }
+                return Err(nvfs_error_to_svsm_error(e));
+            }
+        };
+
+        // Iterate the cursor over the inodes.
+        loop {
+            let cur_inode;
+            (cursor, cur_inode) = match instantiate_cocoonfs_enumerate_cursor_next_fut(cursor)
+                .and_then(|mut next_fut| {
+                    match task_busypoll_to_completion(|cx| {
+                        NvFsFuture::poll(pin::Pin::new(&mut *next_fut), &fs_instance, &mut rng, cx)
+                    }) {
+                        Ok((cursor, Ok(cur_inode))) => Ok((cursor, cur_inode)),
+                        Err(e) | Ok((_, Err(e))) => Err(e),
+                    }
+                }) {
+                Ok((cursor, cur_inode)) => (cursor, cur_inode),
+                Err(e) => {
+                    if e == NvFsError::Retry {
+                        // The read_sequence became stale due to some concurrent transaction
+                        // commit. Restart at the current point.
+                        continue 'restart_read_sequence;
+                    }
+                    return Err(nvfs_error_to_svsm_error(e));
+                }
+            };
+
+            match cur_inode {
+                Some((inode, _flags)) => {
+                    last_visited_inode = Some(inode);
+                    let r = f(inode);
+                    if r.is_some() {
+                        return Ok(r);
+                    }
+                }
+                None => {
+                    // All done, no more inodes in the enumerated range.
+                    return Ok(None);
+                }
+            }
+        }
+    }
 }
 
 /// The 64-bit CocoonFS inode number is split into two halves: the upper
