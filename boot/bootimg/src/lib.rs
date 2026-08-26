@@ -175,6 +175,7 @@ where
         use_secure_tsc: boot_image_params.boot_params.use_secure_tsc != 0,
         kernel_page_table_vaddr: kernel_page_tables.root_vaddr(),
         vmsa_in_kernel_heap,
+        _reserved: [false; 7],
     };
     add_page_contents(add_page_data, launch_info_paddr, launch_info.as_bytes())?;
 

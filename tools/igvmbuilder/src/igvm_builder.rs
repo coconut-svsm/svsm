@@ -278,7 +278,7 @@ impl IgvmBuilder {
             use_alternate_injection: u8::from(self.options.alt_injection),
             has_qemu_testdev,
             has_test_iorequests,
-            _reserved: Default::default(),
+            _reserved2: Default::default(),
         })
     }
 
