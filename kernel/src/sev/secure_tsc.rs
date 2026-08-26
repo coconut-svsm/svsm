@@ -73,8 +73,6 @@ impl SecureTscAccessor {
     }
 }
 
-pub const MSR_TSC: u32 = 0x0000_0010;
-
 pub trait TscAccess: core::fmt::Debug {
     fn read_tsc(&self) -> u64;
 

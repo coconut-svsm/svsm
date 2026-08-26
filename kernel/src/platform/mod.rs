@@ -247,7 +247,7 @@ pub trait SvsmPlatform: Sync {
     ///
     /// Returns [`SvsmError::NotSupported`] if Secure TSC is requested but not
     /// supported by the platform.
-    fn configure_secure_tsc(&mut self, secure_tsc_requested: bool) -> Result<(), SvsmError> {
+    fn configure_secure_tsc(&self, secure_tsc_requested: bool) -> Result<(), SvsmError> {
         if secure_tsc_requested {
             Err(SvsmError::NotSupported)
         } else {
