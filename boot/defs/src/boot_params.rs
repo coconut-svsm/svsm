@@ -167,7 +167,7 @@ pub struct BootParamBlock {
     pub use_secure_tsc: u8,
 
     #[doc(hidden)]
-    pub _reserved: [u8; 7],
+    pub _reserved: u8,
 }
 
 const _: () = {

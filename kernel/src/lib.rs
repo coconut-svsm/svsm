@@ -53,6 +53,7 @@ pub mod svsm_paging;
 pub mod syscall;
 pub mod task;
 pub mod tdx;
+pub mod time;
 pub mod types;
 pub mod utils;
 #[cfg(feature = "virtio-drivers")]
