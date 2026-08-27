@@ -56,7 +56,6 @@ impl From<KvmCheckError> for IgvmMeasureError {
 #[derive(Copy, Clone)]
 pub enum KvmCheckError {
     InvalidVmsaCount,
-    InvalidVmsaGpa(u64),
     InvalidVmsaCr0(u64),
     InvalidVmsaOrder,
 }
@@ -70,15 +69,6 @@ impl std::fmt::Display for KvmCheckError {
                     "More than one VMSA has been provided \
                     in the IGVM file. QEMU/KVM only supports setting of the \
                     VMSA for the first virtual CPU."
-                )
-            }
-            KvmCheckError::InvalidVmsaGpa(addr) => {
-                write!(
-                    f,
-                    "The GPA for the VMSA (0x{addr:016X}) \
-                    does not match the address hardcoded in KVM. KVM will \
-                    always populate the VMSA at GPA 0xFFFFFFFFF000. The IGVM \
-                    file must set the GPA for the VMSA to this address."
                 )
             }
             KvmCheckError::InvalidVmsaCr0(value) => {
@@ -388,13 +378,10 @@ impl IgvmMeasure {
         }
     }
 
-    fn check_vmsa(&self, gpa: u64, vmsa: &SevVmsa) -> Result<(), KvmCheckError> {
+    fn check_vmsa(&self, vmsa: &SevVmsa) -> Result<(), KvmCheckError> {
         if self.check_kvm {
             if self.vmsa_count > 0 {
                 return Err(KvmCheckError::InvalidVmsaCount);
-            }
-            if gpa != 0xFFFFFFFFF000 {
-                return Err(KvmCheckError::InvalidVmsaGpa(gpa));
             }
             // Allow protected and real mode, both with NE enabled
             if vmsa.cr0 != 0x31 && vmsa.cr0 != 0x30 {
@@ -411,7 +398,7 @@ impl IgvmMeasure {
         _compatibility_mask: u32,
         vmsa: &SevVmsa,
     ) -> Result<(), Box<dyn Error>> {
-        self.check_vmsa(gpa, vmsa)?;
+        self.check_vmsa(vmsa)?;
 
         let mut vmsa_page = vmsa.as_bytes().to_vec();
         vmsa_page.resize(PAGE_SIZE_4K as usize, 0);
