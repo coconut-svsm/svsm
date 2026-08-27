@@ -31,6 +31,7 @@ use crate::address::{Address, PhysAddr};
 use crate::locking::SpinLock;
 use crate::mm::guestmem::{copy_slice_to_guest, read_bytes_from_guest, read_from_guest};
 use crate::mm::valid_phys_address;
+#[cfg(feature = "persistence")]
 use crate::persistence::persistence_available;
 use crate::protocols::RequestParams;
 use crate::protocols::errors::SvsmReqError;
@@ -55,7 +56,8 @@ mod persistance {
 
     use crate::error::SvsmError;
     use crate::persistence::{
-        Inode, InodeNamespace, persistence_read_inode_sync, persistence_write_inode_sync,
+        Inode, InodeNamespace, persistence_enumerate_inodes_sync, persistence_read_inode_sync,
+        persistence_unlink_inode_sync, persistence_write_inode_sync,
     };
 
     struct UefiInode {
@@ -114,11 +116,23 @@ mod persistance {
         Ok(())
     }
 
-    pub(crate) fn garbage_collect(_store: &mut EfiVarStore) {
-        // TODO
-        // - loop over all inodes in namespace
-        // - check store.fs_inode_is_used(inode)
-        // - delete unused inodes
+    pub(crate) fn garbage_collect(store: &mut EfiVarStore) -> Result<(), SvsmError> {
+        let min = UefiInode::new(0);
+        let max = UefiInode::new(0xffff_ffff);
+        let range = min.inode()..=max.inode();
+
+        let mut stale: Vec<UefiInode> = Vec::new();
+        let _ = persistence_enumerate_inodes_sync::<()>(range, &mut |inode| {
+            let uefi_nr: u32 = (inode & 0xffff_ffff).try_into().unwrap();
+            if !store.fs_inode_is_used(uefi_nr) {
+                stale.push(UefiInode::new(uefi_nr));
+            }
+            None
+        });
+        for inode in stale {
+            persistence_unlink_inode_sync(inode.inode(), true)?;
+        }
+        Ok(())
     }
 }
 
@@ -190,7 +204,7 @@ pub fn uefi_mm_protocol_init() -> Result<(), SvsmReqError> {
     if persistence_available() {
         log::info!("loading uefi variable store");
         self::persistance::read(&mut store)?;
-        self::persistance::garbage_collect(&mut store);
+        self::persistance::garbage_collect(&mut store)?;
     }
 
     #[cfg(feature = "secureboot")]
