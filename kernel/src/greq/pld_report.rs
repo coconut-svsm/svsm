@@ -8,6 +8,8 @@
 
 use core::mem::{offset_of, size_of};
 
+#[cfg(feature = "attest")]
+use serde::Serialize;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::error::SvsmError;
@@ -126,9 +128,9 @@ struct TcbVersion {
 #[derive(Clone, Copy, Debug, FromBytes, KnownLayout, Immutable, IntoBytes)]
 struct Signature {
     /// R component of this signature
-    r: [u8; 72],
+    pub r: [u8; 72],
     /// S component of this signature
-    s: [u8; 72],
+    pub s: [u8; 72],
     /// Reserved
     reserved: [u8; 368],
 }
@@ -240,3 +242,198 @@ const _: () = assert!(
         && offset_of!(AttestationReport, signature) == 0x2a0
         && size_of::<AttestationReport>() <= u32::MAX as usize
 );
+
+#[cfg_attr(feature = "attest", derive(Serialize))]
+#[derive(Clone, Copy, Debug)]
+pub struct WireTcbVersion {
+    pub fmc: Option<u8>,
+    pub bootloader: u8,
+    pub tee: u8,
+    pub snp: u8,
+    pub microcode: u8,
+}
+
+#[cfg_attr(feature = "attest", derive(Serialize))]
+#[derive(Clone, Copy, Debug)]
+pub struct WireVersion {
+    pub major: u8,
+    pub minor: u8,
+    pub build: u8,
+}
+
+#[cfg_attr(feature = "attest", derive(Serialize))]
+#[derive(Clone, Copy, Debug)]
+pub struct WireSignature {
+    #[cfg_attr(feature = "attest", serde(with = "serde_arrays"))]
+    pub r: [u8; 72],
+    #[cfg_attr(feature = "attest", serde(with = "serde_arrays"))]
+    pub s: [u8; 72],
+}
+
+#[cfg_attr(feature = "attest", derive(Serialize))]
+#[derive(Clone, Copy, Debug)]
+pub struct WireAttestationReport {
+    pub version: u32,
+    pub guest_svn: u32,
+    pub policy: u64,
+    #[cfg_attr(feature = "attest", serde(with = "serde_arrays"))]
+    pub family_id: [u8; 16],
+    #[cfg_attr(feature = "attest", serde(with = "serde_arrays"))]
+    pub image_id: [u8; 16],
+    pub vmpl: u32,
+    pub sig_algo: u32,
+    pub current_tcb: WireTcbVersion,
+    pub plat_info: u64,
+    pub key_info: u32,
+    #[cfg_attr(feature = "attest", serde(with = "serde_arrays"))]
+    pub report_data: [u8; 64],
+    #[cfg_attr(feature = "attest", serde(with = "serde_arrays"))]
+    pub measurement: [u8; 48],
+    #[cfg_attr(feature = "attest", serde(with = "serde_arrays"))]
+    pub host_data: [u8; 32],
+    #[cfg_attr(feature = "attest", serde(with = "serde_arrays"))]
+    pub id_key_digest: [u8; 48],
+    #[cfg_attr(feature = "attest", serde(with = "serde_arrays"))]
+    pub author_key_digest: [u8; 48],
+    #[cfg_attr(feature = "attest", serde(with = "serde_arrays"))]
+    pub report_id: [u8; 32],
+    #[cfg_attr(feature = "attest", serde(with = "serde_arrays"))]
+    pub report_id_ma: [u8; 32],
+    pub reported_tcb: WireTcbVersion,
+    pub cpuid_fam_id: Option<u8>,
+    pub cpuid_mod_id: Option<u8>,
+    pub cpuid_step: Option<u8>,
+    #[cfg_attr(feature = "attest", serde(with = "serde_arrays"))]
+    pub chip_id: [u8; 64],
+    pub committed_tcb: WireTcbVersion,
+    pub current: WireVersion,
+    pub committed: WireVersion,
+    pub launch_tcb: WireTcbVersion,
+    pub launch_mit_vector: Option<u64>,
+    pub current_mit_vector: Option<u64>,
+    pub signature: WireSignature,
+}
+
+#[repr(C, packed)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
+pub struct TcbVersionRaw {
+    pub bootloader: u8,
+    pub tee: u8,
+    pub fmc: u8,
+    pub snp: u8,
+    pub microcode: u8,
+    pub reserved: [u8; 3],
+}
+
+#[repr(C, packed)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
+pub struct VersionRaw {
+    pub build: u8,
+    pub minor: u8,
+    pub major: u8,
+}
+
+#[repr(C, packed)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
+pub struct SnpReportReserved2Block {
+    pub committed_tcb: TcbVersionRaw,
+    pub current: VersionRaw,
+    pub _reserved1: u8,
+    pub committed: VersionRaw,
+    pub _reserved2: u8,
+    pub launch_tcb: TcbVersionRaw,
+    pub launch_mit_vector: u64,
+    pub current_mit_vector: u64,
+    pub reserved: [u8; 152],
+}
+
+impl AttestationReport {
+    pub fn to_wire(&self) -> WireAttestationReport {
+        // Safe, zero-copy casting of raw bytes to structured blocks!
+        let block = SnpReportReserved2Block::ref_from_bytes(&self.reserved2).unwrap();
+        let current_tcb = TcbVersionRaw::ref_from_bytes(self.platform_version.as_bytes()).unwrap();
+        let reported_tcb = TcbVersionRaw::ref_from_bytes(self.reported_tcb.as_bytes()).unwrap();
+
+        let make_tcb = |raw: &TcbVersionRaw| -> WireTcbVersion {
+            let is_turin = self.version >= 3 && self.reserved1[0] == 26;
+            if is_turin {
+                WireTcbVersion {
+                    fmc: Some(raw.bootloader),
+                    bootloader: raw.tee,
+                    tee: raw.tee,
+                    snp: raw.snp,
+                    microcode: raw.reserved[2],
+                }
+            } else {
+                WireTcbVersion {
+                    fmc: None,
+                    bootloader: raw.bootloader,
+                    tee: raw.tee,
+                    snp: raw.reserved[1],
+                    microcode: raw.reserved[2],
+                }
+            }
+        };
+
+        let (cpuid_fam_id, cpuid_mod_id, cpuid_step) = if self.version >= 3 {
+            (
+                Some(self.reserved1[0]),
+                Some(self.reserved1[1]),
+                Some(self.reserved1[2]),
+            )
+        } else {
+            (None, None, None)
+        };
+
+        WireAttestationReport {
+            version: self.version,
+            guest_svn: self.guest_svn,
+            policy: self.policy,
+            family_id: self.family_id,
+            image_id: self.image_id,
+            vmpl: self.vmpl,
+            sig_algo: self.signature_algo,
+            current_tcb: make_tcb(current_tcb),
+            plat_info: self.platform_info,
+            key_info: self.flags,
+            report_data: self.report_data,
+            measurement: self.measurement,
+            host_data: self.host_data,
+            id_key_digest: self.id_key_digest,
+            author_key_digest: self.author_key_digest,
+            report_id: self.report_id,
+            report_id_ma: self.report_id_ma,
+            reported_tcb: make_tcb(reported_tcb),
+            cpuid_fam_id,
+            cpuid_mod_id,
+            cpuid_step,
+            chip_id: self.chip_id,
+            committed_tcb: make_tcb(&block.committed_tcb),
+            current: WireVersion {
+                major: block.current.major,
+                minor: block.current.minor,
+                build: block.current.build,
+            },
+            committed: WireVersion {
+                major: block.committed.major,
+                minor: block.committed.minor,
+                build: block.committed.build,
+            },
+            launch_tcb: make_tcb(&block.launch_tcb),
+            launch_mit_vector: if block.launch_mit_vector == 0 {
+                None
+            } else {
+                Some(block.launch_mit_vector)
+            },
+            current_mit_vector: if block.current_mit_vector == 0 {
+                None
+            } else {
+                Some(block.current_mit_vector)
+            },
+            signature: WireSignature {
+                r: self.signature.r,
+                s: self.signature.s,
+            },
+        }
+    }
+}
