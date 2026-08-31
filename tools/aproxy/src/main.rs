@@ -49,7 +49,10 @@ struct Args {
 /// to work.
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ArgsBackend {
+    /// Legacy or Mock KBS (raw public key & challenge, SHA-512)
     Kbs,
+    /// Trustee KBS (JWS JSON, SHA-384)
+    KbsTrustee,
 }
 
 fn accept_loop<S: Read + Write>(

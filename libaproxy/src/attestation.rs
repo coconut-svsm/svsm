@@ -126,7 +126,7 @@ pub enum AttestationEvidence {
             serialize_with = "serialize_base64",
             deserialize_with = "deserialize_base64"
         )]
-        report: Vec<u8>,
+        attestation_report: Vec<u8>,
         /// Certificates that may be available from the host hypervisor.
         #[serde(
             skip_serializing_if = "Option::is_none",
@@ -134,7 +134,7 @@ pub enum AttestationEvidence {
             serialize_with = "serialize_base64_option",
             deserialize_with = "deserialize_base64_option"
         )]
-        certs_buf: Option<Vec<u8>>,
+        cert_chain: Option<Vec<u8>>,
     },
 }
 

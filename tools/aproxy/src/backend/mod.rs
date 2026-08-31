@@ -8,8 +8,8 @@
 mod kbs;
 
 use crate::ArgsBackend;
-use anyhow::{Context, anyhow};
-use kbs::KbsProtocol;
+use anyhow::Context;
+use kbs::{KbsBackendType, KbsProtocol};
 use libaproxy::*;
 use reqwest::{blocking::Client, cookie::Jar};
 use std::sync::Arc;
@@ -56,7 +56,8 @@ pub enum Protocol {
 impl From<ArgsBackend> for Protocol {
     fn from(value: ArgsBackend) -> Self {
         match value {
-            ArgsBackend::Kbs => Self::Kbs(KbsProtocol),
+            ArgsBackend::Kbs => Self::Kbs(KbsProtocol::new(KbsBackendType::Legacy)),
+            ArgsBackend::KbsTrustee => Self::Kbs(KbsProtocol::new(KbsBackendType::Trustee)),
         }
     }
 }
