@@ -373,7 +373,7 @@ impl PTEntry {
 
     /// Inserts the private address mask if the page is present.
     pub fn make_private_if_present(&mut self) {
-        if self.flags().contains(PTEntryFlags::PRESENT) {
+        if self.present() {
             self.0 = make_private_address(self.0);
         }
     }
@@ -450,8 +450,7 @@ impl PTPage {
     /// Converts a pagetable entry to a mutable reference to a [`PTPage`],
     /// if the entry is present and not huge.
     fn from_entry(entry: PTEntry) -> Option<&'static mut Self> {
-        let flags = entry.flags();
-        if !flags.contains(PTEntryFlags::PRESENT) || flags.contains(PTEntryFlags::HUGE) {
+        if !entry.present() || entry.huge() {
             return None;
         }
 
@@ -489,11 +488,15 @@ impl IndexMut<usize> for PTPage {
 
 /// Mapping levels of page table entries.
 #[derive(Debug)]
-pub enum Mapping<'a> {
-    Level3(&'a mut PTEntry),
-    Level2(&'a mut PTEntry),
-    Level1(&'a mut PTEntry),
-    Level0(&'a mut PTEntry),
+pub struct Mapping<'a> {
+    level: usize,
+    entry: &'a mut PTEntry,
+}
+
+impl<'a> Mapping<'a> {
+    const fn new(entry: &'a mut PTEntry, level: usize) -> Self {
+        Self { entry, level }
+    }
 }
 
 /// A physical address within a page frame
@@ -614,68 +617,34 @@ impl PageTable {
         //vaddr.bits() >> (12 + L * 9) & 0x1ff
     }
 
-    /// Walks a page table at level 0 to find a mapping.
+    /// A non-const version of [`Self::index()`].
+    fn index_at(vaddr: VirtAddr, level: usize) -> usize {
+        vaddr.bits() >> (12 + level * 9) & 0x1ff
+    }
+
+    /// Walk the virtual address and return the corresponding mapping,
+    /// starting at the specified level in the hierarchy.
     ///
     /// # Parameters
     /// - `page`: A mutable reference to the root page table.
     /// - `vaddr`: The virtual address to find a mapping for.
+    /// - `level`: the level in the page table hierarchy at which to
+    ///   start the walk.
     ///
     /// # Returns
     /// A `Mapping` representing the found mapping.
-    fn walk_addr_lvl0(page: &mut PTPage, vaddr: VirtAddr) -> Mapping<'_> {
+    fn walk_addr_at(mut page: &mut PTPage, vaddr: VirtAddr, level: usize) -> Mapping<'_> {
+        for level in (1..=level).rev() {
+            let idx = Self::index_at(vaddr, level);
+            let entry = &mut page[idx];
+            match PTPage::from_entry(*entry) {
+                Some(p) => page = p,
+                None => return Mapping::new(entry, level),
+            }
+        }
+
         let idx = Self::index::<0>(vaddr);
-        Mapping::Level0(&mut page[idx])
-    }
-
-    /// Walks a page table at level 1 to find a mapping.
-    ///
-    /// # Parameters
-    /// - `page`: A mutable reference to the root page table.
-    /// - `vaddr`: The virtual address to find a mapping for.
-    ///
-    /// # Returns
-    /// A `Mapping` representing the found mapping.
-    fn walk_addr_lvl1(page: &mut PTPage, vaddr: VirtAddr) -> Mapping<'_> {
-        let idx = Self::index::<1>(vaddr);
-        let entry = page[idx];
-        match PTPage::from_entry(entry) {
-            Some(page) => Self::walk_addr_lvl0(page, vaddr),
-            None => Mapping::Level1(&mut page[idx]),
-        }
-    }
-
-    /// Walks a page table at level 2 to find a mapping.
-    ///
-    /// # Parameters
-    /// - `page`: A mutable reference to the root page table.
-    /// - `vaddr`: The virtual address to find a mapping for.
-    ///
-    /// # Returns
-    /// A `Mapping` representing the found mapping.
-    fn walk_addr_lvl2(page: &mut PTPage, vaddr: VirtAddr) -> Mapping<'_> {
-        let idx = Self::index::<2>(vaddr);
-        let entry = page[idx];
-        match PTPage::from_entry(entry) {
-            Some(page) => Self::walk_addr_lvl1(page, vaddr),
-            None => Mapping::Level2(&mut page[idx]),
-        }
-    }
-
-    /// Walks the page table to find a mapping for a given virtual address.
-    ///
-    /// # Parameters
-    /// - `page`: A mutable reference to the root page table.
-    /// - `vaddr`: The virtual address to find a mapping for.
-    ///
-    /// # Returns
-    /// A `Mapping` representing the found mapping.
-    fn walk_addr_lvl3(page: &mut PTPage, vaddr: VirtAddr) -> Mapping<'_> {
-        let idx = Self::index::<3>(vaddr);
-        let entry = page[idx];
-        match PTPage::from_entry(entry) {
-            Some(page) => Self::walk_addr_lvl2(page, vaddr),
-            None => Mapping::Level3(&mut page[idx]),
-        }
+        Mapping::new(&mut page[idx], 0)
     }
 
     /// Walk the virtual address and return the corresponding mapping.
@@ -686,7 +655,7 @@ impl PageTable {
     /// # Returns
     /// A `Mapping` representing the found mapping.
     fn walk_addr(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
-        Self::walk_addr_lvl3(&mut self.root, vaddr)
+        Self::walk_addr_at(&mut self.root, vaddr, 3)
     }
 
     /// Calculate the virtual address of a PTE in the self-map, which maps a
@@ -776,91 +745,42 @@ impl PageTable {
             | PTEntryFlags::DIRTY
     }
 
-    fn alloc_pte_lvl3(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
-        let flags = entry.flags();
+    fn alloc_intermediate_ptes(
+        mapping: Mapping<'_>,
+        vaddr: VirtAddr,
+        size: PageSize,
+    ) -> Mapping<'_> {
+        let level = mapping.level;
+        let mut entry = mapping.entry;
 
-        if flags.contains(PTEntryFlags::PRESENT) {
-            return Mapping::Level3(entry);
+        for lvl in (1..=level).rev() {
+            if entry.present() || (lvl == 1 && size == PageSize::Huge) {
+                return Mapping::new(entry, lvl);
+            }
+
+            let Ok((page, paddr)) = PTPage::alloc() else {
+                return Mapping::new(entry, lvl);
+            };
+
+            entry.set(make_private_address(paddr), Self::parent_flags());
+            let idx = Self::index_at(vaddr, lvl - 1);
+            entry = &mut page[idx];
         }
 
-        let Ok((page, paddr)) = PTPage::alloc() else {
-            return Mapping::Level3(entry);
-        };
-
-        entry.set(make_private_address(paddr), Self::parent_flags());
-
-        let idx = Self::index::<2>(vaddr);
-        Self::alloc_pte_lvl2(&mut page[idx], vaddr, size)
+        Mapping::new(entry, 0)
     }
 
-    fn alloc_pte_lvl2(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
-        let flags = entry.flags();
-
-        if flags.contains(PTEntryFlags::PRESENT) {
-            return Mapping::Level2(entry);
-        }
-
-        let Ok((page, paddr)) = PTPage::alloc() else {
-            return Mapping::Level2(entry);
-        };
-
-        entry.set(make_private_address(paddr), Self::parent_flags());
-
-        let idx = Self::index::<1>(vaddr);
-        Self::alloc_pte_lvl1(&mut page[idx], vaddr, size)
-    }
-
-    fn alloc_pte_lvl1(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
-        let flags = entry.flags();
-
-        if size == PageSize::Huge || flags.contains(PTEntryFlags::PRESENT) {
-            return Mapping::Level1(entry);
-        }
-
-        let Ok((page, paddr)) = PTPage::alloc() else {
-            return Mapping::Level1(entry);
-        };
-
-        entry.set(make_private_address(paddr), Self::parent_flags());
-
-        let idx = Self::index::<0>(vaddr);
-        Mapping::Level0(&mut page[idx])
-    }
-
-    /// Allocates a 4KB page table entry for a given virtual address.
+    /// Allocates a page table entry for the given virtual address and
+    /// the given page size.
     ///
     /// # Parameters
     /// - `vaddr`: The virtual address for which to allocate the PTE.
     ///
     /// # Returns
     /// A `Mapping` representing the allocated or existing PTE for the address.
-    fn alloc_pte_4k(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
+    fn alloc_pte(&mut self, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
-
-        match m {
-            Mapping::Level0(entry) => Mapping::Level0(entry),
-            Mapping::Level1(entry) => Self::alloc_pte_lvl1(entry, vaddr, PageSize::Regular),
-            Mapping::Level2(entry) => Self::alloc_pte_lvl2(entry, vaddr, PageSize::Regular),
-            Mapping::Level3(entry) => Self::alloc_pte_lvl3(entry, vaddr, PageSize::Regular),
-        }
-    }
-
-    /// Allocates a 2MB page table entry for a given virtual address.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address for which to allocate the PTE.
-    ///
-    /// # Returns
-    /// A `Mapping` representing the allocated or existing PTE for the address.
-    fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
-        let m = self.walk_addr(vaddr);
-
-        match m {
-            Mapping::Level0(entry) => Mapping::Level0(entry),
-            Mapping::Level1(entry) => Mapping::Level1(entry),
-            Mapping::Level2(entry) => Self::alloc_pte_lvl2(entry, vaddr, PageSize::Huge),
-            Mapping::Level3(entry) => Self::alloc_pte_lvl3(entry, vaddr, PageSize::Huge),
-        }
+        Self::alloc_intermediate_ptes(m, vaddr, size)
     }
 
     /// Splits a 2MB page into 4KB pages.
@@ -902,11 +822,10 @@ impl PageTable {
     /// # Returns
     /// A result indicating success or an error [`SvsmError`].
     fn split_4k(mapping: Mapping<'_>) -> Result<(), SvsmError> {
-        match mapping {
-            Mapping::Level0(_entry) => Ok(()),
-            Mapping::Level1(entry) => Self::do_split_4k(entry),
-            Mapping::Level2(_entry) => Err(SvsmError::Mem),
-            Mapping::Level3(_entry) => Err(SvsmError::Mem),
+        match mapping.level {
+            0 => Ok(()),
+            1 => Self::do_split_4k(mapping.entry),
+            _ => Err(SvsmError::Mem),
         }
     }
 
@@ -926,6 +845,22 @@ impl PageTable {
         entry.set(make_private_address(addr), flags);
     }
 
+    fn set_pte_visibility_4k(&mut self, vaddr: VirtAddr, shared: bool) -> Result<(), SvsmError> {
+        let mapping = self.walk_addr(vaddr);
+        Self::split_4k(mapping)?;
+
+        let mapping = self.walk_addr(vaddr);
+        if mapping.level != 0 {
+            return Err(SvsmError::Mem);
+        }
+
+        match shared {
+            true => Self::make_pte_shared(mapping.entry),
+            false => Self::make_pte_private(mapping.entry),
+        }
+        Ok(())
+    }
+
     /// Sets the shared state for a 4KB page.
     ///
     /// # Parameters
@@ -935,15 +870,7 @@ impl PageTable {
     /// A result indicating success or an error [`SvsmError`] if the
     /// operation fails.
     pub fn set_shared_4k(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
-        let mapping = self.walk_addr(vaddr);
-        Self::split_4k(mapping)?;
-
-        if let Mapping::Level0(entry) = self.walk_addr(vaddr) {
-            Self::make_pte_shared(entry);
-            Ok(())
-        } else {
-            Err(SvsmError::Mem)
-        }
+        self.set_pte_visibility_4k(vaddr, true)
     }
 
     /// Sets the encryption state for a 4KB page.
@@ -954,23 +881,15 @@ impl PageTable {
     /// # Returns
     /// A result indicating success or an error [`SvsmError`].
     pub fn set_encrypted_4k(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
-        let mapping = self.walk_addr(vaddr);
-        Self::split_4k(mapping)?;
-
-        if let Mapping::Level0(entry) = self.walk_addr(vaddr) {
-            Self::make_pte_private(entry);
-            Ok(())
-        } else {
-            Err(SvsmError::Mem)
-        }
+        self.set_pte_visibility_4k(vaddr, false)
     }
 
     /// Gets the physical address for a mapped `vaddr` or `None` if
     /// no such mapping exists.
     pub fn check_mapping(&mut self, vaddr: VirtAddr) -> Option<PhysAddr> {
-        match self.walk_addr(vaddr) {
-            Mapping::Level0(entry) => Some(entry.address()),
-            Mapping::Level1(entry) => Some(entry.address()),
+        let mapping = self.walk_addr(vaddr);
+        match mapping.level {
+            0 | 1 => Some(mapping.entry.address()),
             _ => None,
         }
     }
@@ -998,15 +917,15 @@ impl PageTable {
         assert!(vaddr.is_aligned(PAGE_SIZE_2M));
         assert!(paddr.is_aligned(PAGE_SIZE_2M));
 
-        let mapping = self.alloc_pte_2m(vaddr);
+        let mapping = self.alloc_pte(vaddr, PageSize::Huge);
         let addr = if !shared {
             make_private_address(paddr)
         } else {
             make_shared_address(paddr)
         };
 
-        if let Mapping::Level1(entry) = mapping {
-            entry.set(addr, flags | PTEntryFlags::HUGE);
+        if mapping.level == 1 {
+            mapping.entry.set(addr, flags | PTEntryFlags::HUGE);
             Ok(())
         } else {
             Err(SvsmError::Mem)
@@ -1025,11 +944,10 @@ impl PageTable {
 
         let mapping = self.walk_addr(vaddr);
 
-        match mapping {
-            Mapping::Level0(_) => unreachable!(),
-            Mapping::Level1(entry) => entry.clear(),
-            Mapping::Level2(entry) => assert!(!entry.present()),
-            Mapping::Level3(entry) => assert!(!entry.present()),
+        match mapping.level {
+            1 => mapping.entry.clear(),
+            2 | 3 => assert!(!mapping.entry.present()),
+            _ => unreachable!(),
         }
     }
 
@@ -1050,15 +968,15 @@ impl PageTable {
         flags: PTEntryFlags,
         shared: bool,
     ) -> Result<(), SvsmError> {
-        let mapping = self.alloc_pte_4k(vaddr);
+        let mapping = self.alloc_pte(vaddr, PageSize::Regular);
         let addr = if !shared {
             make_private_address(paddr)
         } else {
             make_shared_address(paddr)
         };
 
-        if let Mapping::Level0(entry) = mapping {
-            entry.set(addr, flags);
+        if mapping.level == 0 {
+            mapping.entry.set(addr, flags);
             Ok(())
         } else {
             Err(SvsmError::Mem)
@@ -1072,11 +990,9 @@ impl PageTable {
     pub fn unmap_4k(&mut self, vaddr: VirtAddr) {
         let mapping = self.walk_addr(vaddr);
 
-        match mapping {
-            Mapping::Level0(entry) => entry.clear(),
-            Mapping::Level1(entry) => assert!(!entry.present()),
-            Mapping::Level2(entry) => assert!(!entry.present()),
-            Mapping::Level3(entry) => assert!(!entry.present()),
+        match mapping.level {
+            0 => mapping.entry.clear(),
+            _ => assert!(!mapping.entry.present()),
         }
     }
 
@@ -1091,26 +1007,25 @@ impl PageTable {
     pub fn phys_addr(&mut self, vaddr: VirtAddr) -> Result<PhysAddr, SvsmError> {
         let mapping = self.walk_addr(vaddr);
 
-        match mapping {
-            Mapping::Level0(entry) => {
+        match mapping.level {
+            0 => {
+                let entry = mapping.entry;
                 let offset = vaddr.page_offset();
-                if !entry.flags().contains(PTEntryFlags::PRESENT) {
+                if !entry.present() {
                     return Err(SvsmError::Mem);
                 }
                 Ok(entry.address() + offset)
             }
-            Mapping::Level1(entry) => {
+            1 => {
+                let entry = mapping.entry;
                 let offset = vaddr.bits() & (PAGE_SIZE_2M - 1);
-                if !entry.flags().contains(PTEntryFlags::PRESENT)
-                    || !entry.flags().contains(PTEntryFlags::HUGE)
-                {
+                if !entry.present() || !entry.huge() {
                     return Err(SvsmError::Mem);
                 }
 
                 Ok(entry.address() + offset)
             }
-            Mapping::Level2(_entry) => Err(SvsmError::Mem),
-            Mapping::Level3(_entry) => Err(SvsmError::Mem),
+            _ => Err(SvsmError::Mem),
         }
     }
 
@@ -1226,13 +1141,13 @@ impl PageTable {
         while vaddr < end {
             let mapping = self.walk_addr(vaddr);
 
-            match mapping {
-                Mapping::Level0(entry) => {
-                    entry.clear();
+            match mapping.level {
+                0 => {
+                    mapping.entry.clear();
                     vaddr = vaddr + PAGE_SIZE;
                 }
-                Mapping::Level1(entry) => {
-                    entry.clear();
+                1 => {
+                    mapping.entry.clear();
                     vaddr = vaddr + PAGE_SIZE_2M;
                 }
                 _ => {
@@ -1277,8 +1192,10 @@ impl PageTable {
         region: MemoryRegion<VirtAddr>,
     ) -> Result<(), SvsmError> {
         for page in region.iter_pages(PageSize::Regular) {
-            match self.walk_addr(page) {
-                Mapping::Level0(entry) => {
+            let mapping = self.walk_addr(page);
+            match mapping.level {
+                0 => {
+                    let entry = mapping.entry;
                     if !entry.present() || !entry.global() {
                         return Err(SvsmError::Mem);
                     }
@@ -1293,9 +1210,9 @@ impl PageTable {
 
                     entry.set(paddr, flags);
                 }
-                Mapping::Level1(entry) | Mapping::Level2(entry) => {
+                1 | 2 => {
                     // Ensure we never fell on a huge page while iterating over the region pages.
-                    if entry.huge() {
+                    if mapping.entry.huge() {
                         return Err(SvsmError::Mem);
                     }
                 }
@@ -1358,10 +1275,11 @@ impl RawPageTablePart {
     /// # Returns
     /// The [`Mapping`] for the given virtual address.
     fn walk_addr(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
-        PageTable::walk_addr_lvl2(&mut self.page, vaddr)
+        PageTable::walk_addr_at(&mut self.page, vaddr, 2)
     }
 
-    /// Allocates a 4KB page table entry for a given virtual address.
+    /// Allocates a page table entry for a given virtual address and
+    /// the given page size.
     ///
     /// # Parameters
     /// - `vaddr`: The virtual address for which to allocate the PTE.
@@ -1371,34 +1289,12 @@ impl RawPageTablePart {
     ///
     /// # Panics
     /// Panics if a level 3 mapping is attempted in a [`RawPageTablePart`].
-    fn alloc_pte_4k(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
+    fn alloc_pte(&mut self, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
-
-        match m {
-            Mapping::Level0(entry) => Mapping::Level0(entry),
-            Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr, PageSize::Regular),
-            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PageSize::Regular),
-            Mapping::Level3(_) => panic!("PT level 3 not possible in PageTablePart"),
+        if m.level >= 3 {
+            panic!("PT level >= 3 not possible in PageTablePart");
         }
-    }
-
-    /// Allocates a 2MB page table entry for a given virtual address.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address for which to allocate the PTE.
-    ///
-    /// # Returns
-    /// The [`Mapping`] representing the allocated or existing PTE for the
-    /// address.
-    fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
-        let m = self.walk_addr(vaddr);
-
-        match m {
-            Mapping::Level0(entry) => Mapping::Level0(entry),
-            Mapping::Level1(entry) => Mapping::Level1(entry),
-            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PageSize::Huge),
-            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PageSize::Huge),
-        }
+        PageTable::alloc_intermediate_ptes(m, vaddr, size)
     }
 
     /// Maps a 4KB page.
@@ -1418,7 +1314,7 @@ impl RawPageTablePart {
         flags: PTEntryFlags,
         shared: bool,
     ) -> Result<(), SvsmError> {
-        let mapping = self.alloc_pte_4k(vaddr);
+        let mapping = self.alloc_pte(vaddr, PageSize::Regular);
 
         let addr = if !shared {
             make_private_address(paddr)
@@ -1426,8 +1322,8 @@ impl RawPageTablePart {
             make_shared_address(paddr)
         };
 
-        if let Mapping::Level0(entry) = mapping {
-            entry.set(addr, flags);
+        if mapping.level == 0 {
+            mapping.entry.set(addr, flags);
             Ok(())
         } else {
             Err(SvsmError::Mem)
@@ -1444,22 +1340,14 @@ impl RawPageTablePart {
     fn unmap_4k(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
         let mapping = self.walk_addr(vaddr);
 
-        match mapping {
-            Mapping::Level0(entry) => {
-                let e = *entry;
-                entry.clear();
+        match mapping.level {
+            0 => {
+                let e = *mapping.entry;
+                mapping.entry.clear();
                 Some(e)
             }
-            Mapping::Level1(entry) => {
-                assert!(!entry.present());
-                None
-            }
-            Mapping::Level2(entry) => {
-                assert!(!entry.present());
-                None
-            }
-            Mapping::Level3(entry) => {
-                assert!(!entry.present());
+            _ => {
+                assert!(!mapping.entry.present());
                 None
             }
         }
@@ -1489,15 +1377,15 @@ impl RawPageTablePart {
         assert!(vaddr.is_aligned(PAGE_SIZE_2M));
         assert!(paddr.is_aligned(PAGE_SIZE_2M));
 
-        let mapping = self.alloc_pte_2m(vaddr);
+        let mapping = self.alloc_pte(vaddr, PageSize::Huge);
         let addr = if !shared {
             make_private_address(paddr)
         } else {
             make_shared_address(paddr)
         };
 
-        if let Mapping::Level1(entry) = mapping {
-            entry.set(addr, flags | PTEntryFlags::HUGE);
+        if mapping.level == 1 {
+            mapping.entry.set(addr, flags | PTEntryFlags::HUGE);
             Ok(())
         } else {
             Err(SvsmError::Mem)
@@ -1520,18 +1408,14 @@ impl RawPageTablePart {
 
         let mapping = self.walk_addr(vaddr);
 
-        match mapping {
-            Mapping::Level0(_) => None,
-            Mapping::Level1(entry) => {
-                entry.clear();
-                Some(*entry)
+        match mapping.level {
+            0 => None,
+            1 => {
+                mapping.entry.clear();
+                Some(*mapping.entry)
             }
-            Mapping::Level2(entry) => {
-                assert!(!entry.present());
-                None
-            }
-            Mapping::Level3(entry) => {
-                assert!(!entry.present());
+            _ => {
+                assert!(!mapping.entry.present());
                 None
             }
         }
