@@ -56,10 +56,12 @@ mod persistance {
 
     use crate::error::SvsmError;
     use crate::persistence::{
-        Inode, InodeNamespace, persistence_enumerate_inodes_sync, persistence_read_inode_sync,
-        persistence_unlink_inode_sync, persistence_write_inode_sync,
+        Inode, InodeNamespace, PersistenceMultiOp, persistence_commit_multi_op_sync,
+        persistence_enumerate_inodes_sync, persistence_read_inode_sync,
+        persistence_write_inode_sync,
     };
 
+    #[derive(Clone, Copy)]
     struct UefiInode {
         inode: u32,
     }
@@ -129,9 +131,16 @@ mod persistance {
             }
             None
         });
-        for inode in stale {
-            persistence_unlink_inode_sync(inode.inode(), true)?;
+
+        if !stale.is_empty() {
+            let mut ops = PersistenceMultiOp::new();
+            for inode in stale {
+                let r = inode.inode()..=inode.inode();
+                ops.stage_inode_range_unlinking(r)?;
+            }
+            persistence_commit_multi_op_sync(ops, true)?;
         }
+
         Ok(())
     }
 }
