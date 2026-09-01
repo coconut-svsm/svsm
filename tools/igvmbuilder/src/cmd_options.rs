@@ -112,7 +112,6 @@ pub enum SevExtraFeatures {
     PreventHostIBS,
     SNPBTBIsolation,
     VmplSSS,
-    SecureTscEn,
     VmsaRegProt,
     SmtProtection,
 }
