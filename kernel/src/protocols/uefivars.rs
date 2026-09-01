@@ -58,7 +58,6 @@ mod persistance {
     use crate::persistence::{
         Inode, InodeNamespace, PersistenceMultiOp, persistence_commit_multi_op_sync,
         persistence_enumerate_inodes_sync, persistence_read_inode_sync,
-        persistence_write_inode_sync,
     };
 
     #[derive(Clone, Copy)]
@@ -89,16 +88,20 @@ mod persistance {
         let Ok(index) = store.fs_make_index() else {
             return Err(SvsmError::InvalidFormat);
         };
+
+        let mut ops = PersistenceMultiOp::new();
         for (entry, name) in FsIndexParser::new(&index) {
             if let Some(data) = store.fs_get_variable(&entry, &name) {
                 let inode = UefiInode::new(entry.inode());
                 let vec: Vec<u8> = data.into();
-                persistence_write_inode_sync(inode.inode(), vec.into(), true)?;
+                ops.stage_inode_write(inode.inode(), vec.into())?;
             }
         }
 
         let inode = UefiInode::new(store.fs_inode_index());
-        persistence_write_inode_sync(inode.inode(), index.into(), true)?;
+        ops.stage_inode_write(inode.inode(), index.into())?;
+        persistence_commit_multi_op_sync(ops, true)?;
+
         store.fs_clear_modified();
         Ok(())
     }
