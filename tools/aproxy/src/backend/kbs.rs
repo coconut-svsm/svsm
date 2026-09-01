@@ -16,6 +16,8 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+const KBS_API_VERSION: &str = "0.4.0";
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct KbsProtocol;
 
@@ -40,7 +42,7 @@ impl AttestationProtocol for KbsProtocol {
             return Err(anyhow!("invalid request version"));
         }
         let req = Request {
-            version: "0.4.0".to_string(),
+            version: KBS_API_VERSION.to_string(),
             tee: request.tee,
             extra_params: Value::String("".to_string()), // unused.
         };
@@ -111,6 +113,7 @@ impl AttestationProtocol for KbsProtocol {
             .context("unable to POST to KBS /attest endpoint")?;
 
         if http_resp.status() != StatusCode::OK {
+            log::warn!("KBS /attest returned {}", http_resp.status());
             return Ok(AttestationResponse {
                 success: false,
                 secret: None,
@@ -140,10 +143,11 @@ impl AttestationProtocol for KbsProtocol {
             .cli
             .get(format!("{}/kbs/v0/resource/default/sample/test", http.url))
             .send()
-            .context("unable to POST to KBS /attest endpoint")?;
+            .context("unable to GET KBS /resource endpoint")?;
 
         // Unsuccessful attempt at retrieving secret.
         if http_resp.status() != StatusCode::OK {
+            log::warn!("KBS /resource returned {}", http_resp.status());
             return Ok(AttestationResponse {
                 success: false,
                 secret: None,
@@ -244,7 +248,9 @@ impl TryFrom<&AttestationRequest> for KbsEvidence {
 
                 Ok(Self::Snp {
                     snp_report: BASE64_STANDARD.encode(report),
-                    certs_buf: certs_buf.clone().map(|certs| BASE64_STANDARD.encode(certs)),
+                    certs_buf: certs_buf
+                        .as_ref()
+                        .map(|certs| BASE64_STANDARD.encode(certs)),
                 })
             }
             _ => Err(anyhow!("invalid TEE")),
