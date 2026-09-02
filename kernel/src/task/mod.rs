@@ -5,6 +5,7 @@
 // Author: Roy Hopkins <rhopkins@suse.de>
 
 mod exec;
+mod pcid;
 mod schedule;
 mod task_mm;
 mod tasks;
