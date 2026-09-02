@@ -16,35 +16,47 @@ use core::sync::atomic;
 
 use cocoon_tpm_crypto::{
     CryptoError, EmptyCryptoIoSlices,
-    hash::hash_alg_digest_len,
-    rng::{self, HashDrbg, RngCore, X86RdSeedRng},
+    rng::{self, RngCore},
 };
+#[cfg(not(feature = "openssl"))]
+use cocoon_tpm_crypto::{
+    hash::hash_alg_digest_len,
+    rng::{HashDrbg, X86RdSeedRng},
+};
+#[cfg(not(feature = "openssl"))]
 use cocoon_tpm_tpm2_interface::TpmiAlgHash;
+use cocoon_tpm_utils_common::{
+    io_slices::{self, IoSlicesIterCommon as _},
+};
+#[cfg(not(feature = "openssl"))]
 use cocoon_tpm_utils_common::{
     alloc::box_try_new,
     fixed_vec::{FixedVec, FixedVecMemoryAllocationFailure},
-    io_slices::{self, IoSlicesIterCommon as _},
     zeroize,
 };
 
 /// Hash algorithm to be used for all NIST HashDrbg instantiations.
 // C.f. NIST SP 800-90A Rev. 1: the HashDrbg's security strength is equal to the underlying hash
 // algorithm's pre-image resistance. That is, SHA256 gives a security strength of 256 bits.
+#[cfg(not(feature = "openssl"))]
 const SVSM_RNG_DRBG_HASH_ALG: TpmiAlgHash = TpmiAlgHash::Sha256;
 
 /// Number of [`SVSM_RNG_POOL`] slots.
+#[cfg(not(feature = "openssl"))]
 const SVSM_RNG_POOL_SIZE: usize = 4;
 
 /// RNG instance pool
 ///
 /// [`SvsmRng::drop()`] returns instances back into some free slot, if any. [`get_svsm_rng()`] tries
 /// to take a currently unused instance from the pool before attempting to instantiate one.
+#[cfg(not(feature = "openssl"))]
 #[allow(clippy::type_complexity)]
 static SVSM_RNG_POOL: SpinLock<
     [Option<Box<rng::ChainedRng<rng::X86RdSeedRng, rng::HashDrbg>>>; SVSM_RNG_POOL_SIZE],
 > = SpinLock::new([None, None, None, None]);
 
 /// Counter used for the RNG instance's personalization.
+#[cfg(not(feature = "openssl"))]
 static SVSM_RNG_INSTANTIATION_ID: atomic::AtomicU64 = atomic::AtomicU64::new(0);
 
 /// Opaque type implementing [`RngCore`] as suitable for the SVSM environment and build
@@ -56,12 +68,16 @@ static SVSM_RNG_INSTANTIATION_ID: atomic::AtomicU64 = atomic::AtomicU64::new(0);
 /// of pointer size, and that it implements [`RngCore`].
 #[allow(missing_debug_implementations)]
 pub struct SvsmRng {
+    #[cfg(not(feature = "openssl"))]
     // Is never None while self is alive, the rng needs to get stored in an Option<> so that it can
     // get returned back to the pool when dropped.
     rng: Option<Box<rng::ChainedRng<X86RdSeedRng, rng::HashDrbg>>>,
+    #[cfg(feature = "openssl")]
+    rng: rng::OsslRandBytesRng,
 }
 
 impl SvsmRng {
+    #[cfg(not(feature = "openssl"))]
     fn instantiate() -> Result<Self, CryptoError> {
         // The FixedVec internal representation is optimized for the case of power-of-two lengths,
         // relative to a specified compile-time "base" value. In practice, the HashDrbg seed length
@@ -120,16 +136,24 @@ impl rng::RngCore for SvsmRng {
         output: OI,
         additional_input: Option<AII>,
     ) -> Result<(), rng::RngGenerateError> {
-        let rng = match self.rng.as_mut() {
-            Some(rng) => rng,
-            None => {
-                return Err(rng::RngGenerateError::CryptoError(CryptoError::Internal));
-            }
-        };
-        rng.generate(output, additional_input)
+        #[cfg(not(feature = "openssl"))]
+        {
+            let rng = match self.rng.as_mut() {
+                Some(rng) => rng,
+                None => {
+                    return Err(rng::RngGenerateError::CryptoError(CryptoError::Internal));
+                }
+            };
+            rng.generate(output, additional_input)
+        }
+        #[cfg(feature = "openssl")]
+        {
+            self.rng.generate(output, additional_input)
+        }
     }
 }
 
+#[cfg(not(feature = "openssl"))]
 impl Drop for SvsmRng {
     fn drop(&mut self) {
         if let Some(rng) = self.rng.take() {
@@ -147,12 +171,21 @@ impl Drop for SvsmRng {
 
 /// Obtain an exclusively owned [`SvsmRng`] instance.
 pub fn get_svsm_rng() -> Result<SvsmRng, CryptoError> {
-    let mut pool = SVSM_RNG_POOL.lock();
-    for pool_slot in pool.iter_mut() {
-        if let Some(rng) = pool_slot.take() {
-            return Ok(SvsmRng { rng: Some(rng) });
+    #[cfg(not(feature = "openssl"))]
+    {
+        let mut pool = SVSM_RNG_POOL.lock();
+        for pool_slot in pool.iter_mut() {
+            if let Some(rng) = pool_slot.take() {
+                return Ok(SvsmRng { rng: Some(rng) });
+            }
         }
-    }
 
-    SvsmRng::instantiate()
+        SvsmRng::instantiate()
+    }
+    #[cfg(feature = "openssl")]
+    {
+        Ok(SvsmRng {
+            rng: rng::OsslRandBytesRng::new(),
+        })
+    }
 }
