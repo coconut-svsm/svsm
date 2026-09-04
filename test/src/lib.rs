@@ -6,16 +6,16 @@
 //! The `test` crate is implicitly used by the `#[test]` attribute.
 #![no_std]
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TestDescAndFn {
     pub testfn: StaticTestFn,
     pub desc: TestDesc,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct StaticTestFn(pub fn());
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TestDesc {
     pub name: StaticTestName,
     pub ignore: bool,
@@ -31,15 +31,15 @@ pub struct TestDesc {
     pub test_type: TestType,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct StaticTestName(pub &'static str);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum TestType {
     UnitTest,
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub enum ShouldPanic {
     Yes,
     No,
