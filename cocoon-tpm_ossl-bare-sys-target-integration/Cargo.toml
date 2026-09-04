@@ -1,0 +1,14 @@
+[package]
+name = "cocoon-tpm-ossl-bare-sys-target-integration"
+version = "0.1.1"
+edition = "2021"
+
+license = "Apache-2.0"
+description = "Cocoon TPM project - SVSM ossl-bare-sys integration helper"
+homepage = "https://github.com/coconut-svsm/cocoon-tpm"
+repository = "https://github.com/coconut-svsm/cocoon-tpm"
+readme = "README.md"
+
+links = "ossl-bare-sys-target-integration"
+
+[dependencies]
