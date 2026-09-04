@@ -216,6 +216,8 @@ dependencies = [
  "bitflags 2.13.0",
  "cexpr",
  "clang-sys",
+ "log",
+ "prettyplease",
  "proc-macro2",
  "quote",
  "regex",
@@ -489,6 +491,7 @@ dependencies = [
  "cfb-mode",
  "cipher 0.4.4",
  "cmpa",
+ "cocoon-tpm-ossl-bare-sys",
  "cocoon-tpm-tpm2-interface",
  "cocoon-tpm-utils-common",
  "crypto-common 0.1.7",
@@ -501,6 +504,25 @@ dependencies = [
  "sm4",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "cocoon-tpm-ossl-bare-sys"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef5bf284564051b7c149102e5ae95967f7b4cd24e895847e5734454a9a2250cb"
+dependencies = [
+ "bindgen",
+ "cc",
+ "cocoon-tpm-ossl-bare-sys-target-integration",
+ "shlex 2.0.1",
+]
+
+[[package]]
+name = "cocoon-tpm-ossl-bare-sys-target-integration"
+version = "0.1.1"
+dependencies = [
+ "libcrt",
 ]
 
 [[package]]
