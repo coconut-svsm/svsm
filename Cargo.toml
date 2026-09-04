@@ -169,3 +169,16 @@ unnecessary_box_returns = "warn"
 
 [workspace.metadata.scripts]
 vfmt = "verusfmt `find ./ -name *.verus.rs`"
+
+
+[patch.crates-io]
+
+cocoon-tpm-crypto = { git = "https://github.com/osteffenrh/cocoon-tpm.git", branch = "openssl", subdirectory = "crypto" }
+cocoon-tpm-utils-common = { git = "https://github.com/osteffenrh/cocoon-tpm.git", branch = "openssl", subdirectory = "utils-common" }
+cocoon-tpm-utils-async = { git = "https://github.com/osteffenrh/cocoon-tpm.git", branch = "openssl", subdirectory = "utils-async" }
+cocoon-tpm-storage = { git = "https://github.com/osteffenrh/cocoon-tpm.git", branch = "openssl", subdirectory = "storage" }
+cocoon-tpm-tpm2-interface = { git = "https://github.com/osteffenrh/cocoon-tpm.git", branch = "openssl", subdirectory = "tpm2-interface" }
+cocoon-tpm-ossl-bare-sys = { git = "https://github.com/osteffenrh/cocoon-tpm.git", branch = "openssl", subdirectory = "ossl-bare-sys" }
+
+# cocoon-tpm OpenSSL backend integration lib for SVSM
+cocoon-tpm-ossl-bare-sys-target-integration = { path = "./cocoon-tpm_ossl-bare-sys-target-integration/" }
