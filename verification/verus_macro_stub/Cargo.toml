@@ -3,6 +3,9 @@ name = "verus_macro_stub"
 version = "0.1.0"
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [lib]
 proc-macro = true
 
