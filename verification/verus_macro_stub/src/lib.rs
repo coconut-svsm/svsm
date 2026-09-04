@@ -4,7 +4,6 @@
 //
 // Author: Luigi Leonardi <leonardi@redhat.com>
 
-extern crate proc_macro;
 use proc_macro::TokenStream;
 
 #[proc_macro_attribute]
