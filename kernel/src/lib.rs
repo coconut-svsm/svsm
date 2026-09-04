@@ -30,7 +30,7 @@ pub mod boot_params;
 pub mod console;
 #[macro_use]
 pub mod cpu;
-#[cfg(feature = "vtpm")]
+#[cfg(any(feature = "openssl", feature = "vtpm"))]
 pub mod crt;
 pub mod crypto;
 pub mod debug;
