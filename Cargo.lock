@@ -209,6 +209,26 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 
 [[package]]
 name = "bindgen"
+version = "0.71.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3"
+dependencies = [
+ "bitflags 2.13.0",
+ "cexpr",
+ "clang-sys",
+ "itertools",
+ "log",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash",
+ "shlex",
+ "syn",
+]
+
+[[package]]
+name = "bindgen"
 version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
@@ -481,8 +501,7 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-crypto"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3df5637dcf02eb5defb21bb108c0f3796bda0db2c7c7e3804759447b10e781c"
+source = "git+https://github.com/osteffenrh/cocoon-tpm.git?branch=openssl#ed2e6b480eb171fcb0fc335bbcd0a73c45b65d76"
 dependencies = [
  "aes 0.8.4",
  "camellia",
@@ -490,6 +509,7 @@ dependencies = [
  "cfb-mode",
  "cipher 0.4.4",
  "cmpa",
+ "cocoon-tpm-ossl-bare-sys",
  "cocoon-tpm-tpm2-interface",
  "cocoon-tpm-utils-common",
  "crypto-common 0.1.7",
@@ -505,10 +525,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "cocoon-tpm-ossl-bare-sys"
+version = "0.1.1"
+source = "git+https://github.com/osteffenrh/cocoon-tpm.git?branch=openssl#ed2e6b480eb171fcb0fc335bbcd0a73c45b65d76"
+dependencies = [
+ "bindgen 0.71.1",
+ "cc",
+ "cocoon-tpm-ossl-bare-sys-target-integration",
+]
+
+[[package]]
+name = "cocoon-tpm-ossl-bare-sys-target-integration"
+version = "0.1.1"
+
+[[package]]
 name = "cocoon-tpm-storage"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4557cee7aa93353f56d63bcacb0673c6b0ef296668b436d8d2e7b9f690ef9b0"
+source = "git+https://github.com/osteffenrh/cocoon-tpm.git?branch=openssl#ed2e6b480eb171fcb0fc335bbcd0a73c45b65d76"
 dependencies = [
  "cocoon-tpm-crypto",
  "cocoon-tpm-tpm2-interface",
@@ -520,14 +553,12 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-tpm2-interface"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f524208dcc8aa8c63f8d0a1a64f458beeb6eff7d7d64deec515be639a57811ea"
+source = "git+https://github.com/osteffenrh/cocoon-tpm.git?branch=openssl#ed2e6b480eb171fcb0fc335bbcd0a73c45b65d76"
 
 [[package]]
 name = "cocoon-tpm-utils-async"
 version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff56a8746df3ead93d408761fed1e39974e4395fcab63084272fd7b8b33d8391"
+source = "git+https://github.com/osteffenrh/cocoon-tpm.git?branch=openssl#ed2e6b480eb171fcb0fc335bbcd0a73c45b65d76"
 dependencies = [
  "cocoon-tpm-utils-common",
 ]
@@ -535,8 +566,7 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-utils-common"
 version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ba97316b8f3f4ab72ee646c222285a8c2480130e30ba3a7e38596ef36812598"
+source = "git+https://github.com/osteffenrh/cocoon-tpm.git?branch=openssl#ed2e6b480eb171fcb0fc335bbcd0a73c45b65d76"
 dependencies = [
  "cmpa",
  "zeroize",
@@ -1570,7 +1600,7 @@ dependencies = [
 name = "libtcgtpm"
 version = "0.1.0"
 dependencies = [
- "bindgen",
+ "bindgen 0.72.1",
 ]
 
 [[package]]
@@ -1828,6 +1858,16 @@ name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
+
+[[package]]
+name = "prettyplease"
+version = "0.2.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
+dependencies = [
+ "proc-macro2",
+ "syn",
+]
 
 [[package]]
 name = "primeorder"
