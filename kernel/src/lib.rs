@@ -41,6 +41,8 @@ pub mod kernel_region;
 pub mod locking;
 pub mod log_buffer;
 pub mod mm;
+#[cfg(feature = "ocp-test")]
+pub mod ocp_test;
 #[cfg(feature = "persistence")]
 pub mod persistence;
 pub mod platform;
