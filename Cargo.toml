@@ -82,6 +82,7 @@ bitfield-struct = "0.13.0"
 bitflags = "2.6"
 clap = { version = "4.4.14", default-features = false }
 cocoon-tpm-crypto = { version = "0.1.4", default-features = false }
+cocoon-tpm-ossl-bare-sys = { version = "0.1.1", default-features = false }
 cocoon-tpm-storage = { version = "0.1.4", default-features = false }
 cocoon-tpm-tpm2-interface = { version = "0.1.1", default-features = false }
 cocoon-tpm-utils-async = { version = "0.1.3", default-features = false }
@@ -174,6 +175,8 @@ unnecessary_box_returns = "warn"
 vfmt = "verusfmt `find ./ -name *.verus.rs`"
 
 [patch.crates-io]
+# cocoon-tpm OpenSSL backend integration lib for SVSM
+cocoon-tpm-ossl-bare-sys-target-integration = { path = "./cocoon-tpm_ossl-bare-sys-target-integration/" }
 
 cocoon-tpm-crypto = { git = "https://github.com/osteffenrh/cocoon-tpm.git", rev = "e03a743ff9ed", subdirectory = "crypto" }
 cocoon-tpm-utils-common = { git = "https://github.com/osteffenrh/cocoon-tpm.git", rev = "e03a743ff9ed", subdirectory = "utils-common" }
