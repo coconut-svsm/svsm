@@ -543,6 +543,11 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         panic!("Failed to prepare guest FW: {e:#?}");
     }
 
+    log::info!(
+        "Cocoon-tpm crypto backend: {}",
+        cocoon_tpm_crypto::backend_name()
+    );
+
     #[cfg(feature = "virtio-drivers")]
     initialize_virtio_mmio(&boot_params).expect("Failed to initialize virtio-mmio drivers");
 
