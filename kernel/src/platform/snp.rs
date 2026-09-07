@@ -415,7 +415,7 @@ impl SvsmPlatform for SnpPlatform {
         }
 
         if !sev_flags().contains(SEVStatusFlags::SECURE_TSC) {
-            return Err(SvsmError::NotSupported);
+            panic!("SecureTSC feature requested, but not supported");
         }
 
         let mut buffer = [0u8; size_of::<SnpTscInfoResponse>()];
@@ -427,7 +427,7 @@ impl SvsmPlatform for SnpPlatform {
         };
 
         if secure_tsc_info.tsc_scale == 0 {
-            return Err(SvsmError::InvalidFormat);
+            panic!("TSC Scale value is invalid");
         }
 
         SECURE_TSC_ACCESSOR.set_tsc_info(secure_tsc_info);
@@ -435,8 +435,7 @@ impl SvsmPlatform for SnpPlatform {
 
         let base = SECURE_TSC_ACCESSOR.read_tsc_frequency();
         if base == 0 {
-            SECURE_TSC_ACCESSOR.set_use_secure_tsc(false);
-            return Err(SvsmError::NotSupported);
+            panic!("TSC frequency value is invalid");
         }
 
         Ok(())
