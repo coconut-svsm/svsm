@@ -121,9 +121,6 @@ enable-console-log = []
 [dev-dependencies]
 sha2 = { workspace = true, features = ["force-soft"] }
 
-[build-dependencies]
-rustc_version = "0.4"
-
 [package.metadata.verus]
 verify = true
 
