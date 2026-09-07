@@ -146,6 +146,8 @@ pub enum SvsmError {
     Io(IoError),
     /// Errors related to LogBuffer
     LogError,
+    /// Errors related to timer
+    TimerError,
 }
 
 impl From<IoError> for SvsmError {
