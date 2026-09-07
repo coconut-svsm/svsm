@@ -438,7 +438,7 @@ pub fn init_monotonic_clock() -> Result<(), SvsmError> {
     let freq_hz = SECURE_TSC_ACCESSOR.read_tsc_frequency();
     if freq_hz == 0 {
         log::warn!("SecureTSC frequency is 0, monotonic clock not initialized");
-        return Ok(());
+        return Err(SvsmError::TimerError);
     }
 
     // Read the current TSC as boot time
@@ -448,7 +448,11 @@ pub fn init_monotonic_clock() -> Result<(), SvsmError> {
     let params = ClockParams::new(freq_hz, boot_tsc);
     CLOCK_PARAMS.init(params)?;
 
-    log::info!("Monotonic clock initialized: frequency = {freq_hz} MHz");
+    log::info!(
+        "Monotonic clock initialized: frequency = {} Hz or {} MHz",
+        freq_hz,
+        freq_hz / 1_000_000
+    );
 
     Ok(())
 }
@@ -516,6 +520,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(test_in_svsm))]
     fn test_monotonic_clock_not_initialized() {
         // CLOCK_PARAMS is never initialized in unit tests, so the clock
         // should report as uninitialized and try_get_instant should return None.
