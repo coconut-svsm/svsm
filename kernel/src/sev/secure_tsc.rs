@@ -101,7 +101,8 @@ impl TscAccess for SecureTscAccessor {
             return self.freq_raw.load(Ordering::Relaxed);
         }
 
-        let raw = read_msr(MSR_GUEST_TSC_FREQ);
+        // frequency read from MSR is in MHz. Convert it to HZ.
+        let raw = read_msr(MSR_GUEST_TSC_FREQ) * 1_000_000;
         if raw != 0 {
             let factor = self.tsc_factor.load(Ordering::Relaxed) as u128;
             let adjustment = ((raw as u128) * factor) / 100_000;
