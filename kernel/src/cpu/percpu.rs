@@ -1227,10 +1227,6 @@ impl PerCpu {
         self.shared.runqueue_mut()
     }
 
-    pub fn current_task(&self) -> TaskPointer {
-        self.runqueue().current_task()
-    }
-
     pub fn vrange_4k(&self) -> ReadLockGuard<'_, VirtualRange> {
         self.vrange_4k.read_noblock()
     }
