@@ -53,7 +53,7 @@ use crate::cpu::percpu::PERCPU_PAGING_ROOT_OFFSET;
 use crate::cpu::percpu::PERCPU_SHARED_INDEX_OFFSET;
 use crate::cpu::percpu::PERCPU_SHARED_OFFSET;
 use crate::cpu::percpu::irq_nesting_count;
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::percpu::{current_task, this_cpu};
 use crate::cpu::shadow_stack::{IS_CET_ENABLED, PL0_SSP, is_cet_ss_enabled};
 use crate::cpu::sse::{sse_restore_context, sse_save_context};
 use crate::cpu::x86::apic_post_irq;
@@ -390,10 +390,6 @@ pub fn finish_user_task(task: TaskPointer) {
 
     // Put task on the runqueue of this CPU
     this_cpu().runqueue_mut().prepare_run_task(task);
-}
-
-pub fn current_task() -> TaskPointer {
-    this_cpu().current_task()
 }
 
 /// Check to see if the task scheduled on the current processor has the given id
