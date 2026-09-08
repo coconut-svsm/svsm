@@ -26,8 +26,7 @@ use crate::cpu::idt::svsm::{default_return, thread_entry_asm};
 use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::irqs_enable;
 use crate::cpu::irqs_enabled;
-use crate::cpu::percpu::PerCpu;
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::percpu::{PerCpu, current_task};
 use crate::cpu::shadow_stack::init_shadow_stack;
 use crate::cpu::sse::sse_restore_context;
 use crate::cpu::sse::xsave_area_size;
@@ -840,7 +839,7 @@ impl Task {
     }
 
     pub fn wait_for_exit(&self) -> Option<IrqGuard> {
-        let current_task = this_cpu().current_task();
+        let current_task = current_task();
 
         // Lock the wait queue before examining the current state.  This must
         // be done with interrupts disabled, since once the current task has

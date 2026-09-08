@@ -468,7 +468,7 @@ pub fn go_idle() {
     // Mark this task as blocked and indicate that it is waiting for wake after
     // idle.  Only one task on each CPU can be in the wake-from-idle state at
     // one time.
-    let task = this_cpu().current_task();
+    let task = current_task();
     task.set_task_blocked();
     let mut runqueue = this_cpu().runqueue_mut();
     assert!(runqueue.wake_from_idle.is_none());
@@ -488,7 +488,7 @@ pub fn set_affinity(cpu_index: usize) {
     // Affinity signaling is only required if the target CPU is not the current
     // CPU.
     if cpu_index != this_cpu().get_cpu_index() {
-        let task = this_cpu().current_task();
+        let task = current_task();
         let target_cpu = PERCPU_AREAS.get_by_cpu_index(cpu_index);
 
         // Disable interrupts to prevent delays in scheduling once the task
