@@ -4,6 +4,9 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+#[macro_use]
+pub mod percpu;
+
 pub mod apic;
 pub mod control_regs;
 pub mod cpuid;
@@ -18,7 +21,6 @@ pub mod irq_state;
 pub mod isst;
 pub mod mem;
 pub mod msr;
-pub mod percpu;
 pub mod registers;
 pub mod shadow_stack;
 pub mod smp;
