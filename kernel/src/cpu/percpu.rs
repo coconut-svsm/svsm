@@ -77,6 +77,13 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use cpuarch::vmsa::VMSA;
 
+#[macro_use]
+mod key;
+
+pub use key::PerCpuKey;
+#[doc(hidden)]
+pub use key::PerCpuStorage;
+
 // PERCPU areas virtual addresses into shared memory
 pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
 
