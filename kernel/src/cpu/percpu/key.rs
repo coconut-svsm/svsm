@@ -10,8 +10,10 @@
 use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
+use core::mem::MaybeUninit;
 #[cfg(target_os = "none")]
 use core::ptr;
+use core::sync::atomic::{AtomicU8, Ordering};
 
 #[cfg(target_os = "none")]
 use crate::address::VirtAddr;
@@ -174,10 +176,15 @@ impl PerCpuArea {
 /// [`percpu!`](crate::percpu) macro.
 #[doc(hidden)]
 #[derive(Debug)]
-#[repr(transparent)]
+#[repr(C)]
 pub struct PerCpuStorage<T> {
-    value: UnsafeCell<T>,
+    state: AtomicU8,
+    value: UnsafeCell<MaybeUninit<T>>,
 }
+
+const PERCPU_UNINITIALIZED: u8 = 0;
+const PERCPU_INITIALIZING: u8 = 1;
+const PERCPU_INITIALIZED: u8 = 2;
 
 // SAFETY: Each copy of the storage is accessed only by its owning CPU. Shared
 // references may be reentrant on that CPU, so the contained type must be Sync.
@@ -188,7 +195,17 @@ impl<T> PerCpuStorage<T> {
     #[doc(hidden)]
     pub const fn new(value: T) -> Self {
         Self {
-            value: UnsafeCell::new(value),
+            state: AtomicU8::new(PERCPU_INITIALIZED),
+            value: UnsafeCell::new(MaybeUninit::new(value)),
+        }
+    }
+
+    /// Construct uninitialized storage for use by [`percpu!`](crate::percpu).
+    #[doc(hidden)]
+    pub const fn uninit() -> Self {
+        Self {
+            state: AtomicU8::new(PERCPU_UNINITIALIZED),
+            value: UnsafeCell::new(MaybeUninit::uninit()),
         }
     }
 }
@@ -253,20 +270,86 @@ impl<T: 'static> PerCpuKey<T> {
 }
 
 impl<T: Sync + 'static> PerCpuKey<T> {
-    /// Borrow this CPU's value for the duration of `f`.
+    /// Return whether this CPU's value has been initialized.
     ///
     /// # Panics
     ///
     /// On the SVSM target, this function may only be called after per-CPU
     /// setup has installed the current CPU's `%GS` base.
-    pub fn with<F, R>(&'static self, f: F) -> R
+    pub fn is_initialized(&'static self) -> bool {
+        self.storage().state.load(Ordering::Acquire) == PERCPU_INITIALIZED
+    }
+
+    /// Initialize this CPU's value.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` when the value was installed. If the value is already
+    /// initialized or initialization is in progress, returns `Err(value)`.
+    ///
+    /// # Panics
+    ///
+    /// On the SVSM target, this function may only be called after per-CPU
+    /// setup has installed the current CPU's `%GS` base.
+    pub fn init(&'static self, value: T) -> Result<(), SvsmError> {
+        let storage = self.storage();
+        if storage
+            .state
+            .compare_exchange(
+                PERCPU_UNINITIALIZED,
+                PERCPU_INITIALIZING,
+                Ordering::Acquire,
+                Ordering::Acquire,
+            )
+            .is_err()
+        {
+            return Err(SvsmError::Mem);
+        }
+
+        // SAFETY: The state transition above gives this invocation exclusive
+        // initialization access. Readers require the initialized state and
+        // cannot observe the value until the Release store below.
+        unsafe {
+            (*storage.value.get()).write(value);
+        }
+        storage.state.store(PERCPU_INITIALIZED, Ordering::Release);
+        Ok(())
+    }
+
+    /// Borrow this CPU's value for the duration of `f`, if initialized.
+    ///
+    /// # Panics
+    ///
+    /// On the SVSM target, this function may only be called after per-CPU
+    /// setup has installed the current CPU's `%GS` base.
+    pub fn try_with<F, R>(&'static self, f: F) -> Option<R>
     where
         F: FnOnce(&T) -> R,
     {
         let storage = self.storage();
+        if storage.state.load(Ordering::Acquire) != PERCPU_INITIALIZED {
+            return None;
+        }
+
         // SAFETY: PerCpuStorage requires T: Sync and only shared references are
-        // handed to callers. Its value is initialized by the section template.
-        f(unsafe { &*storage.value.get() })
+        // handed to callers. The Acquire load above observed the initialized
+        // state, so the MaybeUninit contains a fully initialized value.
+        Some(f(unsafe { (*storage.value.get()).assume_init_ref() }))
+    }
+
+    /// Borrow this CPU's value for the duration of `f`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this CPU's value is uninitialized or is currently being
+    /// initialized. On the SVSM target, this function may only be called after
+    /// per-CPU setup has installed the current CPU's `%GS` base.
+    pub fn with<F, R>(&'static self, f: F) -> R
+    where
+        F: FnOnce(&T) -> R,
+    {
+        self.try_with(f)
+            .expect("per-CPU variable is not initialized")
     }
 }
 
@@ -274,7 +357,13 @@ impl<T: Sync + 'static> PerCpuKey<T> {
 ///
 /// Each declaration creates a [`PerCpuKey`] and places its backing value in
 /// the `.percpu` data section. Per-CPU values live for the kernel lifetime and
-/// are never dropped.
+/// are never dropped. Declarations without an initializer must be initialized
+/// on each CPU with [`PerCpuKey::init`] before they are accessed.
+///
+/// Initialized declarations are copied byte-for-byte from the linker template.
+/// Initializers must therefore have a representation which can safely seed
+/// independent instances. Values requiring CPU-specific runtime construction
+/// should use the uninitialized declaration form.
 ///
 /// # Examples
 ///
@@ -291,6 +380,21 @@ impl<T: Sync + 'static> PerCpuKey<T> {
 #[macro_export]
 macro_rules! percpu {
     () => {};
+    (
+        $(#[$attr:meta])*
+        $vis:vis static $name:ident: $ty:ty;
+        $($rest:tt)*
+    ) => {
+        $(#[$attr])*
+        $vis static $name: $crate::cpu::percpu::PerCpuKey<$ty> = {
+            #[unsafe(link_section = ".percpu")]
+            static VALUE: $crate::cpu::percpu::PerCpuStorage<$ty> =
+                $crate::cpu::percpu::PerCpuStorage::uninit();
+            $crate::cpu::percpu::PerCpuKey::new(&VALUE)
+        };
+
+        $crate::percpu! { $($rest)* }
+    };
     (
         $(#[$attr:meta])*
         $vis:vis static $name:ident: $ty:ty = $value:expr;
@@ -316,6 +420,8 @@ mod tests {
     percpu! {
         static TEST_VALUE: AtomicUsize = AtomicUsize::new(7);
         static ALIGNED_VALUE: Align64 = Align64([0; 64]);
+        static RUNTIME_VALUE: AtomicUsize;
+        static UNINITIALIZED_VALUE: AtomicUsize;
     }
 
     #[repr(align(64))]
@@ -334,14 +440,43 @@ mod tests {
             assert_eq!(value.0, [0; 64]);
         });
     }
+
+    #[test]
+    fn test_runtime_initialization() {
+        assert!(!RUNTIME_VALUE.is_initialized());
+        assert!(RUNTIME_VALUE.init(AtomicUsize::new(11)).is_ok());
+        assert!(RUNTIME_VALUE.is_initialized());
+        assert_eq!(
+            RUNTIME_VALUE.with(|value| value.load(Ordering::Relaxed)),
+            11
+        );
+
+        assert!(RUNTIME_VALUE.init(AtomicUsize::new(12)).is_err());
+    }
+
+    #[test]
+    fn test_try_with_uninitialized() {
+        assert!(UNINITIALIZED_VALUE.try_with(|_| ()).is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "per-CPU variable is not initialized")]
+    fn test_uninitialized_access_panics() {
+        UNINITIALIZED_VALUE.with(|_| ());
+    }
 }
 
 #[cfg(all(test, test_in_svsm))]
 mod svsm_tests {
     use core::sync::atomic::{AtomicUsize, Ordering};
 
+    use crate::cpu::percpu::{PERCPU_AREAS, this_cpu};
+    use crate::task::set_affinity;
+
     percpu! {
         static TEST_VALUE: AtomicUsize = AtomicUsize::new(7);
+        static CPU_LOCAL_VALUE: AtomicUsize = AtomicUsize::new(0);
+        static RUNTIME_VALUE: AtomicUsize;
     }
 
     #[test]
@@ -351,5 +486,37 @@ mod svsm_tests {
             value.store(9, Ordering::Relaxed);
             assert_eq!(value.load(Ordering::Relaxed), 9);
         });
+    }
+
+    #[test]
+    fn test_cpu_local_values() {
+        let original_cpu = this_cpu().get_cpu_index();
+        let cpu_count = PERCPU_AREAS.len();
+
+        for cpu in 0..cpu_count {
+            set_affinity(cpu);
+            CPU_LOCAL_VALUE.with(|value| {
+                assert_eq!(value.load(Ordering::Relaxed), 0);
+                value.store(cpu + 1, Ordering::Relaxed);
+            });
+
+            assert!(!RUNTIME_VALUE.is_initialized());
+            assert!(RUNTIME_VALUE.init(AtomicUsize::new(cpu + 10)).is_ok());
+            assert!(RUNTIME_VALUE.init(AtomicUsize::new(0)).is_err());
+        }
+
+        for cpu in 0..cpu_count {
+            set_affinity(cpu);
+            assert_eq!(
+                CPU_LOCAL_VALUE.with(|value| value.load(Ordering::Relaxed)),
+                cpu + 1
+            );
+            assert_eq!(
+                RUNTIME_VALUE.with(|value| value.load(Ordering::Relaxed)),
+                cpu + 10
+            );
+        }
+
+        set_affinity(original_cpu);
     }
 }
