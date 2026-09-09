@@ -28,6 +28,7 @@ pub mod attest;
 pub mod block;
 pub mod boot_params;
 pub mod console;
+#[macro_use]
 pub mod cpu;
 pub mod crypto;
 pub mod debug;
