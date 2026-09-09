@@ -80,6 +80,7 @@ use cpuarch::vmsa::VMSA;
 #[macro_use]
 mod key;
 
+use key::PerCpuArea;
 pub use key::PerCpuKey;
 #[doc(hidden)]
 pub use key::PerCpuStorage;
@@ -414,6 +415,9 @@ pub struct PerCpu
 where
     Self: Sync,
 {
+    /// Linker-defined CPU-local variables accessed through `%GS`.
+    percpu_area: PerCpuArea,
+
     /// Reference to the `PerCpuShared` that is valid in the global, shared
     /// address space.
     shared: &'static PerCpuShared,
@@ -460,6 +464,7 @@ impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
     fn new(shared: &'static PerCpuShared) -> Result<Self, SvsmError> {
         Ok(Self {
+            percpu_area: PerCpuArea::new()?,
             pgtbl: AtomicUsize::new(0),
             cr3: AtomicUsize::new(0),
             apic: X86Apic::default(),
@@ -842,6 +847,9 @@ impl PerCpu {
         // Map PerCpu data in own page-table
         self.map_self()?;
 
+        // Allocate the linker-defined CPU-local data in this CPU's VMR.
+        self.percpu_area.map(self)?;
+
         // Reserve ranges and initialize allocator for temporary mappings
         self.initialize_vm_ranges()?;
 
@@ -886,6 +894,8 @@ impl PerCpu {
 
     // Setup code which needs to run on the target CPU
     pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
+        self.percpu_area.initialize();
+        self.percpu_area.load();
         platform.setup_percpu_current(self)?;
         assert!(self.get_apic().id() == self.get_apic_id());
         Ok(())
@@ -942,6 +952,8 @@ impl PerCpu {
     /// Fill in the initial context structure for the SVSM.
     pub fn get_initial_context(&self, start_rip: u64) -> hyperv::HvInitialVpContext {
         let data_segment = svsm_data_segment();
+        let mut gs_segment = data_segment;
+        gs_segment.base = self.percpu_area.gs_base() as u64;
 
         hyperv::HvInitialVpContext {
             rip: start_rip,
@@ -959,7 +971,7 @@ impl PerCpu {
             ds: data_segment,
             es: data_segment,
             fs: data_segment,
-            gs: data_segment,
+            gs: gs_segment,
             tr: self.svsm_tr_segment(),
 
             gdtr: svsm_gdt_segment(),

@@ -10,7 +10,20 @@
 use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
+#[cfg(target_os = "none")]
 use core::ptr;
+
+#[cfg(target_os = "none")]
+use crate::address::VirtAddr;
+#[cfg(target_os = "none")]
+use crate::cpu::msr::{MSR_GS_BASE, write_msr};
+use crate::error::SvsmError;
+#[cfg(target_os = "none")]
+use crate::mm::vm::{Mapping, VMFileMappingFlags, VMalloc};
+#[cfg(target_os = "none")]
+use crate::utils::immut_after_init::ImmutAfterInitCell;
+
+use super::PerCpu;
 
 /// Header at the beginning of every per-CPU data area.
 #[cfg(target_os = "none")]
@@ -20,10 +33,10 @@ struct PerCpuHeader {
     self_ptr: *const PerCpuHeader,
 }
 
+#[cfg(target_os = "none")]
 // SAFETY: The template header is immutable. Copies of the header are only
 // modified while their per-CPU areas are being initialized and before they
 // become visible to their target CPUs.
-#[cfg(target_os = "none")]
 unsafe impl Sync for PerCpuHeader {}
 
 #[cfg(target_os = "none")]
@@ -33,6 +46,127 @@ unsafe impl Sync for PerCpuHeader {}
 static PERCPU_HEADER: PerCpuHeader = PerCpuHeader {
     self_ptr: ptr::null(),
 };
+
+/// An allocated copy of the linker-defined per-CPU data section.
+#[derive(Debug)]
+pub(super) struct PerCpuArea {
+    #[cfg(target_os = "none")]
+    mapping: Mapping,
+    #[cfg(target_os = "none")]
+    base: ImmutAfterInitCell<VirtAddr>,
+}
+
+impl PerCpuArea {
+    /// Allocate and initialize a new per-CPU data area.
+    #[cfg(target_os = "none")]
+    pub(super) fn new() -> Result<Self, SvsmError> {
+        unsafe extern "C" {
+            static percpu_start: u8;
+            static percpu_end: u8;
+        }
+
+        let start = ptr::addr_of!(percpu_start);
+        let end = ptr::addr_of!(percpu_end);
+        let size = (end as usize)
+            .checked_sub(start as usize)
+            .expect("invalid .percpu section bounds");
+        assert_ne!(size, 0, "empty .percpu section");
+        let mapping =
+            VMalloc::new_mapping(size, VMFileMappingFlags::Read | VMFileMappingFlags::Write)?;
+        Ok(Self {
+            mapping,
+            base: ImmutAfterInitCell::uninit(),
+        })
+    }
+
+    /// Construct an inert per-CPU area for host-side unit tests.
+    #[cfg(not(target_os = "none"))]
+    pub(super) fn new() -> Result<Self, SvsmError> {
+        Ok(Self {})
+    }
+
+    /// Insert this area's backing storage into its per-CPU virtual range.
+    #[cfg(target_os = "none")]
+    pub(super) fn map(&self, percpu: &PerCpu) -> Result<(), SvsmError> {
+        self.base
+            .try_init_from_fn(|| Ok(percpu.new_mapping(self.mapping.clone())?.leak()))?;
+        Ok(())
+    }
+
+    /// Host-side tests do not allocate a separate per-CPU mapping.
+    #[cfg(not(target_os = "none"))]
+    pub(super) fn map(&self, _percpu: &PerCpu) -> Result<(), SvsmError> {
+        Ok(())
+    }
+
+    /// Copy the linker template into the mapped area on its target CPU.
+    #[cfg(target_os = "none")]
+    pub(super) fn initialize(&self) {
+        unsafe extern "C" {
+            static percpu_start: u8;
+            static percpu_end: u8;
+        }
+
+        let start = ptr::addr_of!(percpu_start);
+        let size = ptr::addr_of!(percpu_end) as usize - start as usize;
+        let base = self.base.as_mut_ptr::<u8>();
+
+        // SAFETY: `map()` established a writable mapping of at least `size`
+        // bytes in the active target CPU's page table. The linker symbols
+        // bound the initialized template, which does not overlap that mapping.
+        // The header is the first object in the template, so it is valid and
+        // properly aligned at `base` and can be updated before the area is used.
+        unsafe {
+            ptr::copy_nonoverlapping(start, base, size);
+            base.cast::<PerCpuHeader>().write(PerCpuHeader {
+                self_ptr: base.cast(),
+            });
+        }
+    }
+
+    /// Host-side tests use the linker template directly.
+    #[cfg(not(target_os = "none"))]
+    pub(super) fn initialize(&self) {}
+
+    /// Return the absolute base address of this area's mapping.
+    #[cfg(target_os = "none")]
+    pub(super) fn base(&self) -> usize {
+        self.base.as_usize()
+    }
+
+    /// Return the relocation delta installed in `%GS.base` for this area.
+    #[cfg(target_os = "none")]
+    pub(super) fn gs_base(&self) -> usize {
+        unsafe extern "C" {
+            static percpu_start: u8;
+        }
+
+        self.base()
+            .wrapping_sub(ptr::addr_of!(percpu_start) as usize)
+    }
+
+    /// Return the unused host-side `%GS.base` value.
+    #[cfg(not(target_os = "none"))]
+    pub(super) fn gs_base(&self) -> usize {
+        0
+    }
+
+    /// Make this the active per-CPU data area on the current CPU.
+    #[cfg(target_os = "none")]
+    pub(super) fn load(&self) {
+        // SAFETY: The relocation delta makes a GS-relative reference to a
+        // symbol in the linker template resolve to the corresponding address
+        // in this CPU's mapped copy. The area remains allocated for the CPU's
+        // lifetime.
+        unsafe {
+            write_msr(MSR_GS_BASE, self.gs_base() as u64);
+        }
+    }
+
+    /// Host tests use the linker template directly and need no `%GS` setup.
+    #[cfg(not(target_os = "none"))]
+    pub(super) fn load(&self) {}
+}
 
 /// Storage backing a [`PerCpuKey`].
 ///
@@ -87,12 +221,14 @@ impl<T: 'static> PerCpuKey<T> {
         }
 
         let base: usize;
-        // SAFETY: CPU setup installs a GS base pointing at a valid copy of the
-        // linker-defined per-CPU section. Its first word contains the address
-        // of that copy and is initialized before the CPU can access any key.
+        // SAFETY: CPU setup installs a GS relocation delta for a valid copy of
+        // the linker-defined per-CPU section. The GS-relative header reference
+        // therefore resolves to the copy, whose first word contains the
+        // address of the per-CPU area and is initialized before any key access.
         unsafe {
             asm!(
-                "movq %gs:0, {base}",
+                "movq %gs:{header}(%rip), {base}",
+                header = sym PERCPU_HEADER,
                 base = out(reg) base,
                 options(att_syntax, nostack, readonly),
             );
@@ -174,7 +310,7 @@ macro_rules! percpu {
 
 #[cfg(all(test, not(test_in_svsm)))]
 mod tests {
-    use super::*;
+    use core::ptr;
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     percpu! {
@@ -196,6 +332,24 @@ mod tests {
         ALIGNED_VALUE.with(|value| {
             assert_eq!(ptr::from_ref(value) as usize % 64, 0);
             assert_eq!(value.0, [0; 64]);
+        });
+    }
+}
+
+#[cfg(all(test, test_in_svsm))]
+mod svsm_tests {
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    percpu! {
+        static TEST_VALUE: AtomicUsize = AtomicUsize::new(7);
+    }
+
+    #[test]
+    fn test_initialized_key() {
+        TEST_VALUE.with(|value| {
+            assert_eq!(value.load(Ordering::Relaxed), 7);
+            value.store(9, Ordering::Relaxed);
+            assert_eq!(value.load(Ordering::Relaxed), 9);
         });
     }
 }
