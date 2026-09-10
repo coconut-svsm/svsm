@@ -14,16 +14,15 @@ use super::msr::write_msr;
 use super::shadow_stack::{ISST_ADDR, init_shadow_stack, is_cet_ss_enabled};
 use super::tss::{IST_DF, X86Tss};
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::LocalApic;
 use crate::cpu::ShadowStackInit;
+use crate::cpu::apic::init_apic_emulation;
 use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
-use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, reset_ip};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
 use crate::cpu::x86::apic_id;
-use crate::error::{ApicError, SvsmError};
+use crate::error::SvsmError;
 use crate::hyperv::HypercallPagesGuard;
 use crate::hyperv::{self, HypercallPage};
 use crate::locking::{
@@ -41,7 +40,7 @@ use crate::mm::{
     SVSM_SHADOW_STACK_ISST_DF_BASE, SVSM_SHADOW_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
     virt_to_phys,
 };
-use crate::platform::{SVSM_PLATFORM, SvsmPlatform};
+use crate::platform::SvsmPlatform;
 use crate::requests::SvsmCaa;
 use crate::sev::ghcb::{GHCB, GhcbPage};
 use crate::sev::hv_doorbell::{HVDoorbell, allocate_hv_doorbell_page};
@@ -431,9 +430,6 @@ where
     vrange_4k: RWLock<VirtualRange>,
     /// Address allocator for per-cpu 2m temporary mappings
     vrange_2m: RWLock<VirtualRange>,
-    /// Local APIC state for APIC emulation if enabled
-    guest_apic: RWLock<Option<LocalApic>>,
-
     /// GHCB page for this CPU.
     ghcb: ImmutAfterInitCell<GhcbPage>,
 
@@ -469,8 +465,6 @@ impl PerCpu {
 
             vrange_4k: RWLock::new(VirtualRange::new()),
             vrange_2m: RWLock::new(VirtualRange::new()),
-            guest_apic: RWLock::new(None),
-
             shared,
             ghcb: ImmutAfterInitCell::uninit(),
             hypercall_pages: RWLock::new(None),
@@ -923,15 +917,7 @@ impl PerCpu {
     }
 
     pub fn alloc_guest_vmsa(&self) -> Result<PhysAddr, SvsmError> {
-        // Enable alternate injection if the hypervisor supports it.
-        let use_alternate_injection = SVSM_PLATFORM.query_apic_registration_state();
-        if use_alternate_injection {
-            *self.guest_apic.write_noblock() = Some(LocalApic::new());
-
-            // Configure the interrupt injection vector.
-            let ghcb = self.ghcb().unwrap();
-            ghcb.configure_interrupt_injection(INT_INJ_VECTOR)?;
-        }
+        let use_alternate_injection = init_apic_emulation()?;
 
         let mut vmsa = VmsaPage::new(RMPFlags::GUEST_VMPL)?;
         let paddr = vmsa.paddr();
@@ -942,20 +928,6 @@ impl PerCpu {
         let _ = VmsaPage::leak(vmsa);
 
         Ok(paddr)
-    }
-
-    /// Returns a shared reference to the local APIC, or `None` if APIC
-    /// emulation is not enabled.
-    fn guest_apic(&self) -> Option<ReadLockGuard<'_, LocalApic>> {
-        let apic = self.guest_apic.read_noblock();
-        ReadLockGuard::filter_map(apic, Option::as_ref).ok()
-    }
-
-    /// Returns a mutable reference to the local APIC, or `None` if APIC
-    /// emulation is not enabled.
-    fn guest_apic_mut(&self) -> Option<WriteLockGuard<'_, LocalApic>> {
-        let apic = self.guest_apic.write_noblock();
-        WriteLockGuard::filter_map(apic, Option::as_mut).ok()
     }
 
     fn unmap_caa(&self) {
@@ -1000,87 +972,6 @@ impl PerCpu {
         locked.set_updated();
 
         ret
-    }
-
-    pub fn disable_apic_emulation(&self) {
-        if let Some(mut apic) = self.guest_apic_mut() {
-            let mut vmsa_ref = self.guest_vmsa_ref();
-            let caa = vmsa_ref.caa();
-            let vmsa = vmsa_ref.vmsa();
-            apic.disable_apic_emulation(vmsa, caa);
-        }
-    }
-
-    pub fn clear_pending_interrupts(&self) {
-        if let Some(mut apic) = self.guest_apic_mut() {
-            let mut vmsa_ref = self.guest_vmsa_ref();
-            let caa = vmsa_ref.caa();
-            let vmsa = vmsa_ref.vmsa();
-            apic.check_delivered_interrupts(vmsa, caa);
-        }
-    }
-
-    pub fn update_apic_emulation(&self, vmsa: &mut VMSA, caa: Option<NonNull<SvsmCaa>>) {
-        if let Some(mut apic) = self.guest_apic_mut() {
-            apic.present_interrupts(self.shared(), vmsa, caa);
-        }
-    }
-
-    pub fn ai_handle_intercepts(&self, vmsa: &mut VMSA) {
-        let use_alternate_injection = SVSM_PLATFORM.query_apic_registration_state();
-        let g_eii = vmsa.guest_exitintinfo;
-
-        if !use_alternate_injection {
-            return;
-        }
-
-        // Re-inject events when intercept happens
-        if g_eii.valid() {
-            vmsa.event_inj = g_eii;
-        }
-
-        // Clear busy bit
-        let mut vintr_ctrl = vmsa.vintr_ctrl;
-        if vintr_ctrl.busy() {
-            vintr_ctrl.set_busy(false);
-            vmsa.vintr_ctrl = vintr_ctrl;
-        }
-    }
-
-    pub fn use_apic_emulation(&self) -> bool {
-        self.guest_apic().is_some()
-    }
-
-    pub fn read_apic_register(&self, register: u64) -> Result<u64, SvsmError> {
-        let mut vmsa_ref = self.guest_vmsa_ref();
-        let caa = vmsa_ref.caa();
-        let vmsa = vmsa_ref.vmsa();
-        self.guest_apic_mut()
-            .ok_or(SvsmError::Apic(ApicError::Disabled))?
-            .read_register(self.shared(), vmsa, caa, register)
-    }
-
-    pub fn write_apic_register(&self, register: u64, value: u64) -> Result<(), SvsmError> {
-        let mut vmsa_ref = self.guest_vmsa_ref();
-        let caa_addr = vmsa_ref.caa();
-        let vmsa = vmsa_ref.vmsa();
-        self.guest_apic_mut()
-            .ok_or(SvsmError::Apic(ApicError::Disabled))?
-            .write_register(vmsa, caa_addr, register, value)
-    }
-
-    pub fn configure_apic_vector(&self, vector: u8, allowed: bool) -> Result<(), SvsmError> {
-        self.guest_apic_mut()
-            .ok_or(SvsmError::Apic(ApicError::Disabled))?
-            .configure_vector(vector, allowed);
-        Ok(())
-    }
-
-    pub fn configure_apic_all_vectors(&self, allowed: bool) -> Result<(), SvsmError> {
-        self.guest_apic_mut()
-            .ok_or(SvsmError::Apic(ApicError::Disabled))?
-            .configure_all_vectors(allowed);
-        Ok(())
     }
 
     fn svsm_tr_segment(&self) -> hyperv::HvSegmentRegister {

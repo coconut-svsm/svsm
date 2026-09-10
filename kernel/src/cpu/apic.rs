@@ -7,9 +7,12 @@
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::percpu::{PERCPU_AREAS, PerCpuShared, current_ghcb, this_cpu};
 use crate::cpu::x86::apic_post_irq;
+use crate::error::ApicError;
 use crate::error::ApicError::{Emulation, InvalidRegister};
 use crate::error::SvsmError;
+use crate::locking::{RWLock, WriteLockGuard};
 use crate::mm::TryPtr;
+use crate::platform::SVSM_PLATFORM;
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::requests::SvsmCaa;
 use crate::sev::hv_doorbell::HVExtIntStatus;
@@ -17,6 +20,7 @@ use crate::types::GUEST_VMPL;
 
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
+use cpuarch::vmsa::VMSA;
 use cpuarch::x86apic::APIC_REGISTER_APIC_ID;
 use cpuarch::x86apic::APIC_REGISTER_EOI;
 use cpuarch::x86apic::APIC_REGISTER_ICR;
@@ -51,6 +55,122 @@ pub struct LocalApic {
     interrupt_queued: bool,
     lazy_eoi_pending: bool,
     nmi_pending: bool,
+}
+
+percpu! {
+    static GUEST_APIC: RWLock<Option<LocalApic>> = RWLock::new(None);
+}
+
+fn with_guest_apic_mut<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&mut LocalApic) -> R,
+{
+    GUEST_APIC.with(|guest_apic| {
+        let apic = guest_apic.write_noblock();
+        WriteLockGuard::filter_map(apic, Option::as_mut)
+            .ok()
+            .map(|mut apic| f(&mut apic))
+    })
+}
+
+/// Initialize APIC emulation state for the current CPU when alternate
+/// injection is enabled.
+pub fn init_apic_emulation() -> Result<bool, SvsmError> {
+    let enabled = SVSM_PLATFORM.query_apic_registration_state();
+    if enabled {
+        GUEST_APIC.with(|guest_apic| {
+            *guest_apic.write_noblock() = Some(LocalApic::new());
+        });
+        current_ghcb().configure_interrupt_injection(INT_INJ_VECTOR)?;
+    }
+
+    Ok(enabled)
+}
+
+/// Disable APIC emulation on the current CPU if it is enabled.
+pub fn disable_apic_emulation() {
+    let _ = with_guest_apic_mut(|apic| {
+        let cpu = this_cpu();
+        let mut vmsa_ref = cpu.guest_vmsa_ref();
+        let caa = vmsa_ref.caa();
+        let vmsa = vmsa_ref.vmsa();
+        apic.disable_apic_emulation(vmsa, caa);
+    });
+}
+
+/// Clear pending APIC interrupt state on the current CPU.
+pub fn clear_pending_interrupts() {
+    let _ = with_guest_apic_mut(|apic| {
+        let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+        let caa = vmsa_ref.caa();
+        let vmsa = vmsa_ref.vmsa();
+        apic.check_delivered_interrupts(vmsa, caa);
+    });
+}
+
+/// Update APIC interrupt emulation state for the current CPU.
+pub fn update_apic_emulation(vmsa: &mut VMSA, caa: Option<NonNull<SvsmCaa>>) {
+    let _ = with_guest_apic_mut(|apic| {
+        apic.present_interrupts(this_cpu().shared(), vmsa, caa);
+    });
+}
+
+/// Handle alternate-injection state after a guest intercept.
+pub fn ai_handle_intercepts(vmsa: &mut VMSA) {
+    if !SVSM_PLATFORM.query_apic_registration_state() {
+        return;
+    }
+
+    // Re-inject events when intercept happens.
+    let g_eii = vmsa.guest_exitintinfo;
+    if g_eii.valid() {
+        vmsa.event_inj = g_eii;
+    }
+
+    // Clear busy bit.
+    let mut vintr_ctrl = vmsa.vintr_ctrl;
+    if vintr_ctrl.busy() {
+        vintr_ctrl.set_busy(false);
+        vmsa.vintr_ctrl = vintr_ctrl;
+    }
+}
+
+/// Return whether APIC emulation is enabled on the current CPU.
+pub fn use_apic_emulation() -> bool {
+    GUEST_APIC.with(|guest_apic| guest_apic.read_noblock().is_some())
+}
+
+/// Read an emulated APIC register on the current CPU.
+pub fn read_apic_register(register: u64) -> Result<u64, SvsmError> {
+    let cpu = this_cpu();
+    let mut vmsa_ref = cpu.guest_vmsa_ref();
+    let caa = vmsa_ref.caa();
+    let vmsa = vmsa_ref.vmsa();
+
+    with_guest_apic_mut(|apic| apic.read_register(cpu.shared(), vmsa, caa, register))
+        .ok_or(SvsmError::Apic(ApicError::Disabled))?
+}
+
+/// Write an emulated APIC register on the current CPU.
+pub fn write_apic_register(register: u64, value: u64) -> Result<(), SvsmError> {
+    let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+    let caa = vmsa_ref.caa();
+    let vmsa = vmsa_ref.vmsa();
+
+    with_guest_apic_mut(|apic| apic.write_register(vmsa, caa, register, value))
+        .ok_or(SvsmError::Apic(ApicError::Disabled))?
+}
+
+/// Configure one emulated APIC vector on the current CPU.
+pub fn configure_apic_vector(vector: u8, allowed: bool) -> Result<(), SvsmError> {
+    with_guest_apic_mut(|apic| apic.configure_vector(vector, allowed))
+        .ok_or(SvsmError::Apic(ApicError::Disabled))
+}
+
+/// Configure all emulated APIC vectors on the current CPU.
+pub fn configure_apic_all_vectors(allowed: bool) -> Result<(), SvsmError> {
+    with_guest_apic_mut(|apic| apic.configure_all_vectors(allowed))
+        .ok_or(SvsmError::Apic(ApicError::Disabled))
 }
 
 impl LocalApic {
