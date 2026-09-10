@@ -7,7 +7,6 @@
 use super::idt::common::X86ExceptionContext;
 use crate::address::VirtAddr;
 use crate::cpu::cpuid::cpuid_table;
-use crate::cpu::percpu::current_ghcb;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
 use crate::insn_decode::DecodedInsn;
@@ -15,7 +14,7 @@ use crate::insn_decode::DecodedInsnCtx;
 use crate::insn_decode::Instruction;
 use crate::insn_decode::MAX_INSN_SIZE;
 use crate::mm::TryPtr;
-use crate::sev::ghcb::GHCB;
+use crate::sev::ghcb::{GHCB, with_current_ghcb};
 use core::fmt;
 
 #[cfg(test)]
@@ -108,8 +107,6 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
     // handling. This field is currently reset in the relevant GHCB methods
     // but it would be better to move the reset out of the different
     // handlers.
-    let ghcb = current_ghcb();
-
     let insn_ctx = vc_decode_insn(ctx)?;
 
     match (error_code, insn_ctx.as_ref().and_then(|d| d.insn())) {
@@ -122,9 +119,13 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
         }
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
         (SVM_EXIT_IOIO, Some(_)) => handle_ioio(ctx, &insn_ctx.unwrap()),
-        (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
-        (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
-        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtscp)) => ghcb.rdtscp_regs(&mut ctx.regs),
+        (SVM_EXIT_MSR, Some(ins)) => with_current_ghcb(|ghcb| handle_msr(ctx, ghcb, ins)),
+        (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => {
+            with_current_ghcb(|ghcb| ghcb.rdtsc_regs(&mut ctx.regs))
+        }
+        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtscp)) => {
+            with_current_ghcb(|ghcb| ghcb.rdtscp_regs(&mut ctx.regs))
+        }
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -260,18 +261,21 @@ mod tests {
     const GHCB_FILL_TEST_VALUE: u8 = b'1';
 
     fn fill_ghcb_with_test_data() {
-        current_ghcb().fill(GHCB_FILL_TEST_VALUE);
+        with_current_ghcb(|ghcb| ghcb.fill(GHCB_FILL_TEST_VALUE));
     }
 
     /// Returns `true` if the GHCB was altered since the last time it was filled
     /// with test data.
     fn verify_ghcb_was_altered() -> bool {
-        let ghcb = current_ghcb();
-        let ptr: *const GHCB = core::ptr::from_ref(ghcb);
-        let ghcb_bytes =
-            // SAFETY: The pointer points to a GHCB.
-            unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), core::mem::size_of::<GHCB>()) };
-        ghcb_bytes.iter().any(|v| *v != GHCB_FILL_TEST_VALUE)
+        with_current_ghcb(|ghcb| {
+            let ptr: *const GHCB = core::ptr::from_ref(ghcb);
+            let ghcb_bytes =
+                // SAFETY: The pointer points to a GHCB.
+                unsafe {
+                    core::slice::from_raw_parts(ptr.cast::<u8>(), core::mem::size_of::<GHCB>())
+                };
+            ghcb_bytes.iter().any(|v| *v != GHCB_FILL_TEST_VALUE)
+        })
     }
 
     // Calls `f` with an assertion that it ended up altering the ghcb.

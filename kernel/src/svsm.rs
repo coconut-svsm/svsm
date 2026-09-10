@@ -366,7 +366,7 @@ unsafe fn svsm_start(
     let bsp_percpu = PerCpu::alloc(percpu_shared).expect("Failed to allocate BSP per-cpu data");
 
     bsp_percpu
-        .setup(platform, init_pgtable)
+        .setup(init_pgtable)
         .expect("Failed to setup BSP per-cpu area");
     bsp_percpu
         .setup_on_cpu(platform)

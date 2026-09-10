@@ -53,7 +53,7 @@ fn start_cpu(
     let start_rip: u64 = (start_ap as *const u8) as u64;
     let percpu = PerCpu::alloc(percpu_shared)?;
     let pgtable = this_cpu().get_pgtable().clone_shared()?;
-    percpu.setup(platform, pgtable)?;
+    percpu.setup(pgtable)?;
 
     platform.start_cpu(percpu, start_rip, ap_start_context_ref)?;
 

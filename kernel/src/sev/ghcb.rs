@@ -136,6 +136,27 @@ impl TryFrom<Bytes> for GHCBIOSize {
 #[derive(Debug)]
 pub struct GhcbPage(PageBox<GHCB>);
 
+percpu! {
+    static GHCB_PAGE: GhcbPage;
+}
+
+pub fn setup_ghcb() -> Result<(), SvsmError> {
+    let ghcb = GhcbPage::new()?;
+    assert!(GHCB_PAGE.init(ghcb).is_ok(), "GHCB already initialized");
+    Ok(())
+}
+
+pub fn with_current_ghcb<F, R>(f: F) -> R
+where
+    F: FnOnce(&GHCB) -> R,
+{
+    GHCB_PAGE.with(|ghcb| f(ghcb))
+}
+
+pub fn register_ghcb() -> Result<(), SvsmError> {
+    with_current_ghcb(GHCB::register)
+}
+
 impl GhcbPage {
     pub fn new() -> Result<Self, SvsmError> {
         let page = PageBox::<GHCB>::try_new_zeroed()?;

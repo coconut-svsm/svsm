@@ -9,10 +9,11 @@ extern crate alloc;
 use crate::address::PhysAddr;
 use crate::boot_params::BootParams;
 use crate::cpu::cpuid::copy_cpuid_table_to;
-use crate::cpu::percpu::{PERCPU_VMSAS, current_ghcb, this_cpu, this_cpu_shared};
+use crate::cpu::percpu::{PERCPU_VMSAS, this_cpu, this_cpu_shared};
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
+use crate::sev::ghcb::with_current_ghcb;
 use crate::sev::{PvalidateOp, RMPFlags, pvalidate, rmp_adjust, secrets_page};
 use crate::types::{GUEST_VMPL, PAGE_SIZE, PageSize};
 use crate::utils::{MemoryRegion, zero_mem_region};
@@ -55,8 +56,7 @@ unsafe fn validate_fw_mem_region(
     log::info!("Validating {pstart:#018x}-{pend:#018x}");
 
     if boot_params.page_state_change_required() {
-        current_ghcb()
-            .page_state_change(region, PageStateChangeOp::Private)
+        with_current_ghcb(|ghcb| ghcb.page_state_change(region, PageStateChangeOp::Private))
             .expect("GHCB PSC call failed to validate firmware memory");
     }
 
@@ -325,7 +325,9 @@ pub fn launch_fw(boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
     let sev_features = vmsa.sev_features;
 
     log::info!("Launching Firmware");
-    current_ghcb().register_guest_vmsa(vmsa_pa, 0, GUEST_VMPL as u64, sev_features)?;
+    with_current_ghcb(|ghcb| {
+        ghcb.register_guest_vmsa(vmsa_pa, 0, GUEST_VMPL as u64, sev_features)
+    })?;
 
     Ok(())
 }

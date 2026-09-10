@@ -5,7 +5,7 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use crate::cpu::idt::common::INT_INJ_VECTOR;
-use crate::cpu::percpu::{PERCPU_AREAS, PerCpuShared, current_ghcb, this_cpu};
+use crate::cpu::percpu::{PERCPU_AREAS, PerCpuShared, this_cpu};
 use crate::cpu::x86::apic_post_irq;
 use crate::error::ApicError;
 use crate::error::ApicError::{Emulation, InvalidRegister};
@@ -15,6 +15,7 @@ use crate::mm::TryPtr;
 use crate::platform::SVSM_PLATFORM;
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::requests::SvsmCaa;
+use crate::sev::ghcb::with_current_ghcb;
 use crate::sev::hv_doorbell::HVExtIntStatus;
 use crate::types::GUEST_VMPL;
 
@@ -81,7 +82,7 @@ pub fn init_apic_emulation() -> Result<bool, SvsmError> {
         GUEST_APIC.with(|guest_apic| {
             *guest_apic.write_noblock() = Some(LocalApic::new());
         });
-        current_ghcb().configure_interrupt_injection(INT_INJ_VECTOR)?;
+        with_current_ghcb(|ghcb| ghcb.configure_interrupt_injection(INT_INJ_VECTOR))?;
     }
 
     Ok(enabled)
@@ -444,7 +445,9 @@ impl LocalApic {
     fn perform_host_eoi(vector: u8) {
         // Errors from the host are not expected and cannot be meaningfully
         // handled, so simply log them but do not propagate the error
-        if let Err(e) = current_ghcb().specific_eoi(vector, GUEST_VMPL.try_into().unwrap()) {
+        if let Err(e) =
+            with_current_ghcb(|ghcb| ghcb.specific_eoi(vector, GUEST_VMPL.try_into().unwrap()))
+        {
             log::warn!("Host EOI failed: {e:?}");
         }
     }
@@ -951,12 +954,13 @@ impl LocalApic {
 
         // Finally, ask the host to take over APIC
         // emulation.
-        current_ghcb()
-            .disable_alternate_injection(
+        with_current_ghcb(|ghcb| {
+            ghcb.disable_alternate_injection(
                 cpu_state.get_tpr(),
                 cpu_state.in_intr_shadow(),
                 cpu_state.interrupts_enabled(),
             )
-            .expect("Failed to disable alterate injection");
+        })
+        .expect("Failed to disable alterate injection");
     }
 }
