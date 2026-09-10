@@ -4,7 +4,10 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::apic::{
+    configure_apic_all_vectors, configure_apic_vector, disable_apic_emulation, read_apic_register,
+    use_apic_emulation, write_apic_register,
+};
 use crate::platform::SVSM_PLATFORM;
 use crate::protocols::RequestParams;
 use crate::protocols::errors::SvsmReqError;
@@ -62,28 +65,25 @@ fn apic_configure(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Disable APIC emulation on the current CPU if required.
     if !enabled {
-        this_cpu().disable_apic_emulation();
+        disable_apic_emulation();
     }
 
     Ok(())
 }
 
 fn apic_read_register(params: &mut RequestParams) -> Result<(), SvsmReqError> {
-    let cpu = this_cpu();
-    let value = cpu.read_apic_register(params.rcx)?;
+    let value = read_apic_register(params.rcx)?;
     params.rdx = value;
     Ok(())
 }
 
 fn apic_write_register(params: &RequestParams) -> Result<(), SvsmReqError> {
-    let cpu = this_cpu();
-    cpu.write_apic_register(params.rcx, params.rdx)?;
+    write_apic_register(params.rcx, params.rdx)?;
     Ok(())
 }
 
 fn apic_configure_vector(params: &RequestParams) -> Result<(), SvsmReqError> {
-    let cpu = this_cpu();
-    if !cpu.use_apic_emulation() {
+    if !use_apic_emulation() {
         return Err(SvsmReqError::invalid_request());
     }
 
@@ -94,16 +94,16 @@ fn apic_configure_vector(params: &RequestParams) -> Result<(), SvsmReqError> {
     }
 
     if config.all_vectors() {
-        cpu.configure_apic_all_vectors(config.enable())?;
+        configure_apic_all_vectors(config.enable())?;
     } else {
-        cpu.configure_apic_vector(config.vector(), config.enable())?;
+        configure_apic_vector(config.vector(), config.enable())?;
     }
 
     Ok(())
 }
 
 pub fn apic_protocol_request(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
-    if !this_cpu().use_apic_emulation() {
+    if !use_apic_emulation() {
         return Err(SvsmReqError::unsupported_protocol());
     }
     match request {
