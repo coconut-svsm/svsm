@@ -21,7 +21,7 @@ use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
-use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
+use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, reset_ip};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
 use crate::cpu::x86::{ApicAccess, X86Apic};
 use crate::error::{ApicError, SvsmError};
@@ -72,7 +72,6 @@ use core::ptr::{self, NonNull};
 use core::slice::Iter;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicU32;
-use core::sync::atomic::AtomicU64;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use cpuarch::vmsa::VMSA;
@@ -433,7 +432,6 @@ where
     tss: X86Tss,
     isst: RWLock<Isst>,
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
-    reset_ip: AtomicU64,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
     /// Address allocator for per-cpu 4k temporary mappings
@@ -472,7 +470,6 @@ impl PerCpu {
             tss: X86Tss::new(),
             isst: RWLock::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
-            reset_ip: AtomicU64::new(0xffff_fff0),
             vm_range: {
                 let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL)?;
                 vmr.set_per_cpu(true);
@@ -945,10 +942,6 @@ impl PerCpu {
         }
     }
 
-    pub fn set_reset_ip(&self, reset_ip: u64) {
-        self.reset_ip.store(reset_ip, Ordering::Relaxed);
-    }
-
     /// Fill in the initial context structure for the SVSM.
     pub fn get_initial_context(&self, start_rip: u64) -> hyperv::HvInitialVpContext {
         let data_segment = svsm_data_segment();
@@ -1037,11 +1030,7 @@ impl PerCpu {
         let mut vmsa = VmsaPage::new(RMPFlags::GUEST_VMPL)?;
         let paddr = vmsa.paddr();
 
-        init_guest_vmsa(
-            &mut vmsa,
-            self.reset_ip.load(Ordering::Relaxed),
-            use_alternate_injection,
-        );
+        init_guest_vmsa(&mut vmsa, reset_ip(), use_alternate_injection);
 
         self.shared().update_guest_vmsa(paddr);
         let _ = VmsaPage::leak(vmsa);
