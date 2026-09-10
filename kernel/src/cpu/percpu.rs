@@ -22,7 +22,7 @@ use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, reset_ip};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
-use crate::cpu::x86::{ApicAccess, X86Apic};
+use crate::cpu::x86::apic_id;
 use crate::error::{ApicError, SvsmError};
 use crate::hyperv::HypercallPagesGuard;
 use crate::hyperv::{self, HypercallPage};
@@ -420,9 +420,6 @@ where
     /// address space.
     shared: &'static PerCpuShared,
 
-    /// APIC access object
-    apic: X86Apic,
-
     pgtbl: AtomicUsize,
     cr3: AtomicUsize,
     tss: X86Tss,
@@ -461,7 +458,6 @@ impl PerCpu {
             percpu_area: PerCpuArea::new()?,
             pgtbl: AtomicUsize::new(0),
             cr3: AtomicUsize::new(0),
-            apic: X86Apic::default(),
             tss: X86Tss::new(),
             isst: RWLock::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
@@ -496,19 +492,6 @@ impl PerCpu {
 
     pub fn shared(&self) -> &PerCpuShared {
         self.shared
-    }
-
-    pub fn initialize_apic(&self, accessor: &'static dyn ApicAccess) {
-        self.apic.set_accessor(accessor);
-    }
-
-    /// Get a reference to the [`X86Apic`] object for this cpu.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the [`X86Apic`] object of the local CPU.
-    pub fn get_apic(&self) -> &X86Apic {
-        &self.apic
     }
 
     /// Sets up the CPU-local GHCB page.
@@ -817,7 +800,7 @@ impl PerCpu {
         self.percpu_area.initialize();
         self.percpu_area.load();
         platform.setup_percpu_current(self)?;
-        assert!(self.get_apic().id() == self.get_apic_id());
+        assert!(apic_id() == self.get_apic_id());
         Ok(())
     }
 
