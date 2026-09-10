@@ -24,7 +24,7 @@ use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::cpuid::init_cpuid_table;
 use crate::cpu::features::{Feature, cpu_get_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
-use crate::cpu::percpu::{PerCpu, current_ghcb, this_cpu};
+use crate::cpu::percpu::{PerCpu, this_cpu};
 use crate::cpu::smp::ApStartContextRef;
 use crate::cpu::tlb::TlbFlushScope;
 use crate::cpu::x86::{apic_enable, apic_initialize, apic_sw_enable};
@@ -38,7 +38,7 @@ use crate::mm::PAGE_SIZE_2M;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::memory::write_guest_memory_map;
 use crate::platform::IrqGuard;
-use crate::sev::ghcb::GHCBIOSize;
+use crate::sev::ghcb::{GHCBIOSize, register_ghcb, setup_ghcb, with_current_ghcb};
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::msr_protocol::{
     GHCBHvFeatures, hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version,
@@ -224,15 +224,12 @@ impl SvsmPlatform for SnpPlatform {
         }
     }
 
-    fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
+    fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
         if cpu.shared().cpu_index() == 0 {
             verify_ghcb_version();
         }
-        cpu.setup_ghcb()
-    }
-
-    fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
-        cpu.register_ghcb()?;
+        setup_ghcb()?;
+        register_ghcb()?;
 
         if GHCB_APIC_ACCESSOR.use_restr_inj() {
             cpu.setup_hv_doorbell()?;
@@ -288,16 +285,12 @@ impl SvsmPlatform for SnpPlatform {
         hypercall_pages: &hyperv::HypercallPagesGuard<'_>,
     ) -> hyperv::HvHypercallOutput {
         hyperv::execute_host_hypercall(input_control, hypercall_pages, |registers| {
-            current_ghcb()
-                .vmmcall(registers)
-                .expect("VMMCALL exit failed");
+            with_current_ghcb(|ghcb| ghcb.vmmcall(registers)).expect("VMMCALL exit failed");
         })
     }
 
     unsafe fn write_host_msr(&self, msr: u32, value: u64) {
-        current_ghcb()
-            .wrmsr(msr, value)
-            .expect("Host MSR access failed");
+        with_current_ghcb(|ghcb| ghcb.wrmsr(msr, value)).expect("Host MSR access failed");
     }
 
     fn get_io_port(&self) -> &'static dyn IOPort {
@@ -310,7 +303,7 @@ impl SvsmPlatform for SnpPlatform {
         region: MemoryRegion<PhysAddr>,
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
-        current_ghcb().page_state_change(region, op)
+        with_current_ghcb(|ghcb| ghcb.page_state_change(region, op))
     }
 
     unsafe fn validate_physical_page_range(
@@ -412,7 +405,7 @@ impl SvsmPlatform for SnpPlatform {
     ) -> Result<(), SvsmError> {
         let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, start_rip)?;
 
-        current_ghcb().ap_create(vmsa_pa, cpu.get_apic_id().into(), 0, sev_features)
+        with_current_ghcb(|ghcb| ghcb.ap_create(vmsa_pa, cpu.get_apic_id().into(), 0, sev_features))
     }
 
     fn start_svsm_request_loop(&self) -> bool {
@@ -429,7 +422,7 @@ impl SvsmPlatform for SnpPlatform {
         let paddr = this_cpu().get_pgtable().phys_addr(vaddr)?;
 
         // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
-        unsafe { crate::cpu::percpu::current_ghcb().mmio_write(paddr, data) }
+        with_current_ghcb(|ghcb| unsafe { ghcb.mmio_write(paddr, data) })
     }
 
     /// Perfrom a read from a memory-mapped IO area
@@ -445,7 +438,7 @@ impl SvsmPlatform for SnpPlatform {
     ) -> Result<(), SvsmError> {
         let paddr = this_cpu().get_pgtable().phys_addr(vaddr)?;
         // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
-        unsafe { crate::cpu::percpu::current_ghcb().mmio_read(paddr, data) }
+        with_current_ghcb(|ghcb| unsafe { ghcb.mmio_read(paddr, data) })
     }
 
     fn terminate() -> !
@@ -469,7 +462,7 @@ impl CpuidBackend for SnpPlatform {
         // from the CPUID table.  Otherwise, request the value from the
         // hypervisor.
         if (feature.leaf >> 28) == 4 {
-            current_ghcb().cpuid(feature.leaf, feature.subleaf).ok()
+            with_current_ghcb(|ghcb| ghcb.cpuid(feature.leaf, feature.subleaf)).ok()
         } else {
             cpuid_table(feature.leaf, feature.subleaf)
         }
@@ -487,32 +480,26 @@ impl GHCBIOPort {
 
 impl IOPort for GHCBIOPort {
     fn outb(&self, port: u16, value: u8) {
-        current_ghcb()
-            .ioio_out(port, GHCBIOSize::Size8, value as u64)
-            .unwrap();
+        with_current_ghcb(|ghcb| ghcb.ioio_out(port, GHCBIOSize::Size8, value as u64)).unwrap();
     }
 
     fn inb(&self, port: u16) -> u8 {
-        current_ghcb().ioio_in(port, GHCBIOSize::Size8).unwrap() as u8
+        with_current_ghcb(|ghcb| ghcb.ioio_in(port, GHCBIOSize::Size8)).unwrap() as u8
     }
 
     fn outw(&self, port: u16, value: u16) {
-        current_ghcb()
-            .ioio_out(port, GHCBIOSize::Size16, value as u64)
-            .unwrap();
+        with_current_ghcb(|ghcb| ghcb.ioio_out(port, GHCBIOSize::Size16, value as u64)).unwrap();
     }
 
     fn inw(&self, port: u16) -> u16 {
-        current_ghcb().ioio_in(port, GHCBIOSize::Size16).unwrap() as u16
+        with_current_ghcb(|ghcb| ghcb.ioio_in(port, GHCBIOSize::Size16)).unwrap() as u16
     }
 
     fn outl(&self, port: u16, value: u32) {
-        current_ghcb()
-            .ioio_out(port, GHCBIOSize::Size32, value as u64)
-            .unwrap();
+        with_current_ghcb(|ghcb| ghcb.ioio_out(port, GHCBIOSize::Size32, value as u64)).unwrap();
     }
 
     fn inl(&self, port: u16) -> u32 {
-        current_ghcb().ioio_in(port, GHCBIOSize::Size32).unwrap() as u32
+        with_current_ghcb(|ghcb| ghcb.ioio_in(port, GHCBIOSize::Size32)).unwrap() as u32
     }
 }

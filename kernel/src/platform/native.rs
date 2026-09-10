@@ -100,10 +100,6 @@ impl SvsmPlatform for NativePlatform {
         }
     }
 
-    fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        Ok(())
-    }
-
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
         apic_initialize(&X2APIC_ACCESSOR);
         apic_enable();
