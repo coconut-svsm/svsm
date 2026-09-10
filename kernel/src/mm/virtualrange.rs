@@ -7,6 +7,7 @@
 use crate::address::VirtAddr;
 use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
+use crate::locking::RWLock;
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
@@ -14,7 +15,7 @@ use core::fmt::Debug;
 
 use super::{
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
-    SVSM_PERCPU_TEMP_END_4K,
+    SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_TEMP_SIZE_4K,
 };
 
 pub const VIRT_ALIGN_4K: usize = PAGE_SHIFT - 12;
@@ -26,6 +27,21 @@ pub struct VirtualRange {
     page_count: usize,
     page_shift: usize,
     bits: BitmapAllocator1024,
+}
+
+percpu! {
+    static VRANGE_4K: RWLock<VirtualRange> = RWLock::new(VirtualRange::new());
+}
+
+pub(crate) fn init_vrange_4k() {
+    const PAGE_COUNT: usize = SVSM_PERCPU_TEMP_SIZE_4K / PAGE_SIZE;
+    const { assert!(PAGE_COUNT < VirtualRange::CAPACITY) };
+
+    VRANGE_4K.with(|vrange| {
+        vrange
+            .write_noblock()
+            .init(SVSM_PERCPU_TEMP_BASE_4K, PAGE_COUNT, PAGE_SHIFT);
+    });
 }
 
 impl VirtualRange {
@@ -75,7 +91,7 @@ pub fn virt_log_usage() {
     log::info!(
         "[CPU {}] Virtual memory pages used: {} * 4K, {} * 2M",
         this_cpu().get_cpu_index(),
-        this_cpu().vrange_4k().used_pages() - unused_cap_4k,
+        VRANGE_4K.with(|vrange| vrange.read_noblock().used_pages()) - unused_cap_4k,
         this_cpu().vrange_2m().used_pages() - unused_cap_2m
     );
 }
@@ -94,7 +110,7 @@ impl VRangeAlloc {
             return Err(SvsmError::Mem);
         }
         let page_count = size >> PAGE_SHIFT;
-        let addr = this_cpu().vrange_4k_mut().alloc(page_count, align)?;
+        let addr = VRANGE_4K.with(|vrange| vrange.write_noblock().alloc(page_count, align))?;
         let region = MemoryRegion::new(addr, size);
         Ok(Self {
             region,
@@ -133,9 +149,11 @@ impl Drop for VRangeAlloc {
                 .vrange_2m_mut()
                 .free(region.start(), region.len() >> PAGE_SHIFT_2M);
         } else {
-            this_cpu()
-                .vrange_4k_mut()
-                .free(region.start(), region.len() >> PAGE_SHIFT);
+            VRANGE_4K.with(|vrange| {
+                vrange
+                    .write_noblock()
+                    .free(region.start(), region.len() >> PAGE_SHIFT);
+            });
         }
     }
 }

@@ -31,7 +31,7 @@ use crate::locking::{
 };
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::virtualrange::VirtualRange;
+use crate::mm::virtualrange::{VirtualRange, init_vrange_4k};
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
 use crate::mm::{
     PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU_BASE,
@@ -53,9 +53,7 @@ use crate::task::TaskPointer;
 use crate::task::schedule;
 use crate::task::scheduler_idle;
 use crate::task::wake_and_schedule_task;
-use crate::types::{
-    PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
-};
+use crate::types::{PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS};
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use alloc::boxed::Box;
@@ -426,8 +424,6 @@ where
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
-    /// Address allocator for per-cpu 4k temporary mappings
-    vrange_4k: RWLock<VirtualRange>,
     /// Address allocator for per-cpu 2m temporary mappings
     vrange_2m: RWLock<VirtualRange>,
     /// GHCB page for this CPU.
@@ -463,7 +459,6 @@ impl PerCpu {
                 vmr
             },
 
-            vrange_4k: RWLock::new(VirtualRange::new()),
             vrange_2m: RWLock::new(VirtualRange::new()),
             shared,
             ghcb: ImmutAfterInitCell::uninit(),
@@ -704,14 +699,9 @@ impl PerCpu {
     }
 
     fn initialize_vm_ranges(&self) -> Result<(), SvsmError> {
-        const PAGE_COUNT_4K: usize = SVSM_PERCPU_TEMP_SIZE_4K / PAGE_SIZE;
-        const { assert!(PAGE_COUNT_4K < VirtualRange::CAPACITY) };
-
         let temp_mapping_4k = VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_4K);
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_4K, temp_mapping_4k)?;
-        self.vrange_4k_mut()
-            .init(SVSM_PERCPU_TEMP_BASE_4K, PAGE_COUNT_4K, PAGE_SHIFT);
 
         const PAGE_COUNT_2M: usize = SVSM_PERCPU_TEMP_SIZE_2M / PAGE_SIZE_2M;
         const { assert!(PAGE_COUNT_2M < VirtualRange::CAPACITY) };
@@ -793,6 +783,7 @@ impl PerCpu {
     pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
         self.percpu_area.initialize();
         self.percpu_area.load();
+        init_vrange_4k();
         platform.setup_percpu_current(self)?;
         assert!(apic_id() == self.get_apic_id());
         Ok(())
@@ -1034,14 +1025,6 @@ impl PerCpu {
 
     pub fn current_task(&self) -> TaskPointer {
         self.runqueue().current_task()
-    }
-
-    pub fn vrange_4k(&self) -> ReadLockGuard<'_, VirtualRange> {
-        self.vrange_4k.read_noblock()
-    }
-
-    pub fn vrange_4k_mut(&self) -> WriteLockGuard<'_, VirtualRange> {
-        self.vrange_4k.write_noblock()
     }
 
     pub fn vrange_2m(&self) -> ReadLockGuard<'_, VirtualRange> {
