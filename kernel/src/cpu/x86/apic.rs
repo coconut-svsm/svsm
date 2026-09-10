@@ -4,7 +4,6 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
@@ -93,6 +92,10 @@ fn apic_register_bit(vector: usize) -> (usize, u32) {
 #[derive(Debug, Default)]
 pub struct X86Apic {
     access: ImmutAfterInitCell<&'static dyn ApicAccess>,
+}
+
+percpu! {
+    static X86_APIC: X86Apic = X86Apic::new();
 }
 
 // APIC enable masks
@@ -206,28 +209,28 @@ impl X86Apic {
 /// This method can only be called once per `PerCpu` object, panics on the
 /// second call.
 pub fn apic_initialize(accessor: &'static dyn ApicAccess) {
-    this_cpu().initialize_apic(accessor);
+    X86_APIC.with(|apic| apic.set_accessor(accessor));
 }
 
 /// Enables the X86 local APIC in X2APIC mode by writing to MSR_APIC_BASE.
 pub fn apic_enable() {
-    this_cpu().get_apic().enable();
+    X86_APIC.with(X86Apic::enable);
 }
 
 /// Enables software IRQs in the X86 local APIC by setting the SPIC.SW_ENABLE
 /// bit.
 pub fn apic_sw_enable() {
-    this_cpu().get_apic().sw_enable();
+    X86_APIC.with(X86Apic::sw_enable);
 }
 
 /// Sends an IPI specified by the X86 ICR value.
 pub fn apic_post_irq(icr: u64) {
-    this_cpu().get_apic().icr_write(icr);
+    X86_APIC.with(|apic| apic.icr_write(icr));
 }
 
 /// Send an EOI message
 pub fn apic_eoi() {
-    this_cpu().get_apic().eoi();
+    X86_APIC.with(X86Apic::eoi);
 }
 
 /// Check whether a given IRQ vector is currently being serviced by returning
@@ -241,5 +244,9 @@ pub fn apic_eoi() {
 ///
 /// Returns `True` when the ISR bit for the vector is 1, `False` otherwise.
 pub fn apic_in_service(vector: usize) -> bool {
-    this_cpu().get_apic().check_isr(vector)
+    X86_APIC.with(|apic| apic.check_isr(vector))
+}
+
+pub fn apic_id() -> u32 {
+    X86_APIC.with(X86Apic::id)
 }
