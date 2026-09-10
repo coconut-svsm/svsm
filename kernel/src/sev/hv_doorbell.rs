@@ -3,7 +3,7 @@
 
 use crate::cpu::IrqState;
 use crate::cpu::idt::svsm::common_isr_handler;
-use crate::cpu::irq_state::{raw_get_tpr, tpr_from_vector};
+use crate::cpu::irq_state::{irqs_pop_nesting, irqs_push_nesting, raw_get_tpr, tpr_from_vector};
 use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::mm::page_visibility::SharedBox;
@@ -184,12 +184,11 @@ pub unsafe extern "C" fn process_hv_events(hv_doorbell: *const HVDoorbell) {
     // interrupts were previously enabled, so that any code that deals with
     // maskable interrupts knows that interrupts were enabled prior to reaching
     // this point.
-    let cpu = this_cpu();
-    cpu.irqs_push_nesting(true);
+    irqs_push_nesting(true);
     // SAFETY: the correctness of #HV doorbell page has been guaranteed by the
     // caller.
     unsafe {
         (*hv_doorbell).process_pending_events();
     }
-    cpu.irqs_pop_nesting();
+    irqs_pop_nesting();
 }
