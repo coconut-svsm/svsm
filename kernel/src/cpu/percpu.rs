@@ -23,11 +23,9 @@ use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, reset_ip};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
 use crate::cpu::x86::apic_id;
 use crate::error::SvsmError;
-use crate::hyperv::HypercallPagesGuard;
-use crate::hyperv::{self, HypercallPage};
+use crate::hyperv::{self, allocate_hypercall_pages};
 use crate::locking::{
-    LockGuard, RWLock, RWLockIrqSafe, ReadLockGuardIrqSafe, SpinLock, WriteLockGuard,
-    WriteLockGuardIrqSafe,
+    LockGuard, RWLock, RWLockIrqSafe, ReadLockGuardIrqSafe, SpinLock, WriteLockGuardIrqSafe,
 };
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
@@ -427,9 +425,6 @@ where
     /// GHCB page for this CPU.
     ghcb: ImmutAfterInitCell<GhcbPage>,
 
-    /// Hypercall input/output pages for this CPU if running under Hyper-V.
-    hypercall_pages: RWLock<Option<(HypercallPage, HypercallPage)>>,
-
     /// `#HV` doorbell page for this CPU.
     hv_doorbell: ImmutAfterInitCell<SharedBox<HVDoorbell>>,
 
@@ -459,7 +454,6 @@ impl PerCpu {
 
             shared,
             ghcb: ImmutAfterInitCell::uninit(),
-            hypercall_pages: RWLock::new(None),
             hv_doorbell: ImmutAfterInitCell::uninit(),
             init_shadow_stack: ImmutAfterInitCell::uninit(),
             context_switch_stack: AtomicUsize::new(0),
@@ -488,21 +482,6 @@ impl PerCpu {
 
     fn ghcb(&self) -> Option<&GhcbPage> {
         self.ghcb.try_get_inner().ok()
-    }
-
-    /// Allocates hypercall input/output pages for this CPU.
-    pub fn allocate_hypercall_pages(&self) -> Result<(), SvsmError> {
-        let p1 = HypercallPage::try_new()?;
-        let p2 = HypercallPage::try_new()?;
-        *self.hypercall_pages.write_noblock() = Some((p1, p2));
-        Ok(())
-    }
-
-    pub fn get_hypercall_pages(&self) -> HypercallPagesGuard<'_> {
-        // The hypercall page cell is never mutated, but is borrowed mutably
-        // to ensure that only a single reference can ever be taken at a time.
-        let page_ref = self.hypercall_pages.write_noblock();
-        HypercallPagesGuard::new(WriteLockGuard::map(page_ref, |o| o.as_mut().unwrap()))
     }
 
     pub fn hv_doorbell(&self) -> Option<&HVDoorbell> {
@@ -762,12 +741,6 @@ impl PerCpu {
         // Complete platform-specific initialization.
         platform.setup_percpu(self)?;
 
-        // Allocate hypercall pages if running on Hyper-V, unless this is the
-        // BSP (where they will be allocated later).
-        if self.shared.cpu_index() != 0 && cpu_has_feat(Feature::HyperV) {
-            self.allocate_hypercall_pages()?;
-        }
-
         Ok(())
     }
 
@@ -777,6 +750,10 @@ impl PerCpu {
         self.percpu_area.load();
         init_vrange_4k();
         init_vrange_2m();
+        // The BSP allocates these later, when Hyper-V is initialized.
+        if self.shared.cpu_index() != 0 && cpu_has_feat(Feature::HyperV) {
+            allocate_hypercall_pages()?;
+        }
         platform.setup_percpu_current(self)?;
         assert!(apic_id() == self.get_apic_id());
         Ok(())
