@@ -48,7 +48,6 @@ use crate::cpu::idt::common::SCHEDULE_VECTOR;
 use crate::cpu::irq_state::{irq_nesting_count, raw_get_tpr};
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PERCPU_AREAS;
-use crate::cpu::percpu::PERCPU_PAGING_ROOT_OFFSET;
 use crate::cpu::percpu::PERCPU_SHARED_INDEX_OFFSET;
 use crate::cpu::percpu::PERCPU_SHARED_OFFSET;
 use crate::cpu::percpu::this_cpu;
@@ -760,7 +759,7 @@ global_asm!(
         // table remains correct for the current CPU even if the previous task
         // is scheduled onto another CPU and has its per-CPU address space
         // updated.
-        movq    {PERCPU_PGTBL_OFFSET}(%rdx), %rax
+        movq    %gs:__svsm_percpu_cr3(%rip), %rax
         movq    %rax, %cr3
 
         // Mark the previous task as inactive.  This must be done after
@@ -849,7 +848,6 @@ global_asm!(
     IS_CET_ENABLED = sym IS_CET_ENABLED,
     PERCPU_SHARED_OFFSET = const PERCPU_SHARED_OFFSET,
     PERCPU_SHARED_INDEX_OFFSET = const PERCPU_SHARED_INDEX_OFFSET,
-    PERCPU_PGTBL_OFFSET = const PERCPU_PAGING_ROOT_OFFSET,
     CONTEXT_SWITCH_RESTORE_TOKEN = const CONTEXT_SWITCH_RESTORE_TOKEN.as_usize(),
     options(att_syntax)
 );
