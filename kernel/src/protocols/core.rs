@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::cpu::apic::{clear_pending_interrupts, use_apic_emulation};
 use crate::cpu::percpu::{PERCPU_AREAS, PERCPU_VMSAS, this_cpu};
 use crate::cpu::{flush_tlb_global_sync, flush_tlb_global_sync_page};
 use crate::error::SvsmError;
@@ -250,7 +251,7 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
         SVSM_APIC_PROTOCOL => {
             // The APIC protocol is only supported if the calling CPU supports
             // alternate injection.
-            if this_cpu().use_apic_emulation() {
+            if use_apic_emulation() {
                 protocol_supported(
                     version,
                     APIC_PROTOCOL_VERSION_MIN,
@@ -475,7 +476,7 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Clear any pending interrupt state before remapping the calling area to
     // ensure that any pending lazy EOI has been processed.
-    this_cpu().clear_pending_interrupts();
+    clear_pending_interrupts();
 
     let mut vmsa_ref = this_cpu().guest_vmsa_ref();
     let caa = vmsa_ref.caa_phys();
