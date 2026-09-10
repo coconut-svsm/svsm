@@ -384,10 +384,11 @@ impl PerCpuShared {
 percpu! {
     #[percpu_asm_symbol("__svsm_percpu_context_switch_stack")]
     static CONTEXT_SWITCH_STACK: AtomicUsize = AtomicUsize::new(0);
+    #[percpu_asm_symbol("__svsm_percpu_cr3")]
+    static CR3: AtomicUsize = AtomicUsize::new(0);
 }
 
 // Expose the offsets of critical per-CPU fields to assembly.
-pub const PERCPU_PAGING_ROOT_OFFSET: usize = offset_of!(PerCpu, cr3);
 pub const PERCPU_SHARED_OFFSET: usize = offset_of!(PerCpu, shared);
 pub const PERCPU_SHARED_INDEX_OFFSET: usize = offset_of!(PerCpuShared, cpu_index);
 
@@ -420,7 +421,6 @@ where
     shared: &'static PerCpuShared,
 
     pgtbl: AtomicUsize,
-    cr3: AtomicUsize,
     tss: X86Tss,
     isst: RWLock<Isst>,
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
@@ -445,7 +445,6 @@ impl PerCpu {
         Ok(Self {
             percpu_area: PerCpuArea::new()?,
             pgtbl: AtomicUsize::new(0),
-            cr3: AtomicUsize::new(0),
             tss: X86Tss::new(),
             isst: RWLock::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
@@ -551,9 +550,6 @@ impl PerCpu {
         self.pgtbl
             .compare_exchange(0, vaddr.into(), Ordering::Relaxed, Ordering::Relaxed)
             .unwrap();
-        // Capture the physical address as well for use in task switch.
-        let paddr = virt_to_phys(vaddr);
-        self.cr3.store(paddr.into(), Ordering::Relaxed);
     }
 
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
@@ -723,6 +719,13 @@ impl PerCpu {
     pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
         self.percpu_area.initialize();
         self.percpu_area.load();
+
+        // Publish values prepared by the boot CPU now that this CPU can
+        // access its linker-backed per-CPU keys through %gs.
+        let pgtbl = VirtAddr::from(self.pgtbl.load(Ordering::Relaxed));
+        CR3.with(|cr3| {
+            cr3.store(virt_to_phys(pgtbl).into(), Ordering::Relaxed);
+        });
         CONTEXT_SWITCH_STACK.with(|context_switch_stack| {
             context_switch_stack.store(
                 self.context_switch_stack.load(Ordering::Relaxed),
