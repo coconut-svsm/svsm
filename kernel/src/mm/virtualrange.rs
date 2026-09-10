@@ -15,7 +15,7 @@ use core::fmt::Debug;
 
 use super::{
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
-    SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_TEMP_SIZE_4K,
+    SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_TEMP_SIZE_2M, SVSM_PERCPU_TEMP_SIZE_4K,
 };
 
 pub const VIRT_ALIGN_4K: usize = PAGE_SHIFT - 12;
@@ -31,6 +31,7 @@ pub struct VirtualRange {
 
 percpu! {
     static VRANGE_4K: RWLock<VirtualRange> = RWLock::new(VirtualRange::new());
+    static VRANGE_2M: RWLock<VirtualRange> = RWLock::new(VirtualRange::new());
 }
 
 pub(crate) fn init_vrange_4k() {
@@ -41,6 +42,17 @@ pub(crate) fn init_vrange_4k() {
         vrange
             .write_noblock()
             .init(SVSM_PERCPU_TEMP_BASE_4K, PAGE_COUNT, PAGE_SHIFT);
+    });
+}
+
+pub(crate) fn init_vrange_2m() {
+    const PAGE_COUNT: usize = SVSM_PERCPU_TEMP_SIZE_2M / PAGE_SIZE_2M;
+    const { assert!(PAGE_COUNT < VirtualRange::CAPACITY) };
+
+    VRANGE_2M.with(|vrange| {
+        vrange
+            .write_noblock()
+            .init(SVSM_PERCPU_TEMP_BASE_2M, PAGE_COUNT, PAGE_SHIFT_2M);
     });
 }
 
@@ -92,7 +104,7 @@ pub fn virt_log_usage() {
         "[CPU {}] Virtual memory pages used: {} * 4K, {} * 2M",
         this_cpu().get_cpu_index(),
         VRANGE_4K.with(|vrange| vrange.read_noblock().used_pages()) - unused_cap_4k,
-        this_cpu().vrange_2m().used_pages() - unused_cap_2m
+        VRANGE_2M.with(|vrange| vrange.read_noblock().used_pages()) - unused_cap_2m
     );
 }
 
@@ -125,7 +137,7 @@ impl VRangeAlloc {
             return Err(SvsmError::Mem);
         }
         let page_count = size >> PAGE_SHIFT_2M;
-        let addr = this_cpu().vrange_2m_mut().alloc(page_count, align)?;
+        let addr = VRANGE_2M.with(|vrange| vrange.write_noblock().alloc(page_count, align))?;
         let region = MemoryRegion::new(addr, size);
         Ok(Self { region, huge: true })
     }
@@ -145,9 +157,11 @@ impl Drop for VRangeAlloc {
     fn drop(&mut self) {
         let region = self.region();
         if self.huge {
-            this_cpu()
-                .vrange_2m_mut()
-                .free(region.start(), region.len() >> PAGE_SHIFT_2M);
+            VRANGE_2M.with(|vrange| {
+                vrange
+                    .write_noblock()
+                    .free(region.start(), region.len() >> PAGE_SHIFT_2M);
+            });
         } else {
             VRANGE_4K.with(|vrange| {
                 vrange
