@@ -14,7 +14,6 @@ use super::msr::write_msr;
 use super::shadow_stack::{ISST_ADDR, init_shadow_stack, is_cet_ss_enabled};
 use super::tss::{IST_DF, X86Tss};
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::IrqState;
 use crate::cpu::LocalApic;
 use crate::cpu::ShadowStackInit;
 use crate::cpu::control_regs::{read_cr0, read_cr4};
@@ -424,9 +423,6 @@ where
     /// APIC access object
     apic: X86Apic,
 
-    /// PerCpu IRQ state tracking
-    irq_state: IrqState,
-
     pgtbl: AtomicUsize,
     cr3: AtomicUsize,
     tss: X86Tss,
@@ -466,7 +462,6 @@ impl PerCpu {
             pgtbl: AtomicUsize::new(0),
             cr3: AtomicUsize::new(0),
             apic: X86Apic::default(),
-            irq_state: IrqState::new(),
             tss: X86Tss::new(),
             isst: RWLock::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
@@ -516,80 +511,6 @@ impl PerCpu {
         &self.apic
     }
 
-    /// Disables IRQs on the current CPU. Keeps track of the nesting level and
-    /// the original IRQ state.
-    ///
-    /// Caller needs to make sure to match every `disable()` call with an
-    /// `enable()` call.
-    #[inline(always)]
-    pub fn irqs_disable(&self) {
-        self.irq_state.disable();
-    }
-
-    /// Reduces IRQ-disable nesting level on the current CPU and restores the
-    /// original IRQ state when the level reaches 0.
-    ///
-    /// Caller needs to make sure to match every `disable()` call with an
-    /// `enable()` call.
-    #[inline(always)]
-    pub fn irqs_enable(&self) {
-        self.irq_state.enable();
-    }
-
-    /// Increments IRQ-disable nesting level on the current CPU without
-    /// disabling interrupts.  This is used by exception and interrupt dispatch
-    /// routines that have already disabled interrupts.
-    ///
-    /// Caller needs to make sure to match every `push_nesting()` call with a
-    /// `pop_nesting()` call.
-    #[inline(always)]
-    pub fn irqs_push_nesting(&self, was_enabled: bool) {
-        self.irq_state.push_nesting(was_enabled);
-    }
-
-    /// Reduces IRQ-disable nesting level on the current CPU without restoring
-    /// the original IRQ state original IRQ state.  This is used by exception
-    /// and interrupt dispatch routines that will restore interrupt state
-    /// naturally.
-    ///
-    /// Caller needs to make sure to match every `disable()` call with a
-    /// `pop_state()` call.
-    #[inline(always)]
-    pub fn irqs_pop_nesting(&self) {
-        let _ = self.irq_state.pop_nesting();
-    }
-
-    /// Get IRQ-disable nesting count on the current CPU
-    ///
-    /// # Returns
-    ///
-    /// Current nesting depth of irq_disable() calls.
-    pub fn irq_nesting_count(&self) -> i32 {
-        self.irq_state.count()
-    }
-
-    /// Raises TPR on the current CPU.  Keeps track of the nesting level.
-    ///
-    /// The caller must ensure that every `raise_tpr()` call is followed by a
-    /// matching call to `lower_tpr()`.
-    #[inline(always)]
-    pub fn raise_tpr(&self, tpr_value: usize) {
-        self.irq_state.raise_tpr(tpr_value);
-    }
-
-    /// Lowers TPR from the current level to the new level required by the
-    /// current nesting state.
-    ///
-    /// The caller must ensure that a `lower_tpr()` call balances a preceding
-    /// `raise_tpr()` call to the indicated level.
-    ///
-    /// * `tpr_value` - The TPR from which the caller would like to lower.
-    ///   Must be less than or equal to the current TPR.
-    #[inline(always)]
-    pub fn lower_tpr(&self, tpr_value: usize) {
-        self.irq_state.lower_tpr(tpr_value);
-    }
-
     /// Sets up the CPU-local GHCB page.
     pub fn setup_ghcb(&self) -> Result<(), SvsmError> {
         self.ghcb.try_init_from_fn(GhcbPage::new)?;
@@ -621,7 +542,9 @@ impl PerCpu {
 
     pub fn process_hv_events_if_required(&self) {
         if let Ok(doorbell) = self.hv_doorbell.try_get_inner() {
-            doorbell.process_if_required(&self.irq_state);
+            crate::cpu::irq_state::with_irq_state(|irq_state| {
+                doorbell.process_if_required(irq_state)
+            });
         }
     }
 
@@ -1217,7 +1140,7 @@ impl PerCpu {
     }
 
     pub fn schedule_init(&self) -> TaskPointer {
-        self.irq_state.set_restore_state(true);
+        crate::cpu::irq_state::with_irq_state(|irq_state| irq_state.set_restore_state(true));
         let task = self.runqueue_mut().schedule_init();
         self.set_current_stack(task.stack_bounds());
         task
@@ -1302,57 +1225,6 @@ pub fn this_cpu_shared() -> &'static PerCpuShared {
     this_cpu().shared()
 }
 
-/// Disables IRQs on the current CPU. Keeps track of the nesting level and
-/// the original IRQ state.
-///
-/// Caller needs to make sure to match every `irqs_disable()` call with an
-/// `irqs_enable()` call.
-#[inline(always)]
-pub fn irqs_disable() {
-    this_cpu().irqs_disable();
-}
-
-/// Reduces IRQ-disable nesting level on the current CPU and restores the
-/// original IRQ state when the level reaches 0.
-///
-/// Caller needs to make sure to match every `irqs_disable()` call with an
-/// `irqs_enable()` call.
-#[inline(always)]
-pub fn irqs_enable() {
-    this_cpu().irqs_enable();
-}
-
-/// Get IRQ-disable nesting count on the current CPU
-///
-/// # Returns
-///
-/// Current nesting depth of irq_disable() calls.
-pub fn irq_nesting_count() -> i32 {
-    this_cpu().irq_nesting_count()
-}
-
-/// Raises TPR on the current CPU.  Keeps track of the nesting level.
-///
-/// The caller must ensure that every `raise_tpr()` call is followed by a
-/// matching call to `lower_tpr()`.
-#[inline(always)]
-pub fn raise_tpr(tpr_value: usize) {
-    this_cpu().raise_tpr(tpr_value);
-}
-
-/// Lowers TPR from the current level to the new level required by the
-/// current nesting state.
-///
-/// The caller must ensure that a `lower_tpr()` call balances a preceding
-/// `raise_tpr()` call to the indicated level.
-///
-/// * `tpr_value` - The TPR from which the caller would like to lower.
-///   Must be less than or equal to the current TPR.
-#[inline(always)]
-pub fn lower_tpr(tpr_value: usize) {
-    this_cpu().lower_tpr(tpr_value);
-}
-
 /// Gets the GHCB for this CPU.
 ///
 /// # Panics
@@ -1362,7 +1234,6 @@ pub fn lower_tpr(tpr_value: usize) {
 pub fn current_ghcb() -> &'static GHCB {
     this_cpu().ghcb().unwrap()
 }
-
 #[derive(Debug, Clone, Copy)]
 pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,

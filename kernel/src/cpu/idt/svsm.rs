@@ -19,7 +19,10 @@ use super::common::{
 };
 use crate::address::VirtAddr;
 use crate::cpu::X86ExceptionContext;
-use crate::cpu::irq_state::{raw_get_tpr, raw_set_tpr, tpr_from_vector};
+use crate::cpu::irq_state::{
+    irqs_disable, irqs_enable, irqs_pop_nesting, irqs_push_nesting, raw_get_tpr, raw_set_tpr,
+    tpr_from_vector,
+};
 use crate::cpu::registers::RFlags;
 use crate::cpu::shadow_stack::IS_CET_ENABLED;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
@@ -467,15 +470,14 @@ pub extern "C" fn common_isr_handler_entry(vector: usize) {
     // while the handler is running in case common code attempts to disable
     // interrupts temporarily.  The fact that this interrupt was received
     // means that the previous state must have had interrupts enabled.
-    let cpu = this_cpu();
-    cpu.irqs_push_nesting(true);
+    irqs_push_nesting(true);
 
     common_isr_handler(vector);
 
     // Decrement the interrupt disable nesting count, but do not permit
     // interrupts to be reenabled.  They will be reenabled during the IRET
     // flow.
-    cpu.irqs_pop_nesting();
+    irqs_pop_nesting();
 }
 
 pub fn common_isr_handler(vector: usize) {
@@ -486,8 +488,7 @@ pub fn common_isr_handler(vector: usize) {
     let previous_tpr = raw_get_tpr();
     raw_set_tpr(tpr_from_vector(vector));
 
-    let cpu = this_cpu();
-    cpu.irqs_enable();
+    irqs_enable();
 
     // Process the requested interrupt vector.
     match vector {
@@ -502,7 +503,7 @@ pub fn common_isr_handler(vector: usize) {
     }
 
     // Disable interrupts before restoring TPR.
-    cpu.irqs_disable();
+    irqs_disable();
     raw_set_tpr(previous_tpr);
 
     // Perform the EOI cycle after the interrupt processing state has been

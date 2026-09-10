@@ -45,14 +45,13 @@ use super::{
 use crate::address::{Address, VirtAddr};
 use crate::cpu::IrqGuard;
 use crate::cpu::idt::common::SCHEDULE_VECTOR;
-use crate::cpu::irq_state::raw_get_tpr;
+use crate::cpu::irq_state::{irq_nesting_count, raw_get_tpr};
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PERCPU_AREAS;
 use crate::cpu::percpu::PERCPU_CTXT_SWITCH_STACK_OFFSET;
 use crate::cpu::percpu::PERCPU_PAGING_ROOT_OFFSET;
 use crate::cpu::percpu::PERCPU_SHARED_INDEX_OFFSET;
 use crate::cpu::percpu::PERCPU_SHARED_OFFSET;
-use crate::cpu::percpu::irq_nesting_count;
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::shadow_stack::{IS_CET_ENABLED, PL0_SSP, is_cet_ss_enabled};
 use crate::cpu::sse::{sse_restore_context, sse_save_context};
