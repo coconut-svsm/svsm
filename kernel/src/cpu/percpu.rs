@@ -40,7 +40,7 @@ use crate::mm::{
 };
 use crate::platform::SvsmPlatform;
 use crate::requests::SvsmCaa;
-use crate::sev::ghcb::{GHCB, GhcbPage};
+use crate::sev::ghcb::with_current_ghcb;
 use crate::sev::hv_doorbell::{HVDoorbell, allocate_hv_doorbell_page};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
@@ -423,9 +423,6 @@ where
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
-    /// GHCB page for this CPU.
-    ghcb: ImmutAfterInitCell<GhcbPage>,
-
     /// `#HV` doorbell page for this CPU.
     hv_doorbell: ImmutAfterInitCell<SharedBox<HVDoorbell>>,
 
@@ -454,7 +451,6 @@ impl PerCpu {
             },
 
             shared,
-            ghcb: ImmutAfterInitCell::uninit(),
             hv_doorbell: ImmutAfterInitCell::uninit(),
             init_shadow_stack: ImmutAfterInitCell::uninit(),
             context_switch_stack: AtomicUsize::new(0),
@@ -473,16 +469,6 @@ impl PerCpu {
 
     pub fn shared(&self) -> &PerCpuShared {
         self.shared
-    }
-
-    /// Sets up the CPU-local GHCB page.
-    pub fn setup_ghcb(&self) -> Result<(), SvsmError> {
-        self.ghcb.try_init_from_fn(GhcbPage::new)?;
-        Ok(())
-    }
-
-    fn ghcb(&self) -> Option<&GhcbPage> {
-        self.ghcb.try_get_inner().ok()
     }
 
     pub fn hv_doorbell(&self) -> Option<&HVDoorbell> {
@@ -667,19 +653,9 @@ impl PerCpu {
         self.get_pgtable().clone_shared()
     }
 
-    /// Registers an already set up GHCB page for this CPU.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the GHCB for this CPU has not been set up via
-    /// [`PerCpu::setup_ghcb()`].
-    pub fn register_ghcb(&self) -> Result<(), SvsmError> {
-        self.ghcb().unwrap().register()
-    }
-
     pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
         self.hv_doorbell
-            .try_init_from_fn(|| allocate_hv_doorbell_page(current_ghcb()))?;
+            .try_init_from_fn(|| with_current_ghcb(allocate_hv_doorbell_page))?;
         Ok(())
     }
 
@@ -727,11 +703,7 @@ impl PerCpu {
         self.vm_range.dump_ranges();
     }
 
-    pub fn setup(
-        &self,
-        platform: &dyn SvsmPlatform,
-        pgtable: PageBox<PageTable>,
-    ) -> Result<(), SvsmError> {
+    pub fn setup(&self, pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
         // SAFETY: The per-CPU address range is fully aligned to top-level
         // paging boundaries.
         unsafe {
@@ -773,9 +745,6 @@ impl PerCpu {
         }
 
         self.install_pagetable(pgtable);
-
-        // Complete platform-specific initialization.
-        platform.setup_percpu(self)?;
 
         Ok(())
     }
@@ -1077,15 +1046,6 @@ pub fn this_cpu_shared() -> &'static PerCpuShared {
     this_cpu().shared()
 }
 
-/// Gets the GHCB for this CPU.
-///
-/// # Panics
-///
-/// Panics if the GHCB for this CPU has not been set up via
-/// [`PerCpu::setup_ghcb()`].
-pub fn current_ghcb() -> &'static GHCB {
-    this_cpu().ghcb().unwrap()
-}
 #[derive(Debug, Clone, Copy)]
 pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,
