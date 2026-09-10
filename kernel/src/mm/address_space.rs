@@ -181,9 +181,6 @@ pub const SVSM_GLOBAL_MAPPING_BASE: VirtAddr = SVSM_GLOBAL_BASE.const_add(256 * 
 /// Shared mappings region end
 pub const SVSM_GLOBAL_MAPPING_END: VirtAddr = SVSM_GLOBAL_MAPPING_BASE.const_add(SIZE_1G);
 
-/// Mapping address for Hyper-V hypercall page.
-pub const SVSM_HYPERCALL_CODE_PAGE: VirtAddr = SVSM_GLOBAL_MAPPING_BASE.const_sub(PAGE_SIZE);
-
 /// PerCPU mappings level 3 index
 pub const PGTABLE_LVL3_IDX_PERCPU: usize = 510;
 
