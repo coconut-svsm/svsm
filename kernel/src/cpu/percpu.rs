@@ -26,12 +26,12 @@ use crate::error::SvsmError;
 use crate::hyperv::HypercallPagesGuard;
 use crate::hyperv::{self, HypercallPage};
 use crate::locking::{
-    LockGuard, RWLock, RWLockIrqSafe, ReadLockGuard, ReadLockGuardIrqSafe, SpinLock,
-    WriteLockGuard, WriteLockGuardIrqSafe,
+    LockGuard, RWLock, RWLockIrqSafe, ReadLockGuardIrqSafe, SpinLock, WriteLockGuard,
+    WriteLockGuardIrqSafe,
 };
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::virtualrange::{VirtualRange, init_vrange_4k};
+use crate::mm::virtualrange::{init_vrange_2m, init_vrange_4k};
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
 use crate::mm::{
     PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU_BASE,
@@ -53,7 +53,7 @@ use crate::task::TaskPointer;
 use crate::task::schedule;
 use crate::task::scheduler_idle;
 use crate::task::wake_and_schedule_task;
-use crate::types::{PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS};
+use crate::types::{PAGE_SIZE, SVSM_TR_ATTRIBUTES, SVSM_TSS};
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use alloc::boxed::Box;
@@ -424,8 +424,6 @@ where
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
-    /// Address allocator for per-cpu 2m temporary mappings
-    vrange_2m: RWLock<VirtualRange>,
     /// GHCB page for this CPU.
     ghcb: ImmutAfterInitCell<GhcbPage>,
 
@@ -459,7 +457,6 @@ impl PerCpu {
                 vmr
             },
 
-            vrange_2m: RWLock::new(VirtualRange::new()),
             shared,
             ghcb: ImmutAfterInitCell::uninit(),
             hypercall_pages: RWLock::new(None),
@@ -703,14 +700,9 @@ impl PerCpu {
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_4K, temp_mapping_4k)?;
 
-        const PAGE_COUNT_2M: usize = SVSM_PERCPU_TEMP_SIZE_2M / PAGE_SIZE_2M;
-        const { assert!(PAGE_COUNT_2M < VirtualRange::CAPACITY) };
-
         let temp_mapping_2m = VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_2M);
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_2M, temp_mapping_2m)?;
-        self.vrange_2m_mut()
-            .init(SVSM_PERCPU_TEMP_BASE_2M, PAGE_COUNT_2M, PAGE_SHIFT_2M);
 
         Ok(())
     }
@@ -784,6 +776,7 @@ impl PerCpu {
         self.percpu_area.initialize();
         self.percpu_area.load();
         init_vrange_4k();
+        init_vrange_2m();
         platform.setup_percpu_current(self)?;
         assert!(apic_id() == self.get_apic_id());
         Ok(())
@@ -1025,14 +1018,6 @@ impl PerCpu {
 
     pub fn current_task(&self) -> TaskPointer {
         self.runqueue().current_task()
-    }
-
-    pub fn vrange_2m(&self) -> ReadLockGuard<'_, VirtualRange> {
-        self.vrange_2m.read_noblock()
-    }
-
-    pub fn vrange_2m_mut(&self) -> WriteLockGuard<'_, VirtualRange> {
-        self.vrange_2m.write_noblock()
     }
 
     /// # Safety
