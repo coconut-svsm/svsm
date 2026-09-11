@@ -7,13 +7,12 @@
 extern crate alloc;
 
 use super::features::{Feature, cpu_has_feat};
-use super::gdt::GDT;
 use super::ipi::IpiState;
 use super::isst::Isst;
 use super::msr::write_msr;
 use super::shadow_stack::{ISST_ADDR, init_shadow_stack, is_cet_ss_enabled};
 use super::smp::init_percpu_shared;
-use super::tss::{IST_DF, X86Tss};
+use super::tss::{IST_DF, setup_tss, tss_address};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::ShadowStackInit;
 use crate::cpu::apic::init_apic_emulation;
@@ -418,7 +417,6 @@ where
     shared: &'static PerCpuShared,
 
     pgtbl: AtomicUsize,
-    tss: X86Tss,
     isst: RWLock<Isst>,
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     /// PerCpu Virtual Memory Range
@@ -436,7 +434,6 @@ impl PerCpu {
         Ok(Self {
             percpu_area: PerCpuArea::new()?,
             pgtbl: AtomicUsize::new(0),
-            tss: X86Tss::new(),
             isst: RWLock::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
             vm_range: {
@@ -582,14 +579,6 @@ impl PerCpu {
         }
     }
 
-    fn setup_tss(&self) {
-        let double_fault_stack = self.get_top_of_df_stack().unwrap();
-        // SAFETY: the stck pointer is known to be correct.
-        unsafe {
-            self.tss.set_ist_stack(IST_DF, double_fault_stack);
-        }
-    }
-
     fn setup_isst(&self) {
         let double_fault_shadow_stack = self.get_top_of_df_shadow_stack().unwrap();
         self.isst
@@ -652,9 +641,6 @@ impl PerCpu {
         // Allocate IST stacks
         self.allocate_ist_stacks()?;
 
-        // Setup TSS
-        self.setup_tss();
-
         if cpu_has_feat(Feature::CetSS) {
             // Allocate ISST shadow stacks
             self.allocate_isst_shadow_stacks()?;
@@ -690,6 +676,7 @@ impl PerCpu {
             );
         });
         init_current_stack();
+        setup_tss(self.get_top_of_df_stack().unwrap());
         init_vrange_4k();
         init_vrange_2m();
     }
@@ -724,17 +711,6 @@ impl PerCpu {
         self.setup_idle_task_internal(start_info)
     }
 
-    pub fn load_gdt_tss(&'static self, init_gdt: bool) {
-        // Create a temporary GDT to use to configure the TSS.
-        let mut gdt = GDT::new();
-        gdt.load();
-        // Load the GDT selectors if requested.
-        if init_gdt {
-            gdt.load_selectors();
-        }
-        gdt.load_tss(&self.tss);
-    }
-
     pub fn load_isst(&self) {
         let isst = self.isst.as_ptr();
         // SAFETY: ISST is already setup when this is called.
@@ -745,7 +721,7 @@ impl PerCpu {
         // SAFETY: along with the page table we are also uploading the right
         // TSS and ISST to ensure a memory safe execution state
         unsafe { self.get_pgtable().load() };
-        self.load_gdt_tss(false);
+        super::tss::load_gdt_tss(false);
         if is_cet_ss_enabled() {
             self.load_isst();
         }
@@ -888,7 +864,7 @@ impl PerCpu {
             selector: SVSM_TSS,
             attributes: SVSM_TR_ATTRIBUTES,
             limit: TSS_LIMIT as u32,
-            base: &raw const self.tss as u64,
+            base: tss_address(self),
         }
     }
 
@@ -943,17 +919,6 @@ impl PerCpu {
 
     pub fn current_task(&self) -> TaskPointer {
         self.runqueue().current_task()
-    }
-
-    /// # Safety
-    /// No checks are performed on the stack address.  The caller must
-    /// ensure that the address is valid for stack usage.
-    pub unsafe fn set_tss_rsp0(&self, addr: VirtAddr) {
-        // SAFETY: the caller has guaranteed the correctness of the stack
-        // pointer.
-        unsafe {
-            self.tss.set_rsp0(addr);
-        }
     }
 }
 

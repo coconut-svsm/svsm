@@ -52,6 +52,7 @@ use crate::cpu::percpu::PERCPU_SHARED_INDEX_OFFSET;
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::shadow_stack::{IS_CET_ENABLED, PL0_SSP, is_cet_ss_enabled};
 use crate::cpu::sse::{sse_restore_context, sse_save_context};
+use crate::cpu::tss::set_tss_rsp0;
 use crate::cpu::x86::apic_post_irq;
 use crate::error::SvsmError;
 use crate::fs::Directory;
@@ -660,7 +661,7 @@ fn select_new_task(reschedule: bool, irq_guard: Option<IrqGuard>) {
 
         // SAFETY: ths stack pointer is known to be correct.
         unsafe {
-            this_cpu().set_tss_rsp0(next.stack_bounds.end());
+            set_tss_rsp0(next.stack_bounds.end());
         }
         if is_cet_ss_enabled() {
             // SAFETY: Task::exception_shadow_stack is always initialized when

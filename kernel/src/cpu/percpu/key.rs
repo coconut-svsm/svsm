@@ -255,6 +255,27 @@ impl<T: 'static> PerCpuKey<T> {
         }
     }
 
+    /// Return the address of this key's value in a specific per-CPU area.
+    #[cfg(target_os = "none")]
+    pub(crate) fn ptr_for(&'static self, percpu: &PerCpu) -> *const T {
+        unsafe extern "C" {
+            static percpu_start: u8;
+        }
+
+        let template_start = ptr::addr_of!(percpu_start) as usize;
+        let template_addr = ptr::from_ref(self.template) as usize;
+        let offset = template_addr
+            .checked_sub(template_start)
+            .expect("per-CPU variable is outside the .percpu section");
+        (percpu.percpu_area.base() + offset) as *const T
+    }
+
+    /// Return the address of this key's value in the host-side template.
+    #[cfg(not(target_os = "none"))]
+    pub(crate) fn ptr_for(&'static self, _percpu: &PerCpu) -> *const T {
+        self.template.value.get().cast::<T>()
+    }
+
     #[cfg(target_os = "none")]
     fn storage(&'static self) -> &'static PerCpuStorage<T> {
         unsafe extern "C" {
