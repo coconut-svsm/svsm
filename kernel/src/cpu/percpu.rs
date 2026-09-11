@@ -12,6 +12,7 @@ use super::ipi::IpiState;
 use super::isst::Isst;
 use super::msr::write_msr;
 use super::shadow_stack::{ISST_ADDR, init_shadow_stack, is_cet_ss_enabled};
+use super::smp::init_percpu_shared;
 use super::tss::{IST_DF, X86Tss};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::ShadowStackInit;
@@ -388,8 +389,7 @@ percpu! {
     static CR3: AtomicUsize = AtomicUsize::new(0);
 }
 
-// Expose the offsets of critical per-CPU fields to assembly.
-pub const PERCPU_SHARED_OFFSET: usize = offset_of!(PerCpu, shared);
+// Expose the offset of critical shared per-CPU fields to assembly.
 pub const PERCPU_SHARED_INDEX_OFFSET: usize = offset_of!(PerCpuShared, cpu_index);
 
 const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
@@ -719,6 +719,7 @@ impl PerCpu {
     pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
         self.percpu_area.initialize();
         self.percpu_area.load();
+        init_percpu_shared(self.shared);
 
         // Publish values prepared by the boot CPU now that this CPU can
         // access its linker-backed per-CPU keys through %gs.
@@ -1022,10 +1023,6 @@ pub fn try_this_cpu() -> Option<&'static PerCpu> {
                 options(att_syntax, nostack));
     }
     if rcx == 0 { Some(this_cpu()) } else { None }
-}
-
-pub fn this_cpu_shared() -> &'static PerCpuShared {
-    this_cpu().shared()
 }
 
 #[derive(Debug, Clone, Copy)]
