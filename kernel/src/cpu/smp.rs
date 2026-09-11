@@ -8,7 +8,7 @@ use super::idt::load_static_idt;
 use crate::acpi::tables::ACPICPUInfo;
 use crate::address::PhysAddr;
 use crate::address::{Address, VirtAddr};
-use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu, this_cpu_shared};
+use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu};
 use crate::cpu::shadow_stack::{MODE_64BIT, S_CET, SCetFlags, is_cet_ss_enabled};
 use crate::cpu::sse::sse_init;
 use crate::cpu::tlb::set_tlb_flush_smp;
@@ -23,6 +23,19 @@ use crate::utils::MemoryRegion;
 use bootdefs::kernel_launch::ApStartContext;
 use core::arch::global_asm;
 use cpuarch::x86::EFERFlags;
+
+percpu! {
+    #[percpu_asm_symbol("__svsm_percpu_shared")]
+    static PERCPU_SHARED: &'static PerCpuShared;
+}
+
+pub(super) fn init_percpu_shared(percpu_shared: &'static PerCpuShared) {
+    assert!(PERCPU_SHARED.init(percpu_shared).is_ok());
+}
+
+pub fn this_cpu_shared() -> &'static PerCpuShared {
+    PERCPU_SHARED.with(|percpu_shared| *percpu_shared)
+}
 
 #[derive(Debug)]
 pub struct ApStartContextRef {
