@@ -9,7 +9,9 @@ use crate::acpi::tables::ACPICPUInfo;
 use crate::address::PhysAddr;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu};
-use crate::cpu::shadow_stack::{MODE_64BIT, S_CET, SCetFlags, is_cet_ss_enabled};
+use crate::cpu::shadow_stack::{
+    MODE_64BIT, S_CET, SCetFlags, initial_shadow_stack, is_cet_ss_enabled,
+};
 use crate::cpu::sse::sse_init;
 use crate::cpu::tlb::set_tlb_flush_smp;
 use crate::cpu::tss::load_gdt_tss;
@@ -216,9 +218,10 @@ pub fn set_ap_start_context(
 #[unsafe(no_mangle)]
 extern "C" fn start_ap() -> ! {
     let percpu = this_cpu();
+    percpu.setup_percpu_keys();
 
     if is_cet_ss_enabled() {
-        let ssp_token = percpu.get_top_of_shadow_stack().unwrap();
+        let ssp_token = initial_shadow_stack().unwrap();
         enable_shadow_stacks!(ssp_token);
     }
 
