@@ -18,7 +18,7 @@ use crate::hyperv;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::STACK_SIZE;
 use crate::platform::{SVSM_PLATFORM, SvsmPlatform};
-use crate::task::schedule_init;
+use crate::task::{schedule_init, set_current_stack};
 use crate::utils::MemoryRegion;
 use bootdefs::kernel_launch::ApStartContext;
 use core::arch::global_asm;
@@ -118,8 +118,13 @@ extern "C" fn start_ap_setup(top_of_stack: u64) {
     // Initialize the GDT, TSS, and IDT.
     this_cpu().load_gdt_tss(true);
     load_static_idt();
+
+    // Loading the GS selector above resets its base, so install the per-CPU
+    // area only after the segment registers have their final values.
+    this_cpu().setup_percpu_keys();
+
     // Now the stack unwinder can be used
-    this_cpu().set_current_stack(MemoryRegion::new(
+    set_current_stack(MemoryRegion::new(
         VirtAddr::from(top_of_stack)
             .checked_sub(STACK_SIZE)
             .unwrap(),

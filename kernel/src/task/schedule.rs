@@ -55,9 +55,10 @@ use crate::cpu::sse::{sse_restore_context, sse_save_context};
 use crate::cpu::x86::apic_post_irq;
 use crate::error::SvsmError;
 use crate::fs::Directory;
-use crate::locking::SpinLock;
+use crate::locking::{RWLock, SpinLock};
 use crate::mm::SVSM_CONTEXT_SWITCH_SHADOW_STACK;
 use crate::platform::SVSM_PLATFORM;
+use crate::utils::MemoryRegion;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::arch::global_asm;
@@ -65,6 +66,26 @@ use core::mem::offset_of;
 use core::ptr::null_mut;
 use cpuarch::x86apic::ApicIcr;
 use intrusive_collections::LinkedList;
+
+percpu! {
+    static CURRENT_STACK: RWLock<MemoryRegion<VirtAddr>>;
+}
+
+pub(crate) fn init_current_stack() {
+    assert!(
+        CURRENT_STACK
+            .init(RWLock::new(MemoryRegion::new(VirtAddr::null(), 0)))
+            .is_ok()
+    );
+}
+
+pub fn current_stack() -> MemoryRegion<VirtAddr> {
+    CURRENT_STACK.with(|current_stack| *current_stack.read_noblock())
+}
+
+pub fn set_current_stack(stack: MemoryRegion<VirtAddr>) {
+    CURRENT_STACK.with(|current_stack| *current_stack.write_noblock() = stack);
+}
 
 /// A RunQueue implementation that uses an RBTree to efficiently sort the priority
 /// of tasks within the queue.
@@ -635,7 +656,7 @@ fn select_new_task(reschedule: bool, irq_guard: Option<IrqGuard>) {
     let prev_task = if let Some((current, next)) = work {
         // Ensure that the current stack bounds of the current CPU are adjusted
         // to reflect the task being scheduled.
-        this_cpu().set_current_stack(next.stack_bounds());
+        set_current_stack(next.stack_bounds());
 
         // SAFETY: ths stack pointer is known to be correct.
         unsafe {
