@@ -12,6 +12,7 @@ use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu};
 use crate::cpu::shadow_stack::{MODE_64BIT, S_CET, SCetFlags, is_cet_ss_enabled};
 use crate::cpu::sse::sse_init;
 use crate::cpu::tlb::set_tlb_flush_smp;
+use crate::cpu::tss::load_gdt_tss;
 use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
 use crate::hyperv;
@@ -115,12 +116,15 @@ pub fn start_secondary_cpus(
 
 #[unsafe(no_mangle)]
 extern "C" fn start_ap_setup(top_of_stack: u64) {
+    // Initialize the per-CPU TSS before loading its descriptor.
+    this_cpu().setup_percpu_keys();
+
     // Initialize the GDT, TSS, and IDT.
-    this_cpu().load_gdt_tss(true);
+    load_gdt_tss(true);
     load_static_idt();
 
-    // Loading the GS selector above resets its base, so install the per-CPU
-    // area only after the segment registers have their final values.
+    // Loading the GS selector above resets its base, so reinstall the per-CPU
+    // area after the segment registers have their final values.
     this_cpu().setup_percpu_keys();
 
     // Now the stack unwinder can be used
