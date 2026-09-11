@@ -22,6 +22,7 @@ use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::idt::{EARLY_IDT_ENTRIES, IDT, IdtEntry};
 use svsm::cpu::percpu::{PERCPU_AREAS, PerCpu, cpu_idle_loop, try_this_cpu};
+use svsm::cpu::shadow_stack::initial_shadow_stack;
 use svsm::cpu::shadow_stack::{
     MODE_64BIT, S_CET, SCetFlags, set_cet_ss_enabled, shadow_stack_info,
 };
@@ -427,7 +428,7 @@ unsafe fn svsm_start(
 
     sse_init();
 
-    bsp_percpu.get_top_of_shadow_stack()
+    initial_shadow_stack()
 }
 
 /// # Safety

@@ -9,7 +9,7 @@ extern crate alloc;
 use super::features::{Feature, cpu_has_feat};
 use super::ipi::IpiState;
 use super::isst::{init_isst, load_isst};
-use super::shadow_stack::{init_shadow_stack, is_cet_ss_enabled};
+use super::shadow_stack::{init_initial_shadow_stack, init_shadow_stack, is_cet_ss_enabled};
 use super::smp::init_percpu_shared;
 use super::tss::{setup_tss, tss_address};
 use crate::address::{Address, PhysAddr, VirtAddr};
@@ -458,10 +458,6 @@ impl PerCpu {
         self.shared
     }
 
-    pub fn get_top_of_shadow_stack(&self) -> Option<VirtAddr> {
-        self.init_shadow_stack.try_get_inner().ok().copied()
-    }
-
     pub fn get_top_of_context_switch_stack(&self) -> Option<VirtAddr> {
         let vaddr = self.context_switch_stack.load(Ordering::Relaxed);
         if vaddr == 0 { None } else { Some(vaddr.into()) }
@@ -663,6 +659,8 @@ impl PerCpu {
             );
         });
         init_current_stack();
+        let init_shadow_stack = self.init_shadow_stack.try_get_inner().ok().copied();
+        init_initial_shadow_stack(init_shadow_stack);
         setup_tss(self.get_top_of_df_stack().unwrap());
         init_isst(self.get_top_of_df_shadow_stack());
         init_vrange_4k();
