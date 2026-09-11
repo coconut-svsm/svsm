@@ -11,6 +11,15 @@ use crate::locking::RWLock;
 
 percpu! {
     static ISST: RWLock<Isst>;
+    static DOUBLE_FAULT_SHADOW_STACK: Option<VirtAddr>;
+}
+
+pub fn init_double_fault_shadow_stack(stack: Option<VirtAddr>) {
+    assert!(DOUBLE_FAULT_SHADOW_STACK.init(stack).is_ok());
+}
+
+pub fn double_fault_shadow_stack() -> Option<VirtAddr> {
+    DOUBLE_FAULT_SHADOW_STACK.with(|stack| *stack)
 }
 
 pub fn init_isst(double_fault_shadow_stack: Option<VirtAddr>) {

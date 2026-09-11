@@ -9,6 +9,7 @@ use crate::{
     address::{Address, VirtAddr},
     cpu::idt::common::{X86ExceptionContext, is_exception_handler_return_site},
     cpu::percpu::try_this_cpu,
+    cpu::tss::double_fault_stack,
     debug::symbols::resolve_symbol,
     mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
@@ -65,8 +66,7 @@ impl StackUnwinder {
                 .map_or(MemoryRegion::new(VirtAddr::null(), 0), |tos| {
                     MemoryRegion::from_addresses(tos - STACK_SIZE, tos)
                 });
-            let df_stack = cpu
-                .get_top_of_df_stack()
+            let df_stack = double_fault_stack()
                 .map_or(MemoryRegion::new(VirtAddr::null(), 0), |tos| {
                     MemoryRegion::from_addresses(tos - STACK_SIZE, tos)
                 });

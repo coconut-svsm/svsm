@@ -8,10 +8,12 @@ extern crate alloc;
 
 use super::features::{Feature, cpu_has_feat};
 use super::ipi::IpiState;
-use super::isst::{init_isst, load_isst};
+use super::isst::{
+    double_fault_shadow_stack, init_double_fault_shadow_stack, init_isst, load_isst,
+};
 use super::shadow_stack::{init_initial_shadow_stack, init_shadow_stack, is_cet_ss_enabled};
 use super::smp::init_percpu_shared;
-use super::tss::{setup_tss, tss_address};
+use super::tss::{double_fault_stack, init_double_fault_stack, setup_tss, tss_address};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::ShadowStackInit;
 use crate::cpu::apic::init_apic_emulation;
@@ -423,6 +425,8 @@ where
     /// Stages the context-switch stack address until the target CPU can
     /// initialize its linker-backed per-CPU key.
     context_switch_stack: AtomicUsize,
+    /// Stages IST stack addresses allocated by the boot CPU until the target
+    /// CPU can initialize its linker-backed per-CPU keys through `%gs`.
     ist: IstStacks,
 }
 
@@ -461,18 +465,6 @@ impl PerCpu {
     pub fn get_top_of_context_switch_stack(&self) -> Option<VirtAddr> {
         let vaddr = self.context_switch_stack.load(Ordering::Relaxed);
         if vaddr == 0 { None } else { Some(vaddr.into()) }
-    }
-
-    pub fn get_top_of_df_stack(&self) -> Option<VirtAddr> {
-        self.ist.double_fault_stack.try_get_inner().ok().copied()
-    }
-
-    pub fn get_top_of_df_shadow_stack(&self) -> Option<VirtAddr> {
-        self.ist
-            .double_fault_shadow_stack
-            .try_get_inner()
-            .ok()
-            .copied()
     }
 
     pub fn get_cpu_index(&self) -> usize {
@@ -661,8 +653,17 @@ impl PerCpu {
         init_current_stack();
         let init_shadow_stack = self.init_shadow_stack.try_get_inner().ok().copied();
         init_initial_shadow_stack(init_shadow_stack);
-        setup_tss(self.get_top_of_df_stack().unwrap());
-        init_isst(self.get_top_of_df_shadow_stack());
+        let staged_df_stack = self.ist.double_fault_stack.try_get_inner().ok().copied();
+        init_double_fault_stack(staged_df_stack);
+        let staged_df_shadow_stack = self
+            .ist
+            .double_fault_shadow_stack
+            .try_get_inner()
+            .ok()
+            .copied();
+        init_double_fault_shadow_stack(staged_df_shadow_stack);
+        setup_tss(double_fault_stack().unwrap());
+        init_isst(double_fault_shadow_stack());
         init_vrange_4k();
         init_vrange_2m();
     }
