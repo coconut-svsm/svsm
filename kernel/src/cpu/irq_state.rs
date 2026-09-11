@@ -4,7 +4,6 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::cpu::percpu::this_cpu;
 use core::arch::asm;
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -50,7 +49,7 @@ pub fn raw_irqs_enable() {
 
     // Now that interrupts are enabled, process any #HV events that may be
     // pending.
-    this_cpu().process_hv_events_if_required();
+    crate::sev::hv_doorbell::process_hv_events_if_required();
 }
 
 /// Query IRQ state on current CPU

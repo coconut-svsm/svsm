@@ -39,7 +39,7 @@ use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::memory::write_guest_memory_map;
 use crate::platform::IrqGuard;
 use crate::sev::ghcb::{GHCBIOSize, register_ghcb, setup_ghcb, with_current_ghcb};
-use crate::sev::hv_doorbell::HVDoorbell;
+use crate::sev::hv_doorbell::{HVDoorbell, setup_hv_doorbell, try_with_current_hv_doorbell};
 use crate::sev::msr_protocol::{
     GHCBHvFeatures, hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version,
 };
@@ -128,15 +128,14 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn idle_halt(&self, _guard: &IrqGuard) {
-        let hv_doorbell = this_cpu().hv_doorbell();
-        let ptr = match hv_doorbell {
-            Some(doorbell) => ptr::from_ref(doorbell),
-            None => ptr::null(),
-        };
-        // SAFETY: The correct #HV doorbell address was calculated above.
-        unsafe {
-            snp_idle_halt(ptr);
-        }
+        try_with_current_hv_doorbell(|doorbell| {
+            // SAFETY: The correct #HV doorbell address was calculated above.
+            unsafe { snp_idle_halt(ptr::from_ref(doorbell)) }
+        })
+        .unwrap_or_else(|| {
+            // SAFETY: A null pointer indicates that no doorbell is configured.
+            unsafe { snp_idle_halt(ptr::null()) }
+        });
     }
 
     fn env_setup(&mut self, _debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
@@ -177,7 +176,7 @@ impl SvsmPlatform for SnpPlatform {
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
         if hypervisor_ghcb_features().contains(GHCBHvFeatures::SEV_SNP_RESTR_INJ) {
             GHCB_APIC_ACCESSOR.set_use_restr_inj(true);
-            this_cpu().setup_hv_doorbell()?;
+            setup_hv_doorbell()?;
         }
         guest_request_driver_init();
         Ok(())
@@ -232,7 +231,7 @@ impl SvsmPlatform for SnpPlatform {
         register_ghcb()?;
 
         if GHCB_APIC_ACCESSOR.use_restr_inj() {
-            cpu.setup_hv_doorbell()?;
+            setup_hv_doorbell()?;
         }
 
         apic_initialize(&GHCB_APIC_ACCESSOR);
