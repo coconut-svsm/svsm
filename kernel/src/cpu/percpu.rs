@@ -28,7 +28,6 @@ use crate::hyperv::{self, allocate_hypercall_pages};
 use crate::locking::{
     LockGuard, RWLock, RWLockIrqSafe, ReadLockGuardIrqSafe, SpinLock, WriteLockGuardIrqSafe,
 };
-use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::{init_vrange_2m, init_vrange_4k};
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
@@ -41,8 +40,6 @@ use crate::mm::{
 };
 use crate::platform::SvsmPlatform;
 use crate::requests::SvsmCaa;
-use crate::sev::ghcb::with_current_ghcb;
-use crate::sev::hv_doorbell::{HVDoorbell, allocate_hv_doorbell_page};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
 use crate::task::KernelThreadStartInfo;
@@ -62,7 +59,6 @@ use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::mem::offset_of;
 use core::mem::size_of;
-use core::ops::Deref;
 use core::ptr::{self, NonNull};
 use core::slice::Iter;
 use core::sync::atomic::AtomicBool;
@@ -426,9 +422,6 @@ where
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
-    /// `#HV` doorbell page for this CPU.
-    hv_doorbell: ImmutAfterInitCell<SharedBox<HVDoorbell>>,
-
     init_shadow_stack: ImmutAfterInitCell<VirtAddr>,
     /// Stages the context-switch stack address until the target CPU can
     /// initialize its linker-backed per-CPU key.
@@ -455,7 +448,6 @@ impl PerCpu {
             },
 
             shared,
-            hv_doorbell: ImmutAfterInitCell::uninit(),
             init_shadow_stack: ImmutAfterInitCell::uninit(),
             context_switch_stack: AtomicUsize::new(0),
             ist: IstStacks::new(),
@@ -473,28 +465,6 @@ impl PerCpu {
 
     pub fn shared(&self) -> &PerCpuShared {
         self.shared
-    }
-
-    pub fn hv_doorbell(&self) -> Option<&HVDoorbell> {
-        self.hv_doorbell.try_get_inner().ok().map(Deref::deref)
-    }
-
-    pub fn process_hv_events_if_required(&self) {
-        if let Ok(doorbell) = self.hv_doorbell.try_get_inner() {
-            crate::cpu::irq_state::with_irq_state(|irq_state| {
-                doorbell.process_if_required(irq_state)
-            });
-        }
-    }
-
-    /// Gets a pointer to the location of the HV doorbell pointer in the
-    /// PerCpu structure.
-    pub fn hv_doorbell_addr(&self) -> *const *const HVDoorbell {
-        self.hv_doorbell
-            .try_get_inner()
-            .ok()
-            .map(SharedBox::ptr_ref)
-            .unwrap_or(ptr::null())
     }
 
     pub fn get_top_of_shadow_stack(&self) -> Option<VirtAddr> {
@@ -621,12 +591,6 @@ impl PerCpu {
             let mut p = NonNull::new(self.pgtbl.load(Ordering::Relaxed) as *mut PageTable).unwrap();
             p.as_mut()
         }
-    }
-
-    pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
-        self.hv_doorbell
-            .try_init_from_fn(|| with_current_ghcb(allocate_hv_doorbell_page))?;
-        Ok(())
     }
 
     fn setup_tss(&self) {

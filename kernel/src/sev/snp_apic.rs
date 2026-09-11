@@ -11,7 +11,7 @@ use crate::cpu::x86::x2apic::MSR_X2APIC_BASE;
 use crate::cpu::x86::{ApicAccess, MSR_APIC_BASE};
 use crate::error::SvsmError;
 use crate::sev::ghcb::with_current_ghcb;
-use crate::sev::hv_doorbell::current_hv_doorbell;
+use crate::sev::hv_doorbell::with_current_hv_doorbell;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -73,7 +73,8 @@ impl ApicAccess for GHCBApicAccessor {
 
     fn eoi(&self) {
         // Issue an explicit EOI unless no explicit EOI is required.
-        if !self.use_restr_inj() || !current_hv_doorbell().no_eoi_required() {
+        if !self.use_restr_inj() || !with_current_hv_doorbell(|doorbell| doorbell.no_eoi_required())
+        {
             self.apic_write(APIC_OFFSET_EOI, 0);
         }
     }

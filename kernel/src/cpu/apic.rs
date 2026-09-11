@@ -16,7 +16,7 @@ use crate::platform::SVSM_PLATFORM;
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::requests::SvsmCaa;
 use crate::sev::ghcb::with_current_ghcb;
-use crate::sev::hv_doorbell::HVExtIntStatus;
+use crate::sev::hv_doorbell::{HVDoorbell, HVExtIntStatus, with_current_hv_doorbell};
 use crate::types::GUEST_VMPL;
 
 use core::ptr::NonNull;
@@ -796,7 +796,10 @@ impl LocalApic {
     }
 
     fn consume_host_interrupts(&mut self) {
-        let hv_doorbell = this_cpu().hv_doorbell().unwrap();
+        with_current_hv_doorbell(|hv_doorbell| self.consume_host_interrupts_from(hv_doorbell));
+    }
+
+    fn consume_host_interrupts_from(&mut self, hv_doorbell: &HVDoorbell) {
         let vmpl_event_mask = hv_doorbell.per_vmpl_events.swap(0, Ordering::Relaxed);
         // Ignore events other than for the guest VMPL.
         if vmpl_event_mask & (1 << (GUEST_VMPL - 1)) == 0 {
@@ -879,7 +882,10 @@ impl LocalApic {
     }
 
     fn handoff_to_host(&mut self) {
-        let hv_doorbell = this_cpu().hv_doorbell().unwrap();
+        with_current_hv_doorbell(|hv_doorbell| self.handoff_to_host_from(hv_doorbell));
+    }
+
+    fn handoff_to_host_from(&mut self, hv_doorbell: &HVDoorbell) {
         let descriptor = &hv_doorbell.per_vmpl[GUEST_VMPL - 1];
         // Establish the IRR as holding multiple vectors regardless of the
         // number of active vectors, as this makes transferring IRR state

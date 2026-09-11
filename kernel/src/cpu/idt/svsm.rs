@@ -81,7 +81,6 @@ unsafe extern "C" {
     fn asm_entry_irq_ipi();
     fn asm_entry_irq_schedule();
 
-    pub static mut HV_DOORBELL_ADDR: usize;
 }
 
 fn init_ist_vectors(idt: &mut IDT<'_>) {
@@ -158,20 +157,6 @@ pub unsafe fn idt_init(idt_vaddr: VirtAddr, platform: &dyn SvsmPlatform) -> Resu
 
     // Set IST vectors
     init_ist_vectors(&mut idt);
-
-    // SAFETY:
-    // Capture an address that can be used by assembly code to read the #HV
-    // doorbell page.  The address of each CPU's doorbell page may be
-    // different, but the address of the field in the PerCpu structure that
-    // holds the actual pointer is constant across all CPUs, so that is the
-    // pointer that is actually captured.  The address that is captured is
-    // stored as a usize instead of a typed value, because the declarations
-    // required for type safety here are cumbersome, and the assembly code
-    // that uses the value is not type safe in any case, so enforcing type
-    // safety on the pointer would offer no meaningful value.
-    unsafe {
-        HV_DOORBELL_ADDR = this_cpu().hv_doorbell_addr() as usize;
-    };
 
     // SAFETY: the IDT page was allocated above and is permanently associated
     // with the IDT, so it can safely be loaded now.
