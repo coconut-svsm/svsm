@@ -8,11 +8,10 @@ extern crate alloc;
 
 use super::features::{Feature, cpu_has_feat};
 use super::ipi::IpiState;
-use super::isst::Isst;
-use super::msr::write_msr;
-use super::shadow_stack::{ISST_ADDR, init_shadow_stack, is_cet_ss_enabled};
+use super::isst::{init_isst, load_isst};
+use super::shadow_stack::{init_shadow_stack, is_cet_ss_enabled};
 use super::smp::init_percpu_shared;
-use super::tss::{IST_DF, setup_tss, tss_address};
+use super::tss::{setup_tss, tss_address};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::ShadowStackInit;
 use crate::cpu::apic::init_apic_emulation;
@@ -417,7 +416,6 @@ where
     shared: &'static PerCpuShared,
 
     pgtbl: AtomicUsize,
-    isst: RWLock<Isst>,
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
@@ -434,7 +432,6 @@ impl PerCpu {
         Ok(Self {
             percpu_area: PerCpuArea::new()?,
             pgtbl: AtomicUsize::new(0),
-            isst: RWLock::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
             vm_range: {
                 let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL)?;
@@ -579,13 +576,6 @@ impl PerCpu {
         }
     }
 
-    fn setup_isst(&self) {
-        let double_fault_shadow_stack = self.get_top_of_df_shadow_stack().unwrap();
-        self.isst
-            .write_noblock()
-            .set(IST_DF, double_fault_shadow_stack);
-    }
-
     pub fn map_self(&self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(ptr::from_ref(self));
         let paddr = virt_to_phys(vaddr);
@@ -644,9 +634,6 @@ impl PerCpu {
         if cpu_has_feat(Feature::CetSS) {
             // Allocate ISST shadow stacks
             self.allocate_isst_shadow_stacks()?;
-
-            // Setup ISST
-            self.setup_isst();
         }
 
         self.finish_page_table();
@@ -677,6 +664,7 @@ impl PerCpu {
         });
         init_current_stack();
         setup_tss(self.get_top_of_df_stack().unwrap());
+        init_isst(self.get_top_of_df_shadow_stack());
         init_vrange_4k();
         init_vrange_2m();
     }
@@ -711,19 +699,13 @@ impl PerCpu {
         self.setup_idle_task_internal(start_info)
     }
 
-    pub fn load_isst(&self) {
-        let isst = self.isst.as_ptr();
-        // SAFETY: ISST is already setup when this is called.
-        unsafe { write_msr(ISST_ADDR, isst as u64) };
-    }
-
     pub fn load(&'static self) {
         // SAFETY: along with the page table we are also uploading the right
         // TSS and ISST to ensure a memory safe execution state
         unsafe { self.get_pgtable().load() };
         super::tss::load_gdt_tss(false);
         if is_cet_ss_enabled() {
-            self.load_isst();
+            load_isst();
         }
     }
 

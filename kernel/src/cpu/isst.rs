@@ -4,6 +4,29 @@
 use core::num::NonZeroU8;
 
 use crate::address::VirtAddr;
+use crate::cpu::msr::write_msr;
+use crate::cpu::shadow_stack::ISST_ADDR;
+use crate::cpu::tss::IST_DF;
+use crate::locking::RWLock;
+
+percpu! {
+    static ISST: RWLock<Isst>;
+}
+
+pub fn init_isst(double_fault_shadow_stack: Option<VirtAddr>) {
+    assert!(ISST.init(RWLock::new(Isst::default())).is_ok());
+    if let Some(stack) = double_fault_shadow_stack {
+        ISST.with(|isst| isst.write_noblock().set(IST_DF, stack));
+    }
+}
+
+pub fn load_isst() {
+    ISST.with(|isst| {
+        let isst = isst.as_ptr();
+        // SAFETY: ISST is already setup when this is called.
+        unsafe { write_msr(ISST_ADDR, isst as u64) };
+    });
+}
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
