@@ -13,7 +13,7 @@ use core::marker::PhantomData;
 use core::mem::{MaybeUninit, offset_of};
 #[cfg(target_os = "none")]
 use core::ptr;
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 #[cfg(target_os = "none")]
 use crate::address::VirtAddr;
@@ -56,6 +56,7 @@ pub(super) struct PerCpuArea {
     mapping: Mapping,
     #[cfg(target_os = "none")]
     base: ImmutAfterInitCell<VirtAddr>,
+    initialized: AtomicBool,
 }
 
 impl PerCpuArea {
@@ -78,13 +79,16 @@ impl PerCpuArea {
         Ok(Self {
             mapping,
             base: ImmutAfterInitCell::uninit(),
+            initialized: AtomicBool::new(false),
         })
     }
 
     /// Construct an inert per-CPU area for host-side unit tests.
     #[cfg(not(target_os = "none"))]
     pub(super) fn new() -> Result<Self, SvsmError> {
-        Ok(Self {})
+        Ok(Self {
+            initialized: AtomicBool::new(false),
+        })
     }
 
     /// Insert this area's backing storage into its per-CPU virtual range.
@@ -103,7 +107,11 @@ impl PerCpuArea {
 
     /// Copy the linker template into the mapped area on its target CPU.
     #[cfg(target_os = "none")]
-    pub(super) fn initialize(&self) {
+    pub(super) fn initialize(&self) -> bool {
+        if self.initialized.swap(true, Ordering::Acquire) {
+            return false;
+        }
+
         unsafe extern "C" {
             static percpu_start: u8;
             static percpu_end: u8;
@@ -124,11 +132,15 @@ impl PerCpuArea {
                 self_ptr: base.cast(),
             });
         }
+
+        true
     }
 
     /// Host-side tests use the linker template directly.
     #[cfg(not(target_os = "none"))]
-    pub(super) fn initialize(&self) {}
+    pub(super) fn initialize(&self) -> bool {
+        !self.initialized.swap(true, Ordering::Acquire)
+    }
 
     /// Return the absolute base address of this area's mapping.
     #[cfg(target_os = "none")]

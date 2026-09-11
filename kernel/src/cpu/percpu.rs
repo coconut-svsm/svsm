@@ -49,6 +49,7 @@ use crate::task::TaskPointer;
 use crate::task::schedule;
 use crate::task::scheduler_idle;
 use crate::task::wake_and_schedule_task;
+use crate::task::{init_current_stack, set_current_stack};
 use crate::types::{PAGE_SIZE, SVSM_TR_ATTRIBUTES, SVSM_TSS};
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -428,9 +429,6 @@ where
     /// initialize its linker-backed per-CPU key.
     context_switch_stack: AtomicUsize,
     ist: IstStacks,
-
-    /// Stack boundaries of the currently running task.
-    current_stack: RWLock<MemoryRegion<VirtAddr>>,
 }
 
 impl PerCpu {
@@ -452,7 +450,6 @@ impl PerCpu {
             init_shadow_stack: ImmutAfterInitCell::uninit(),
             context_switch_stack: AtomicUsize::new(0),
             ist: IstStacks::new(),
-            current_stack: RWLock::new(MemoryRegion::new(VirtAddr::null(), 0)),
         })
     }
 
@@ -487,14 +484,6 @@ impl PerCpu {
             .try_get_inner()
             .ok()
             .copied()
-    }
-
-    pub fn get_current_stack(&self) -> MemoryRegion<VirtAddr> {
-        *self.current_stack.read_noblock()
-    }
-
-    pub fn set_current_stack(&self, stack: MemoryRegion<VirtAddr>) {
-        *self.current_stack.write_noblock() = stack;
     }
 
     pub fn get_cpu_index(&self) -> usize {
@@ -714,10 +703,13 @@ impl PerCpu {
         Ok(())
     }
 
-    // Setup code which needs to run on the target CPU
-    pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
-        self.percpu_area.initialize();
+    pub(super) fn setup_percpu_keys(&self) {
+        let initialize_keys = self.percpu_area.initialize();
         self.percpu_area.load();
+        if !initialize_keys {
+            return;
+        }
+
         init_percpu_shared(self.shared);
 
         // Publish values prepared by the boot CPU now that this CPU can
@@ -732,8 +724,15 @@ impl PerCpu {
                 Ordering::Relaxed,
             );
         });
+        init_current_stack();
         init_vrange_4k();
         init_vrange_2m();
+    }
+
+    // Setup code which needs to run on the target CPU
+    pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
+        self.setup_percpu_keys();
+
         // Initialize platform resources before allocating shared pages.
         platform.setup_percpu_current(self)?;
 
@@ -962,7 +961,7 @@ impl PerCpu {
     pub fn schedule_init(&self) -> TaskPointer {
         crate::cpu::irq_state::with_irq_state(|irq_state| irq_state.set_restore_state(true));
         let task = self.runqueue_mut().schedule_init();
-        self.set_current_stack(task.stack_bounds());
+        set_current_stack(task.stack_bounds());
         task
     }
 
