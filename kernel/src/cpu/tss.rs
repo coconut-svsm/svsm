@@ -31,6 +31,15 @@ pub const TSS_LIMIT: u64 = core::mem::size_of::<X86Tss>() as u64;
 
 percpu! {
     static TSS: X86Tss = X86Tss::new();
+    static DOUBLE_FAULT_STACK: Option<VirtAddr>;
+}
+
+pub fn init_double_fault_stack(stack: Option<VirtAddr>) {
+    assert!(DOUBLE_FAULT_STACK.init(stack).is_ok());
+}
+
+pub fn double_fault_stack() -> Option<VirtAddr> {
+    DOUBLE_FAULT_STACK.with(|stack| *stack)
 }
 
 pub fn setup_tss(double_fault_stack: VirtAddr) {
