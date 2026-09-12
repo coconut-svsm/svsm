@@ -9,7 +9,7 @@ use crate::cpu::{flush_tlb_global_percpu_range, flush_tlb_global_sync_range};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart};
-use crate::mm::virt_from_idx;
+use crate::mm::{AddrSpaceDescriptor, virt_from_idx};
 use crate::types::{PAGE_SHIFT, PAGE_SIZE, PageSize};
 use crate::utils::{MemoryRegion, align_down, align_up};
 
@@ -81,7 +81,9 @@ impl VMR {
     /// # Returns
     ///
     /// A new instance of [`struct VMR`].
-    pub fn new(start: VirtAddr, end: VirtAddr, flags: PTEntryFlags) -> Result<Self, SvsmError> {
+    pub fn new(desc: AddrSpaceDescriptor, flags: PTEntryFlags) -> Result<Self, SvsmError> {
+        let start = desc.base();
+        let end = desc.end();
         if start >= end || !start.is_aligned(VMR_GRANULE) || !end.is_aligned(VMR_GRANULE) {
             log::warn!("Attempted to create an invalid VMR {start:#018x}-{start:#018x}");
             return Err(SvsmError::Mem);
