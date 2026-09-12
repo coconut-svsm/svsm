@@ -6,6 +6,7 @@
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::mm::pagetable::{PageFrame, PageTable};
+use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 use verus_stub::*;
@@ -165,6 +166,50 @@ pub const STACK_SIZE: usize = PAGE_SIZE * STACK_PAGES;
 pub const STACK_GUARD_SIZE: usize = STACK_SIZE;
 pub const STACK_TOTAL_SIZE: usize = STACK_SIZE + STACK_GUARD_SIZE;
 
+/// Describes a contiguous region of the virtual address space.
+///
+/// An [`AddrSpaceDescriptor`] records only the *location* of a region —
+/// its base address and size. How the region is sub-allocated (granule,
+/// capacity, bitmap) is the responsibility of the allocator that references
+/// the descriptor.
+#[derive(Debug, Copy, Clone)]
+pub struct AddrSpaceDescriptor {
+    base: VirtAddr,
+    size: usize,
+}
+
+impl AddrSpaceDescriptor {
+    /// Creates a new [`AddrSpaceDescriptor`].
+    ///
+    /// # Arguments
+    ///
+    /// * `base` - Virtual start address of the region.
+    /// * `size` - Total size of the region in bytes.
+    pub const fn new(base: VirtAddr, size: usize) -> Self {
+        Self { base, size }
+    }
+
+    /// Returns the virtual start address of the region.
+    pub const fn base(&self) -> VirtAddr {
+        self.base
+    }
+
+    /// Returns the total size of the region in bytes.
+    pub const fn size(&self) -> usize {
+        self.size
+    }
+
+    /// Returns the exclusive end address of the region.
+    pub const fn end(&self) -> VirtAddr {
+        self.base.const_add(self.size)
+    }
+
+    /// Returns the region as a [`MemoryRegion`].
+    pub fn region(&self) -> MemoryRegion<VirtAddr> {
+        MemoryRegion::new(self.base, self.size)
+    }
+}
+
 pub const fn virt_from_idx(idx: usize) -> VirtAddr {
     VirtAddr::new(idx << ((3 * 9) + 12))
 }
@@ -178,8 +223,13 @@ pub const SVSM_GLOBAL_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_SHARED);
 /// Shared mappings region start
 pub const SVSM_GLOBAL_MAPPING_BASE: VirtAddr = SVSM_GLOBAL_BASE.const_add(256 * SIZE_1G);
 
-/// Shared mappings region end
-pub const SVSM_GLOBAL_MAPPING_END: VirtAddr = SVSM_GLOBAL_MAPPING_BASE.const_add(SIZE_1G);
+/// Global 4K mapping pool
+pub const GLOBAL_MAPPING_4K: AddrSpaceDescriptor =
+    AddrSpaceDescriptor::new(SVSM_GLOBAL_MAPPING_BASE, SIZE_LEVEL1);
+
+/// Global 2M mapping pool
+pub const GLOBAL_MAPPING_2M: AddrSpaceDescriptor =
+    AddrSpaceDescriptor::new(GLOBAL_MAPPING_4K.end(), SIZE_1G - SIZE_LEVEL1);
 
 /// Mapping address for Hyper-V hypercall page.
 pub const SVSM_HYPERCALL_CODE_PAGE: VirtAddr = SVSM_GLOBAL_MAPPING_BASE.const_sub(PAGE_SIZE);
@@ -187,20 +237,24 @@ pub const SVSM_HYPERCALL_CODE_PAGE: VirtAddr = SVSM_GLOBAL_MAPPING_BASE.const_su
 /// PerCPU mappings level 3 index
 pub const PGTABLE_LVL3_IDX_PERCPU: usize = 510;
 
-/// Base Address of shared memory region
-pub const SVSM_PERCPU_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PERCPU);
-
-/// End Address of per-cpu memory region
-pub const SVSM_PERCPU_END: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVEL3);
+/// Per-CPU memory region
+pub const SVSM_PERCPU: AddrSpaceDescriptor =
+    AddrSpaceDescriptor::new(virt_from_idx(PGTABLE_LVL3_IDX_PERCPU), SIZE_LEVEL3);
 
 /// PerCPU CAA mappings
-pub const SVSM_PERCPU_CAA_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(2 * SIZE_LEVEL0);
+pub const SVSM_PERCPU_CAA: AddrSpaceDescriptor = AddrSpaceDescriptor::new(
+    SVSM_PERCPU.base().const_add(2 * SIZE_LEVEL0),
+    2 * SIZE_LEVEL0,
+);
+
+/// PerCPU CAA mappings
+pub const SVSM_PERCPU_CAA_BASE: VirtAddr = SVSM_PERCPU.base().const_add(2 * SIZE_LEVEL0);
 
 /// PerCPU VMSA mappings
-pub const SVSM_PERCPU_VMSA_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(4 * SIZE_LEVEL0);
+pub const SVSM_PERCPU_VMSA_BASE: VirtAddr = SVSM_PERCPU.base().const_add(4 * SIZE_LEVEL0);
 
 /// Region for PerCPU Stacks
-pub const SVSM_PERCPU_STACKS_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVEL1);
+pub const SVSM_PERCPU_STACKS_BASE: VirtAddr = SVSM_PERCPU.base().const_add(SIZE_LEVEL1);
 
 /// Shadow stack address of the per-cpu init task
 pub const SVSM_SHADOW_STACKS_INIT_TASK: VirtAddr = SVSM_PERCPU_STACKS_BASE;
@@ -228,30 +282,22 @@ pub const SVSM_XSAVE_AREA_BASE: VirtAddr =
     SVSM_SHADOW_STACK_ISST_DF_BASE.const_add(STACK_TOTAL_SIZE);
 
 /// Base Address for temporary mappings - used by page-table guards
-pub const SVSM_PERCPU_TEMP_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVEL2);
+pub const SVSM_PERCPU_TEMP_BASE: VirtAddr = SVSM_PERCPU.base().const_add(SIZE_LEVEL2);
 
-// Below is space for 512 temporary 4k mappings and 511 temporary 2M mappings
+/// Per-CPU temporary 4K mappings.
+pub const PERCPU_TEMP_4K: AddrSpaceDescriptor =
+    AddrSpaceDescriptor::new(SVSM_PERCPU_TEMP_BASE, SIZE_LEVEL1);
 
-/// Start and End for PAGE_SIZEed temporary mappings
-pub const SVSM_PERCPU_TEMP_BASE_4K: VirtAddr = SVSM_PERCPU_TEMP_BASE;
-pub const SVSM_PERCPU_TEMP_END_4K: VirtAddr = SVSM_PERCPU_TEMP_BASE_4K.const_add(SIZE_LEVEL1);
-pub const SVSM_PERCPU_TEMP_SIZE_4K: usize = SIZE_LEVEL1;
-
-/// Start and End for PAGE_SIZEed temporary mappings
-pub const SVSM_PERCPU_TEMP_BASE_2M: VirtAddr = SVSM_PERCPU_TEMP_BASE.const_add(SIZE_LEVEL1);
-pub const SVSM_PERCPU_TEMP_END_2M: VirtAddr = SVSM_PERCPU_TEMP_BASE.const_add(SIZE_LEVEL2);
-pub const SVSM_PERCPU_TEMP_SIZE_2M: usize = SVSM_PERCPU_TEMP_END_2M
-    .const_sub(SVSM_PERCPU_TEMP_BASE_2M.as_usize())
-    .as_usize();
+/// Per-CPU temporary 2M mappings.
+pub const PERCPU_TEMP_2M: AddrSpaceDescriptor =
+    AddrSpaceDescriptor::new(PERCPU_TEMP_4K.end(), SIZE_LEVEL2 - PERCPU_TEMP_4K.size());
 
 /// Task mappings level 3 index
 pub const PGTABLE_LVL3_IDX_PERTASK: usize = 508;
 
-/// Base address of task memory region
-pub const SVSM_PERTASK_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PERTASK);
-
-/// End address of task memory region
-pub const SVSM_PERTASK_END: VirtAddr = SVSM_PERTASK_BASE.const_add(SIZE_LEVEL3);
+/// Per-task memory region.
+pub const SVSM_PERTASK: AddrSpaceDescriptor =
+    AddrSpaceDescriptor::new(virt_from_idx(PGTABLE_LVL3_IDX_PERTASK), SIZE_LEVEL3);
 
 /// Page table self-map level 3 index
 pub const PGTABLE_LVL3_IDX_PTE_SELFMAP: usize = 493;
@@ -263,11 +309,9 @@ pub const SVSM_PTE_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PTE_SELFMAP);
 // User-space mapping constants
 //
 
-/// Start of user memory address range
-pub const USER_MEM_START: VirtAddr = VirtAddr::new(0);
-
-/// End of user memory address range
-pub const USER_MEM_END: VirtAddr = USER_MEM_START.const_add(256 * SIZE_LEVEL3);
+/// User memory address range
+pub const USER_MEM: AddrSpaceDescriptor =
+    AddrSpaceDescriptor::new(VirtAddr::new(0), 256 * SIZE_LEVEL3);
 
 #[cfg(test)]
 mod tests {
