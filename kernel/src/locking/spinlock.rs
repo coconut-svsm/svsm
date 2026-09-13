@@ -8,6 +8,7 @@ use super::common::*;
 use crate::types::TPR_LOCK;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
+use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -40,8 +41,29 @@ pub struct RawLockGuard<'a, T, I> {
     /// library.
     data: NonNull<T>,
     _variance: PhantomData<&'a mut T>,
-    #[expect(dead_code)]
     irq_state: I,
+}
+
+impl<'a, T, I: IrqLocking> RawLockGuard<'a, T, I> {
+    pub fn map<U, F>(orig: Self, f: F) -> RawLockGuard<'a, U, I>
+    where
+        F: FnOnce(&mut T) -> &mut U,
+    {
+        let mut orig = ManuallyDrop::new(orig);
+        let holder = orig.holder;
+        // Move the original IRQ state out of drop.
+        // SAFETY: we are really reading from a reference, so the source
+        // pointer is safe. The original guard is behind `ManuallyDrop`,
+        // so only the copy we just make will invoke drop.
+        let irq_state = unsafe { core::ptr::read(&raw const orig.irq_state) };
+        let value = f(&mut *orig);
+        RawLockGuard {
+            holder,
+            data: NonNull::from(value),
+            _variance: PhantomData,
+            irq_state,
+        }
+    }
 }
 
 // SAFETY: RawLockGuard does not automatically implement Sync because it
