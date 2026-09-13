@@ -24,7 +24,7 @@ impl SubVmRange for GlobalRange4k {
 
     fn with_allocator<F, R>(mut f: F) -> R
     where
-        F: FnMut(&mut SubVmAllocator) -> R,
+        F: FnMut(&mut SubVmAllocator<Self>) -> R,
     {
         f(&mut GLOBAL_RANGES.lock().range_4k)
     }
@@ -39,15 +39,15 @@ impl SubVmRange for GlobalRange2m {
 
     fn with_allocator<F, R>(mut f: F) -> R
     where
-        F: FnMut(&mut SubVmAllocator) -> R,
+        F: FnMut(&mut SubVmAllocator<Self>) -> R,
     {
         f(&mut GLOBAL_RANGES.lock().range_2m)
     }
 }
 
 struct GlobalRanges {
-    range_4k: SubVmAllocator,
-    range_2m: SubVmAllocator,
+    range_4k: SubVmAllocator<GlobalRange4k>,
+    range_2m: SubVmAllocator<GlobalRange2m>,
 }
 
 impl GlobalRanges {
@@ -59,16 +59,8 @@ impl GlobalRanges {
     }
 
     fn init(&mut self) {
-        self.range_4k.init(
-            GLOBAL_MAPPING_4K.base(),
-            GLOBAL_MAPPING_4K.size() / PAGE_SIZE,
-            PAGE_SIZE,
-        );
-        self.range_2m.init(
-            GLOBAL_MAPPING_2M.base(),
-            GLOBAL_MAPPING_2M.size() / PAGE_SIZE_2M,
-            PAGE_SIZE_2M,
-        );
+        self.range_4k.init();
+        self.range_2m.init();
     }
 }
 
