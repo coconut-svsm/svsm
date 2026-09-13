@@ -19,7 +19,7 @@ pub const VIRT_ALIGN_4K: usize = PAGE_SHIFT - 12;
 pub const VIRT_ALIGN_2M: usize = PAGE_SHIFT_2M - 12;
 
 #[derive(Debug, Default)]
-pub struct VirtualRange {
+pub struct SubVmAllocator {
     start_virt: VirtAddr,
     page_count: usize,
     page_shift: usize,
@@ -27,13 +27,13 @@ pub struct VirtualRange {
 }
 
 percpu! {
-    static VRANGE_4K: RWLock<VirtualRange> = RWLock::new(VirtualRange::new());
-    static VRANGE_2M: RWLock<VirtualRange> = RWLock::new(VirtualRange::new());
+    static VRANGE_4K: RWLock<SubVmAllocator> = RWLock::new(SubVmAllocator::new());
+    static VRANGE_2M: RWLock<SubVmAllocator> = RWLock::new(SubVmAllocator::new());
 }
 
 pub(crate) fn init_vrange_4k() {
     const PAGE_COUNT: usize = PERCPU_TEMP_4K.size() / PAGE_SIZE;
-    const { assert!(PAGE_COUNT < VirtualRange::CAPACITY) };
+    const { assert!(PAGE_COUNT < SubVmAllocator::CAPACITY) };
 
     VRANGE_4K.with(|vrange| {
         vrange
@@ -44,7 +44,7 @@ pub(crate) fn init_vrange_4k() {
 
 pub(crate) fn init_vrange_2m() {
     const PAGE_COUNT: usize = PERCPU_TEMP_2M.size() / PAGE_SIZE_2M;
-    const { assert!(PAGE_COUNT < VirtualRange::CAPACITY) };
+    const { assert!(PAGE_COUNT < SubVmAllocator::CAPACITY) };
 
     VRANGE_2M.with(|vrange| {
         vrange
@@ -53,11 +53,11 @@ pub(crate) fn init_vrange_2m() {
     });
 }
 
-impl VirtualRange {
+impl SubVmAllocator {
     pub const CAPACITY: usize = BitmapAllocator1024::CAPACITY;
 
-    pub const fn new() -> VirtualRange {
-        VirtualRange {
+    pub const fn new() -> Self {
+        Self {
             start_virt: VirtAddr::null(),
             page_count: 0,
             page_shift: PAGE_SHIFT,
@@ -169,13 +169,13 @@ impl Drop for VRangeAlloc {
 
 #[cfg(test)]
 mod tests {
-    use super::VirtualRange;
+    use super::SubVmAllocator;
     use crate::address::VirtAddr;
     use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
 
     #[test]
     fn test_alloc_no_overlap_4k() {
-        let mut range = VirtualRange::new();
+        let mut range = SubVmAllocator::new();
         range.init(VirtAddr::new(0x1000000), 1024, PAGE_SHIFT);
 
         // Test that we get two virtual addresses that do
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn test_alloc_no_overlap_2m() {
-        let mut range = VirtualRange::new();
+        let mut range = SubVmAllocator::new();
         range.init(VirtAddr::new(0x1000000), 1024, PAGE_SHIFT_2M);
 
         // Test that we get two virtual addresses that do
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_free_4k() {
-        let mut range = VirtualRange::new();
+        let mut range = SubVmAllocator::new();
         range.init(VirtAddr::new(0x1000000), 1024, PAGE_SHIFT);
 
         // This checks that freeing an allocated range giving the size
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_free_2m() {
-        let mut range = VirtualRange::new();
+        let mut range = SubVmAllocator::new();
         range.init(VirtAddr::new(0x1000000), 1024, PAGE_SHIFT_2M);
 
         // This checks that freeing an allocated range giving the size
