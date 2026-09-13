@@ -22,7 +22,7 @@ impl SubVmRange for GlobalRange4k {
     const DESCRIPTOR: AddrSpaceDescriptor = GLOBAL_MAPPING_4K;
     const GRANULE: usize = PAGE_SIZE;
 
-    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator> {
+    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator<Self>> {
         RawLockGuard::map(GLOBAL_RANGES.lock(), |r| &mut r.range_4k)
     }
 }
@@ -34,7 +34,7 @@ impl SubVmRange for GlobalRange2m {
     const DESCRIPTOR: AddrSpaceDescriptor = GLOBAL_MAPPING_2M;
     const GRANULE: usize = PAGE_SIZE_2M;
 
-    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator> {
+    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator<Self>> {
         RawLockGuard::map(GLOBAL_RANGES.lock(), |r| &mut r.range_2m)
     }
 }
@@ -59,8 +59,8 @@ impl GlobalRangeAlloc {
 }
 
 struct GlobalRanges {
-    range_4k: SubVmAllocator,
-    range_2m: SubVmAllocator,
+    range_4k: SubVmAllocator<GlobalRange4k>,
+    range_2m: SubVmAllocator<GlobalRange2m>,
 }
 
 impl GlobalRanges {
@@ -72,16 +72,8 @@ impl GlobalRanges {
     }
 
     fn init(&mut self) {
-        self.range_4k.init(
-            GLOBAL_MAPPING_4K.base(),
-            GLOBAL_MAPPING_4K.size() / PAGE_SIZE,
-            PAGE_SIZE,
-        );
-        self.range_2m.init(
-            GLOBAL_MAPPING_2M.base(),
-            GLOBAL_MAPPING_2M.size() / PAGE_SIZE_2M,
-            PAGE_SIZE_2M,
-        );
+        self.range_4k.init();
+        self.range_2m.init();
     }
 }
 
