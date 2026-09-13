@@ -54,9 +54,7 @@ use crate::task::TaskPointer;
 use crate::task::schedule;
 use crate::task::scheduler_idle;
 use crate::task::wake_and_schedule_task;
-use crate::types::{
-    PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
-};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS};
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use alloc::boxed::Box;
@@ -801,7 +799,7 @@ impl PerCpu {
         self.vm_range
             .insert_at(PERCPU_TEMP_4K.base(), temp_mapping_4k)?;
         self.vrange_4k_mut()
-            .init(PERCPU_TEMP_4K.base(), PAGE_COUNT_4K, PAGE_SHIFT);
+            .init(PERCPU_TEMP_4K.base(), PAGE_COUNT_4K, PAGE_SIZE);
 
         const PAGE_COUNT_2M: usize = PERCPU_TEMP_2M.size() / PAGE_SIZE_2M;
         const { assert!(PAGE_COUNT_2M < SubVmAllocator::CAPACITY) };
@@ -810,7 +808,7 @@ impl PerCpu {
         self.vm_range
             .insert_at(PERCPU_TEMP_2M.base(), temp_mapping_2m)?;
         self.vrange_2m_mut()
-            .init(PERCPU_TEMP_2M.base(), PAGE_COUNT_2M, PAGE_SHIFT_2M);
+            .init(PERCPU_TEMP_2M.base(), PAGE_COUNT_2M, PAGE_SIZE_2M);
 
         Ok(())
     }
