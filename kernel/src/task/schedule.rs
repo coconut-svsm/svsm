@@ -48,7 +48,6 @@ use crate::cpu::idt::common::SCHEDULE_VECTOR;
 use crate::cpu::irq_state::{irq_nesting_count, raw_get_tpr};
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PERCPU_AREAS;
-use crate::cpu::percpu::PERCPU_CTXT_SWITCH_STACK_OFFSET;
 use crate::cpu::percpu::PERCPU_PAGING_ROOT_OFFSET;
 use crate::cpu::percpu::PERCPU_SHARED_INDEX_OFFSET;
 use crate::cpu::percpu::PERCPU_SHARED_OFFSET;
@@ -738,7 +737,7 @@ global_asm!(
 
         // Switch to a stack pointer that's valid in both the old and new page
         // tables.
-        mov     {CONTEXT_SWITCH_RSP_OFFSET}(%rdx), %rsp
+        mov     %gs:__svsm_percpu_context_switch_stack(%rip), %rsp
 
         // Clear the frame pointer since it is no longer meaningful.
         xorl    %ebp, %ebp
@@ -848,7 +847,6 @@ global_asm!(
     TASK_STATE_ACTIVE = const TASK_ACTIVE_OFFSET,
     TASK_CPU_OFFSET = const TASK_CUR_CPU_OFFSET,
     IS_CET_ENABLED = sym IS_CET_ENABLED,
-    CONTEXT_SWITCH_RSP_OFFSET = const PERCPU_CTXT_SWITCH_STACK_OFFSET,
     PERCPU_SHARED_OFFSET = const PERCPU_SHARED_OFFSET,
     PERCPU_SHARED_INDEX_OFFSET = const PERCPU_SHARED_INDEX_OFFSET,
     PERCPU_PGTBL_OFFSET = const PERCPU_PAGING_ROOT_OFFSET,
