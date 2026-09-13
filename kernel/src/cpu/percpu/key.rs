@@ -10,7 +10,7 @@
 use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
-use core::mem::MaybeUninit;
+use core::mem::{MaybeUninit, offset_of};
 #[cfg(target_os = "none")]
 use core::ptr;
 use core::sync::atomic::{AtomicU8, Ordering};
@@ -178,8 +178,10 @@ impl PerCpuArea {
 #[derive(Debug)]
 #[repr(C)]
 pub struct PerCpuStorage<T> {
-    state: AtomicU8,
+    // Keep the value first so an assembly-visible backing symbol addresses
+    // the value itself rather than the initialization state.
     value: UnsafeCell<MaybeUninit<T>>,
+    state: AtomicU8,
 }
 
 const PERCPU_UNINITIALIZED: u8 = 0;
@@ -191,21 +193,31 @@ const PERCPU_INITIALIZED: u8 = 2;
 unsafe impl<T: Sync> Sync for PerCpuStorage<T> {}
 
 impl<T> PerCpuStorage<T> {
+    // Assembly code relies on value to be at offset 0
+    const _VALUE_AT_OFFSET_0: () = assert!(offset_of!(PerCpuStorage<T>, value) == 0);
+
     /// Construct initialized storage for use by [`percpu!`](crate::percpu).
     #[doc(hidden)]
     pub const fn new(value: T) -> Self {
         Self {
-            state: AtomicU8::new(PERCPU_INITIALIZED),
             value: UnsafeCell::new(MaybeUninit::new(value)),
+            state: AtomicU8::new(PERCPU_INITIALIZED),
         }
     }
 
     /// Construct uninitialized storage for use by [`percpu!`](crate::percpu).
+    ///
+    /// The value's backing bytes are zero-filled so assembly can treat an
+    /// exported symbol as zero before initialization. They must not be
+    /// interpreted as a `T` until initialization completes.
     #[doc(hidden)]
     pub const fn uninit() -> Self {
         Self {
+            // Keep the backing bytes zeroed before initialization. Assembly
+            // users of an exported per-CPU symbol can then use a zero value as
+            // the not-yet-installed sentinel without constructing a `T`.
+            value: UnsafeCell::new(MaybeUninit::zeroed()),
             state: AtomicU8::new(PERCPU_UNINITIALIZED),
-            value: UnsafeCell::new(MaybeUninit::uninit()),
         }
     }
 }
@@ -365,6 +377,13 @@ impl<T: Sync + 'static> PerCpuKey<T> {
 /// independent instances. Values requiring CPU-specific runtime construction
 /// should use the uninitialized declaration form.
 ///
+/// A declaration that needs to be accessed from assembly can use
+/// `#[percpu_asm_symbol("symbol_name")]`. The named symbol addresses the stored
+/// value and can be referenced directly with `%gs:symbol_name(%rip)`.
+/// Before runtime initialization, an assembly-visible value is zero-filled but
+/// is not a valid `T`; assembly may only use the zero value as an uninitialized
+/// sentinel.
+///
 /// # Examples
 ///
 /// ```
@@ -380,6 +399,42 @@ impl<T: Sync + 'static> PerCpuKey<T> {
 #[macro_export]
 macro_rules! percpu {
     () => {};
+    (
+        #[percpu_asm_symbol($symbol:literal)]
+        $(#[$attr:meta])*
+        $vis:vis static $name:ident: $ty:ty;
+        $($rest:tt)*
+    ) => {
+        $(#[$attr])*
+        $vis static $name: $crate::cpu::percpu::PerCpuKey<$ty> = {
+            #[used]
+            #[unsafe(export_name = $symbol)]
+            #[unsafe(link_section = ".percpu")]
+            static VALUE: $crate::cpu::percpu::PerCpuStorage<$ty> =
+                $crate::cpu::percpu::PerCpuStorage::uninit();
+            $crate::cpu::percpu::PerCpuKey::new(&VALUE)
+        };
+
+        $crate::percpu! { $($rest)* }
+    };
+    (
+        #[percpu_asm_symbol($symbol:literal)]
+        $(#[$attr:meta])*
+        $vis:vis static $name:ident: $ty:ty = $value:expr;
+        $($rest:tt)*
+    ) => {
+        $(#[$attr])*
+        $vis static $name: $crate::cpu::percpu::PerCpuKey<$ty> = {
+            #[used]
+            #[unsafe(export_name = $symbol)]
+            #[unsafe(link_section = ".percpu")]
+            static VALUE: $crate::cpu::percpu::PerCpuStorage<$ty> =
+                $crate::cpu::percpu::PerCpuStorage::new($value);
+            $crate::cpu::percpu::PerCpuKey::new(&VALUE)
+        };
+
+        $crate::percpu! { $($rest)* }
+    };
     (
         $(#[$attr:meta])*
         $vis:vis static $name:ident: $ty:ty;
