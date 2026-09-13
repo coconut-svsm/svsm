@@ -10,21 +10,21 @@ use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::virtualrange::VirtualRange;
+use crate::mm::virtualrange::SubVmAllocator;
 use crate::mm::{GLOBAL_MAPPING_2M, GLOBAL_MAPPING_4K};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::{MemoryRegion, align_up};
 
 struct GlobalRanges {
-    range_4k: VirtualRange,
-    range_2m: VirtualRange,
+    range_4k: SubVmAllocator,
+    range_2m: SubVmAllocator,
 }
 
 impl GlobalRanges {
     const fn new() -> Self {
         Self {
-            range_4k: VirtualRange::new(),
-            range_2m: VirtualRange::new(),
+            range_4k: SubVmAllocator::new(),
+            range_2m: SubVmAllocator::new(),
         }
     }
 
