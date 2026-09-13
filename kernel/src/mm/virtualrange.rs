@@ -12,10 +12,25 @@ use crate::utils::MemoryRegion;
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 use core::fmt::Debug;
 
-use super::{PERCPU_TEMP_2M, PERCPU_TEMP_4K};
+use super::{AddrSpaceDescriptor, PERCPU_TEMP_2M, PERCPU_TEMP_4K};
 
 pub const VIRT_ALIGN_4K: usize = PAGE_SHIFT - 12;
 pub const VIRT_ALIGN_2M: usize = PAGE_SHIFT_2M - 12;
+
+/// A trait describing an allocatable virtual address range.
+pub trait SubVmRange: Sized {
+    /// The address space portion that corresponds to this virtual range.
+    const DESCRIPTOR: AddrSpaceDescriptor;
+
+    /// The size of virtual address allocations within this virtual range.
+    const GRANULE: usize;
+
+    /// Whether to add guard slots between allocations or not.
+    const GUARD_SLOTS: bool = true;
+
+    /// Get the allocator for this virtual range.
+    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator>;
+}
 
 #[derive(Debug, Default)]
 pub struct SubVmAllocator {
