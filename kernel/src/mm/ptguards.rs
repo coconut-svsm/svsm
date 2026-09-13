@@ -6,7 +6,7 @@
 
 use super::pagetable::PTEntryFlags;
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::percpu::{PerCpu2mRange, PerCpu4kRange, this_cpu};
 use crate::cpu::tlb::flush_tlb_global_percpu_range;
 use crate::error::SvsmError;
 use crate::mm::virtualrange::SubVmAlloc;
@@ -17,11 +17,30 @@ use core::mem;
 use core::ops::{Deref, DerefMut};
 use zerocopy::FromBytes;
 
+#[derive(Debug)]
+enum PerCpuVmAlloc {
+    Regular(SubVmAlloc<PerCpu4kRange>),
+    Huge(SubVmAlloc<PerCpu2mRange>),
+}
+
+impl PerCpuVmAlloc {
+    const fn region(&self) -> MemoryRegion<VirtAddr> {
+        match self {
+            Self::Regular(r) => r.region(),
+            Self::Huge(r) => r.region(),
+        }
+    }
+
+    const fn huge(&self) -> bool {
+        matches!(self, Self::Huge(..))
+    }
+}
+
 /// Guard for a per-CPU page mapping to ensure adequate cleanup if drop.
 #[derive(Debug)]
 #[must_use = "if unused the mapping will immediately be unmapped"]
 pub struct PerCPUPageMappingGuard {
-    mapping: SubVmAlloc,
+    mapping: PerCpuVmAlloc,
     phys_base: PhysAddr,
 }
 
@@ -64,17 +83,17 @@ impl PerCPUPageMappingGuard {
             && ((paddr_end.bits() & (PAGE_SIZE_2M - 1)) == 0);
 
         let mapping = if huge {
-            let range = SubVmAlloc::new_2m(size, 0)?;
+            let range = SubVmAlloc::new(size / PAGE_SIZE_2M, 0)?;
             this_cpu()
                 .get_pgtable()
                 .map_region_2m(range.region(), paddr_start, flags, false)?;
-            range
+            PerCpuVmAlloc::Huge(range)
         } else {
-            let range = SubVmAlloc::new_4k(size, 0)?;
+            let range = SubVmAlloc::new(size / PAGE_SIZE, 0)?;
             this_cpu()
                 .get_pgtable()
                 .map_region_4k(range.region(), paddr_start, flags, false)?;
-            range
+            PerCpuVmAlloc::Regular(range)
         };
 
         Ok(Self {

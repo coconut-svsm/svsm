@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
-// Copyright (c) 2022-2023 SUSE LLC
+// Copyright (c) 2022-2023, 2026 SUSE LLC
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
+// Author: Carlos López <clopez@suse.de>
 
 use crate::address::VirtAddr;
 use crate::cpu::percpu::this_cpu;
@@ -11,6 +12,7 @@ use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 use core::fmt::Debug;
+use core::marker::PhantomData;
 
 use super::{AddrSpaceDescriptor, PERCPU_TEMP_2M, PERCPU_TEMP_4K};
 
@@ -92,62 +94,32 @@ pub fn virt_log_usage() {
 
 /// An allocation within a sub-range of the virtual address space.
 #[derive(Debug)]
-pub struct SubVmAlloc {
+pub struct SubVmAlloc<A: SubVmRange> {
     region: MemoryRegion<VirtAddr>,
-    huge: bool,
+    _phantom: PhantomData<A>,
 }
 
-impl SubVmAlloc {
-    /// Returns a virtual memory region in the 4K virtual range.
-    pub fn new_4k(size: usize, align: usize) -> Result<Self, SvsmError> {
-        // Each bit in our bitmap represents a 4K page
-        if (size & (PAGE_SIZE - 1)) != 0 {
-            return Err(SvsmError::Mem);
-        }
-        let page_count = size >> PAGE_SHIFT;
-        let addr = this_cpu().vrange_4k_mut().alloc(page_count, align)?;
-        let region = MemoryRegion::new(addr, size);
+impl<A: SubVmRange> SubVmAlloc<A> {
+    /// Returns a virtual memory region in the given virtual range.
+    pub fn new(count: usize, align: usize) -> Result<Self, SvsmError> {
+        let addr = A::get_allocator().alloc(count, align)?;
+        let region = MemoryRegion::new(addr, count * A::GRANULE);
         Ok(Self {
             region,
-            huge: false,
+            _phantom: PhantomData,
         })
-    }
-
-    /// Returns a virtual memory region in the 2M virtual range.
-    pub fn new_2m(size: usize, align: usize) -> Result<Self, SvsmError> {
-        // Each bit in our bitmap represents a 2M page
-        if (size & (PAGE_SIZE_2M - 1)) != 0 {
-            return Err(SvsmError::Mem);
-        }
-        let page_count = size >> PAGE_SHIFT_2M;
-        let addr = this_cpu().vrange_2m_mut().alloc(page_count, align)?;
-        let region = MemoryRegion::new(addr, size);
-        Ok(Self { region, huge: true })
     }
 
     /// Returns the virtual memory region that this allocation spans.
     pub const fn region(&self) -> MemoryRegion<VirtAddr> {
         self.region
     }
-
-    /// Returns true if the allocation was made from the huge (2M) virtual range.
-    pub const fn huge(&self) -> bool {
-        self.huge
-    }
 }
 
-impl Drop for SubVmAlloc {
+impl<A: SubVmRange> Drop for SubVmAlloc<A> {
     fn drop(&mut self) {
         let region = self.region();
-        if self.huge {
-            this_cpu()
-                .vrange_2m_mut()
-                .free(region.start(), region.len() >> PAGE_SHIFT_2M);
-        } else {
-            this_cpu()
-                .vrange_4k_mut()
-                .free(region.start(), region.len() >> PAGE_SHIFT);
-        }
+        A::get_allocator().free(region.start(), region.len() / A::GRANULE);
     }
 }
 
