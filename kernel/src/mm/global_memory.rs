@@ -10,7 +10,7 @@ use crate::cpu::percpu::with_pgtable_mut;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::virtualrange::{SubVmAllocator, SubVmRange};
+use crate::mm::virtualrange::{SubVmAlloc, SubVmAllocator, SubVmRange};
 use crate::mm::{AddrSpaceDescriptor, GLOBAL_MAPPING_2M, GLOBAL_MAPPING_4K};
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::{MemoryRegion, align_up};
@@ -70,37 +70,12 @@ impl GlobalRanges {
             PAGE_SIZE_2M,
         );
     }
-
-    fn alloc(
-        &mut self,
-        page_count: usize,
-        huge: bool,
-        shared: bool,
-    ) -> Result<GlobalRangeGuard, SvsmError> {
-        let vstart = if huge {
-            self.range_2m.alloc(page_count, 0)?
-        } else {
-            self.range_4k.alloc(page_count, 0)?
-        };
-
-        Ok(GlobalRangeGuard::new(vstart, page_count, huge, shared))
-    }
-
-    fn free(&mut self, vaddr: VirtAddr, page_count: usize, huge: bool) {
-        if huge {
-            self.range_2m.free(vaddr, page_count);
-        } else {
-            self.range_4k.free(vaddr, page_count);
-        }
-    }
 }
 
 #[derive(Debug)]
-pub struct GlobalRangeGuard {
-    vstart: VirtAddr,
-    pages: usize,
-    huge: bool,
-    shared: bool,
+pub enum GlobalRangeGuard {
+    Regular(SubVmAlloc<GlobalRange4k>),
+    Huge(SubVmAlloc<GlobalRange2m>),
 }
 
 impl GlobalRangeGuard {
@@ -108,8 +83,9 @@ impl GlobalRangeGuard {
     ///
     /// # Arguments
     ///
-    /// * `vstart`: Start virtual address.
+    /// * `paddr`: Start physical address.
     /// * `pages`: Number pages mapped.
+    /// * `flags`: Page-table flags to use for mapping.
     /// * `huge`: Whether to use normal or huge pages.
     /// * `shared`: Whether mapping is private or shared.
     ///
@@ -117,12 +93,21 @@ impl GlobalRangeGuard {
     ///
     /// A new instance of [`GlobalRangeGuard`] set up with the requested
     /// parameters.
-    fn new(vstart: VirtAddr, pages: usize, huge: bool, shared: bool) -> Self {
-        Self {
-            vstart,
-            pages,
-            huge,
-            shared,
+    fn new(
+        paddr: PhysAddr,
+        pages: usize,
+        flags: PTEntryFlags,
+        huge: bool,
+        shared: bool,
+    ) -> Result<Self, SvsmError> {
+        if huge {
+            let range = SubVmAlloc::new(pages, 0)?;
+            with_pgtable_mut(|pg| pg.map_region_2m(range.region(), paddr, flags, shared))?;
+            Ok(Self::Huge(range))
+        } else {
+            let range = SubVmAlloc::new(pages, 0)?;
+            with_pgtable_mut(|pg| pg.map_region_4k(range.region(), paddr, flags, shared))?;
+            Ok(Self::Regular(range))
         }
     }
 
@@ -132,7 +117,7 @@ impl GlobalRangeGuard {
     ///
     /// Virtual start address of the global mapping.
     pub fn addr(&self) -> VirtAddr {
-        self.vstart
+        self.region().start()
     }
 
     /// Request the length in bytes of the global mapping.
@@ -141,24 +126,7 @@ impl GlobalRangeGuard {
     ///
     /// Length of the global mapping in bytes.
     pub fn size(&self) -> usize {
-        let page_size = if self.huge { PAGE_SIZE_2M } else { PAGE_SIZE };
-        self.pages * page_size
-    }
-
-    fn map(&self, paddr: PhysAddr, flags: PTEntryFlags) -> Result<(), SvsmError> {
-        if self.huge {
-            with_pgtable_mut(|pg| pg.map_region_2m(self.region(), paddr, flags, self.shared))
-        } else {
-            with_pgtable_mut(|pg| pg.map_region_4k(self.region(), paddr, flags, self.shared))
-        }
-    }
-
-    fn unmap(&self) {
-        if self.huge {
-            with_pgtable_mut(|pg| pg.unmap_region_2m(self.region()));
-        } else {
-            with_pgtable_mut(|pg| pg.unmap_region_4k(self.region()));
-        }
+        self.region().len()
     }
 
     /// Request the mapped region as a [`MemoryRegion`].
@@ -167,24 +135,28 @@ impl GlobalRangeGuard {
     ///
     /// The global mapped region as an instance of [`MemoryRegion`].
     pub fn region(&self) -> MemoryRegion<VirtAddr> {
-        let page_size = if self.huge { PAGE_SIZE_2M } else { PAGE_SIZE };
-        MemoryRegion::new(self.vstart, self.pages * page_size)
+        match self {
+            Self::Regular(r) => r.region(),
+            Self::Huge(r) => r.region(),
+        }
+    }
+
+    const fn huge(&self) -> bool {
+        matches!(self, Self::Huge(..))
     }
 }
 
 impl Drop for GlobalRangeGuard {
     fn drop(&mut self) {
-        self.unmap();
-        // Flush TLB before allowing to re-use addresses
-        let pgsize = if self.huge {
+        let pgsize = if self.huge() {
+            with_pgtable_mut(|pg| pg.unmap_region_2m(self.region()));
             PageSize::Huge
         } else {
+            with_pgtable_mut(|pg| pg.unmap_region_4k(self.region()));
             PageSize::Regular
         };
+        // Flush TLB before allowing to re-use addresses
         flush_tlb_global_sync_range(self.region(), pgsize);
-        GLOBAL_RANGES
-            .lock()
-            .free(self.vstart, self.pages, self.huge);
     }
 }
 
@@ -226,10 +198,7 @@ pub fn map_global_range(
 
     let pages = size_aligned / page_size;
 
-    let guard = GLOBAL_RANGES.lock().alloc(pages, huge, shared)?;
-    guard.map(pstart, flags)?;
-
-    Ok(guard)
+    GlobalRangeGuard::new(pstart, pages, flags, huge, shared)
 }
 
 /// Create a private mapping using of physical addresses into the global shared
