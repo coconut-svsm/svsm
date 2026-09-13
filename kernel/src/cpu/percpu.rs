@@ -33,7 +33,7 @@ use crate::locking::{
 };
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::virtualrange::VirtualRange;
+use crate::mm::virtualrange::SubVmAllocator;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
 use crate::mm::{
     PERCPU_TEMP_2M, PERCPU_TEMP_4K, PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK,
@@ -426,9 +426,9 @@ where
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
     /// Address allocator for per-cpu 4k temporary mappings
-    vrange_4k: RWLock<VirtualRange>,
+    vrange_4k: RWLock<SubVmAllocator>,
     /// Address allocator for per-cpu 2m temporary mappings
-    vrange_2m: RWLock<VirtualRange>,
+    vrange_2m: RWLock<SubVmAllocator>,
     /// Local APIC state for APIC emulation if enabled
     guest_apic: RWLock<Option<LocalApic>>,
 
@@ -467,8 +467,8 @@ impl PerCpu {
                 vmr
             },
 
-            vrange_4k: RWLock::new(VirtualRange::new()),
-            vrange_2m: RWLock::new(VirtualRange::new()),
+            vrange_4k: RWLock::new(SubVmAllocator::new()),
+            vrange_2m: RWLock::new(SubVmAllocator::new()),
             guest_apic: RWLock::new(None),
 
             shared,
@@ -827,7 +827,7 @@ impl PerCpu {
 
     fn initialize_vm_ranges(&self) -> Result<(), SvsmError> {
         const PAGE_COUNT_4K: usize = PERCPU_TEMP_4K.size() / PAGE_SIZE;
-        const { assert!(PAGE_COUNT_4K < VirtualRange::CAPACITY) };
+        const { assert!(PAGE_COUNT_4K < SubVmAllocator::CAPACITY) };
 
         let temp_mapping_4k = VMReserved::new_mapping(PERCPU_TEMP_4K.size());
         self.vm_range
@@ -836,7 +836,7 @@ impl PerCpu {
             .init(PERCPU_TEMP_4K.base(), PAGE_COUNT_4K, PAGE_SHIFT);
 
         const PAGE_COUNT_2M: usize = PERCPU_TEMP_2M.size() / PAGE_SIZE_2M;
-        const { assert!(PAGE_COUNT_2M < VirtualRange::CAPACITY) };
+        const { assert!(PAGE_COUNT_2M < SubVmAllocator::CAPACITY) };
 
         let temp_mapping_2m = VMReserved::new_mapping(PERCPU_TEMP_2M.size());
         self.vm_range
@@ -1262,19 +1262,19 @@ impl PerCpu {
         self.shared.runqueue_mut()
     }
 
-    pub fn vrange_4k(&self) -> ReadLockGuard<'_, VirtualRange> {
+    pub fn vrange_4k(&self) -> ReadLockGuard<'_, SubVmAllocator> {
         self.vrange_4k.read_noblock()
     }
 
-    pub fn vrange_4k_mut(&self) -> WriteLockGuard<'_, VirtualRange> {
+    pub fn vrange_4k_mut(&self) -> WriteLockGuard<'_, SubVmAllocator> {
         self.vrange_4k.write_noblock()
     }
 
-    pub fn vrange_2m(&self) -> ReadLockGuard<'_, VirtualRange> {
+    pub fn vrange_2m(&self) -> ReadLockGuard<'_, SubVmAllocator> {
         self.vrange_2m.read_noblock()
     }
 
-    pub fn vrange_2m_mut(&self) -> WriteLockGuard<'_, VirtualRange> {
+    pub fn vrange_2m_mut(&self) -> WriteLockGuard<'_, SubVmAllocator> {
         self.vrange_2m.write_noblock()
     }
 
