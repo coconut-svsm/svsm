@@ -9,6 +9,7 @@ use crate::types::TPR_LOCK;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
+use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// A lock guard obtained from a [`SpinLock`]. This lock guard
@@ -32,10 +33,24 @@ use core::sync::atomic::{AtomicU64, Ordering};
 #[must_use = "if unused the SpinLock will immediately unlock"]
 pub struct RawLockGuard<'a, T, I> {
     holder: &'a AtomicU64,
-    data: &'a mut T,
+    /// Pointer to the protected data. This relaxes the borrow checker
+    /// when implementing `map()` and related methods, and prevents
+    /// introducing LLVM `noalias` violations, according to a comment
+    /// in the equivalent guard structure for RwLock in the standard
+    /// library.
+    data: NonNull<T>,
+    _variance: PhantomData<&'a mut T>,
     #[expect(dead_code)]
     irq_state: I,
 }
+
+// SAFETY: RawLockGuard does not automatically implement Sync because it
+// contains a `NonNull`, which is guarded by the lock's behavior.
+unsafe impl<T: Sync, I: Sync> Sync for RawLockGuard<'_, T, I> {}
+
+// SAFETY: RawLockGuard does not automatically implement Send because it
+// contains a `NonNull`, which is guarded by the lock's behavior.
+unsafe impl<T: Send, I: Send> Send for RawLockGuard<'_, T, I> {}
 
 /// Implements the behavior of the [`LockGuard`] when it is dropped
 impl<T, I> Drop for RawLockGuard<'_, T, I> {
@@ -51,7 +66,8 @@ impl<T, I> Deref for RawLockGuard<'_, T, I> {
     type Target = T;
     /// Provides read-only access to the protected data
     fn deref(&self) -> &T {
-        self.data
+        // SAFETY: a spinlock guard guarantees exclusive access
+        unsafe { self.data.as_ref() }
     }
 }
 
@@ -60,7 +76,8 @@ impl<T, I> Deref for RawLockGuard<'_, T, I> {
 impl<T, I> DerefMut for RawLockGuard<'_, T, I> {
     /// Provides mutable access to the protected data
     fn deref_mut(&mut self) -> &mut T {
-        self.data
+        // SAFETY: a spinlock guard guarantees exclusive access
+        unsafe { self.data.as_mut() }
     }
 }
 
@@ -168,9 +185,10 @@ impl<T: Send, I: IrqLocking> RawSpinLock<T, I> {
         }
         RawLockGuard {
             holder: &self.holder,
-            // SAFETY: The lock is taken and enforces exclusive usage of the
-            // mutable reference.
-            data: unsafe { &mut *self.data.get() },
+            // SAFETY: the UnsafeCell is initialized on construction, so the
+            // pointer can never be NULL
+            data: unsafe { NonNull::new_unchecked(self.data.get()) },
+            _variance: PhantomData,
             irq_state,
         }
     }
@@ -215,9 +233,10 @@ impl<T: Send, I: IrqLocking> RawSpinLock<T, I> {
             if result.is_ok() {
                 return Some(RawLockGuard {
                     holder: &self.holder,
-                    // SAFETY: The lock is taken and enforces exclusive usage
-                    // of the mutable reference.
-                    data: unsafe { &mut *self.data.get() },
+                    // SAFETY: the UnsafeCell is initialized on construction, so the
+                    // pointer can never be NULL
+                    data: unsafe { NonNull::new_unchecked(self.data.get()) },
+                    _variance: PhantomData,
                     irq_state,
                 });
             }
