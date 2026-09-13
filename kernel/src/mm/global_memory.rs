@@ -10,10 +10,40 @@ use crate::cpu::percpu::with_pgtable_mut;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::virtualrange::SubVmAllocator;
-use crate::mm::{GLOBAL_MAPPING_2M, GLOBAL_MAPPING_4K};
+use crate::mm::virtualrange::{SubVmAllocator, SubVmRange};
+use crate::mm::{AddrSpaceDescriptor, GLOBAL_MAPPING_2M, GLOBAL_MAPPING_4K};
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::{MemoryRegion, align_up};
+
+#[derive(Debug)]
+pub struct GlobalRange4k;
+
+impl SubVmRange for GlobalRange4k {
+    const DESCRIPTOR: AddrSpaceDescriptor = GLOBAL_MAPPING_4K;
+    const GRANULE: usize = PAGE_SIZE;
+
+    fn with_allocator<F, R>(mut f: F) -> R
+    where
+        F: FnMut(&mut SubVmAllocator) -> R,
+    {
+        f(&mut GLOBAL_RANGES.lock().range_4k)
+    }
+}
+
+#[derive(Debug)]
+pub struct GlobalRange2m;
+
+impl SubVmRange for GlobalRange2m {
+    const DESCRIPTOR: AddrSpaceDescriptor = GLOBAL_MAPPING_2M;
+    const GRANULE: usize = PAGE_SIZE_2M;
+
+    fn with_allocator<F, R>(mut f: F) -> R
+    where
+        F: FnMut(&mut SubVmAllocator) -> R,
+    {
+        f(&mut GLOBAL_RANGES.lock().range_2m)
+    }
+}
 
 struct GlobalRanges {
     range_4k: SubVmAllocator,
