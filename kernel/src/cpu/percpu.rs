@@ -381,8 +381,12 @@ impl PerCpuShared {
     }
 }
 
+percpu! {
+    #[percpu_asm_symbol("__svsm_percpu_context_switch_stack")]
+    static CONTEXT_SWITCH_STACK: AtomicUsize = AtomicUsize::new(0);
+}
+
 // Expose the offsets of critical per-CPU fields to assembly.
-pub const PERCPU_CTXT_SWITCH_STACK_OFFSET: usize = offset_of!(PerCpu, context_switch_stack);
 pub const PERCPU_PAGING_ROOT_OFFSET: usize = offset_of!(PerCpu, cr3);
 pub const PERCPU_SHARED_OFFSET: usize = offset_of!(PerCpu, shared);
 pub const PERCPU_SHARED_INDEX_OFFSET: usize = offset_of!(PerCpuShared, cpu_index);
@@ -426,6 +430,8 @@ where
     hv_doorbell: ImmutAfterInitCell<SharedBox<HVDoorbell>>,
 
     init_shadow_stack: ImmutAfterInitCell<VirtAddr>,
+    /// Stages the context-switch stack address until the target CPU can
+    /// initialize its linker-backed per-CPU key.
     context_switch_stack: AtomicUsize,
     ist: IstStacks,
 
@@ -717,6 +723,12 @@ impl PerCpu {
     pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
         self.percpu_area.initialize();
         self.percpu_area.load();
+        CONTEXT_SWITCH_STACK.with(|context_switch_stack| {
+            context_switch_stack.store(
+                self.context_switch_stack.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+        });
         init_vrange_4k();
         init_vrange_2m();
         // The BSP allocates these later, when Hyper-V is initialized.
