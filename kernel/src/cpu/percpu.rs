@@ -392,7 +392,7 @@ impl SubVmRange for PerCpu4kRange {
     const DESCRIPTOR: AddrSpaceDescriptor = PERCPU_TEMP_4K;
     const GRANULE: usize = PAGE_SIZE;
 
-    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator> {
+    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator<Self>> {
         this_cpu().vrange_4k_mut()
     }
 }
@@ -404,7 +404,7 @@ impl SubVmRange for PerCpu2mRange {
     const DESCRIPTOR: AddrSpaceDescriptor = PERCPU_TEMP_2M;
     const GRANULE: usize = PAGE_SIZE_2M;
 
-    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator> {
+    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator<Self>> {
         this_cpu().vrange_2m_mut()
     }
 }
@@ -447,9 +447,9 @@ where
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
     /// Address allocator for per-cpu 4k temporary mappings
-    vrange_4k: RWLock<SubVmAllocator>,
+    vrange_4k: RWLock<SubVmAllocator<PerCpu4kRange>>,
     /// Address allocator for per-cpu 2m temporary mappings
-    vrange_2m: RWLock<SubVmAllocator>,
+    vrange_2m: RWLock<SubVmAllocator<PerCpu2mRange>>,
     /// Local APIC state for APIC emulation if enabled
     guest_apic: RWLock<Option<LocalApic>>,
 
@@ -816,23 +816,17 @@ impl PerCpu {
     }
 
     fn initialize_vm_ranges(&self) -> Result<(), SvsmError> {
-        const PAGE_COUNT_4K: usize = PERCPU_TEMP_4K.size() / PAGE_SIZE;
-        const { assert!(PAGE_COUNT_4K < SubVmAllocator::CAPACITY) };
-
-        let temp_mapping_4k = VMReserved::new_mapping(PERCPU_TEMP_4K.size());
+        let mut range = self.vrange_4k_mut();
+        let temp_mapping_4k = VMReserved::new_mapping(range.descriptor().size());
         self.vm_range
-            .insert_at(PERCPU_TEMP_4K.base(), temp_mapping_4k)?;
-        self.vrange_4k_mut()
-            .init(PERCPU_TEMP_4K.base(), PAGE_COUNT_4K, PAGE_SIZE);
+            .insert_at(range.descriptor().base(), temp_mapping_4k)?;
+        range.init();
 
-        const PAGE_COUNT_2M: usize = PERCPU_TEMP_2M.size() / PAGE_SIZE_2M;
-        const { assert!(PAGE_COUNT_2M < SubVmAllocator::CAPACITY) };
-
-        let temp_mapping_2m = VMReserved::new_mapping(PERCPU_TEMP_2M.size());
+        let mut range = self.vrange_2m_mut();
+        let temp_mapping_2m = VMReserved::new_mapping(range.descriptor().size());
         self.vm_range
-            .insert_at(PERCPU_TEMP_2M.base(), temp_mapping_2m)?;
-        self.vrange_2m_mut()
-            .init(PERCPU_TEMP_2M.base(), PAGE_COUNT_2M, PAGE_SIZE_2M);
+            .insert_at(range.descriptor().base(), temp_mapping_2m)?;
+        range.init();
 
         Ok(())
     }
@@ -1253,19 +1247,19 @@ impl PerCpu {
         self.runqueue().current_task()
     }
 
-    pub fn vrange_4k(&self) -> ReadLockGuard<'_, SubVmAllocator> {
+    pub fn vrange_4k(&self) -> ReadLockGuard<'_, SubVmAllocator<PerCpu4kRange>> {
         self.vrange_4k.read_noblock()
     }
 
-    pub fn vrange_4k_mut(&self) -> WriteLockGuard<'_, SubVmAllocator> {
+    pub fn vrange_4k_mut(&self) -> WriteLockGuard<'_, SubVmAllocator<PerCpu4kRange>> {
         self.vrange_4k.write_noblock()
     }
 
-    pub fn vrange_2m(&self) -> ReadLockGuard<'_, SubVmAllocator> {
+    pub fn vrange_2m(&self) -> ReadLockGuard<'_, SubVmAllocator<PerCpu2mRange>> {
         self.vrange_2m.read_noblock()
     }
 
-    pub fn vrange_2m_mut(&self) -> WriteLockGuard<'_, SubVmAllocator> {
+    pub fn vrange_2m_mut(&self) -> WriteLockGuard<'_, SubVmAllocator<PerCpu2mRange>> {
         self.vrange_2m.write_noblock()
     }
 
