@@ -12,7 +12,7 @@ use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::virtualrange::SubVmAllocator;
 use crate::mm::{GLOBAL_MAPPING_2M, GLOBAL_MAPPING_4K};
-use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, PageSize};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::{MemoryRegion, align_up};
 
 struct GlobalRanges {
@@ -32,12 +32,12 @@ impl GlobalRanges {
         self.range_4k.init(
             GLOBAL_MAPPING_4K.base(),
             GLOBAL_MAPPING_4K.size() / PAGE_SIZE,
-            PAGE_SHIFT,
+            PAGE_SIZE,
         );
         self.range_2m.init(
             GLOBAL_MAPPING_2M.base(),
             GLOBAL_MAPPING_2M.size() / PAGE_SIZE_2M,
-            PAGE_SHIFT_2M,
+            PAGE_SIZE_2M,
         );
     }
 
