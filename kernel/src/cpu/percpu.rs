@@ -33,10 +33,10 @@ use crate::locking::{
 };
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::virtualrange::SubVmAllocator;
+use crate::mm::virtualrange::{SubVmAllocator, SubVmRange};
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
 use crate::mm::{
-    PERCPU_TEMP_2M, PERCPU_TEMP_4K, PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK,
+    AddrSpaceDescriptor, PERCPU_TEMP_2M, PERCPU_TEMP_4K, PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK,
     SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU, SVSM_PERCPU_CAA, SVSM_PERCPU_VMSA_BASE,
     SVSM_SHADOW_STACK_ISST_DF_BASE, SVSM_SHADOW_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
     virt_to_phys,
@@ -384,6 +384,30 @@ pub const PERCPU_SHARED_OFFSET: usize = offset_of!(PerCpu, shared);
 pub const PERCPU_SHARED_INDEX_OFFSET: usize = offset_of!(PerCpuShared, cpu_index);
 
 const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
+
+#[derive(Debug)]
+pub struct PerCpu4kRange;
+
+impl SubVmRange for PerCpu4kRange {
+    const DESCRIPTOR: AddrSpaceDescriptor = PERCPU_TEMP_4K;
+    const GRANULE: usize = PAGE_SIZE;
+
+    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator> {
+        this_cpu().vrange_4k_mut()
+    }
+}
+
+#[derive(Debug)]
+pub struct PerCpu2mRange;
+
+impl SubVmRange for PerCpu2mRange {
+    const DESCRIPTOR: AddrSpaceDescriptor = PERCPU_TEMP_2M;
+    const GRANULE: usize = PAGE_SIZE_2M;
+
+    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator> {
+        this_cpu().vrange_2m_mut()
+    }
+}
 
 /// CPU-local data.
 ///

@@ -8,12 +8,38 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync_range;
 use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
-use crate::locking::SpinLock;
+use crate::locking::{RawLockGuard, SpinLock};
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::virtualrange::SubVmAllocator;
-use crate::mm::{GLOBAL_MAPPING_2M, GLOBAL_MAPPING_4K};
+use crate::mm::virtualrange::{SubVmAllocator, SubVmRange};
+use crate::mm::{AddrSpaceDescriptor, GLOBAL_MAPPING_2M, GLOBAL_MAPPING_4K};
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::{MemoryRegion, align_up};
+
+#[derive(Debug)]
+#[expect(dead_code)]
+struct GlobalRange4k;
+
+impl SubVmRange for GlobalRange4k {
+    const DESCRIPTOR: AddrSpaceDescriptor = GLOBAL_MAPPING_4K;
+    const GRANULE: usize = PAGE_SIZE;
+
+    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator> {
+        RawLockGuard::map(GLOBAL_RANGES.lock(), |r| &mut r.range_4k)
+    }
+}
+
+#[derive(Debug)]
+#[expect(dead_code)]
+struct GlobalRange2m;
+
+impl SubVmRange for GlobalRange2m {
+    const DESCRIPTOR: AddrSpaceDescriptor = GLOBAL_MAPPING_2M;
+    const GRANULE: usize = PAGE_SIZE_2M;
+
+    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator> {
+        RawLockGuard::map(GLOBAL_RANGES.lock(), |r| &mut r.range_2m)
+    }
+}
 
 struct GlobalRanges {
     range_4k: SubVmAllocator,
