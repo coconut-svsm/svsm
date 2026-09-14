@@ -18,6 +18,7 @@ use crate::utils::MemoryRegion;
 use crate::utils::unique_va_allocator::UniqueVaAllocator;
 
 use core::borrow::Borrow;
+use core::cell::Cell;
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
 
@@ -30,7 +31,32 @@ use alloc::boxed::Box;
 /// The shared allocator for globally unique context virtual addresses.
 #[derive(Debug)]
 struct ContextVMRAllocator {
-    ranges: SpinLock<UniqueVaAllocator<()>>,
+    ranges: SpinLock<UniqueVaAllocator<ContextVMRAllocation>>,
+}
+
+#[derive(Debug)]
+struct ContextVMRAllocation {
+    shareable: bool,
+    refcount: Cell<usize>,
+    mapping: Option<Mapping>,
+}
+
+impl ContextVMRAllocation {
+    const fn private() -> Self {
+        Self {
+            shareable: false,
+            refcount: Cell::new(1),
+            mapping: None,
+        }
+    }
+
+    fn shared(mapping: Mapping) -> Self {
+        Self {
+            shareable: true,
+            refcount: Cell::new(1),
+            mapping: Some(mapping),
+        }
+    }
 }
 
 impl ContextVMRAllocator {
@@ -46,19 +72,66 @@ impl ContextVMRAllocator {
     fn alloc_aligned(&self, hint: VirtAddr, size: usize, align: usize) -> Option<VirtAddr> {
         self.ranges
             .lock()
-            .alloc_aligned_hint(hint.as_usize(), size, align, ())
+            .alloc_aligned_hint(
+                hint.as_usize(),
+                size,
+                align,
+                ContextVMRAllocation::private(),
+            )
             .map(VirtAddr::from)
     }
 
     fn alloc_at(&self, addr: VirtAddr, size: usize) -> Option<VirtAddr> {
         self.ranges
             .lock()
-            .alloc_at(addr.as_usize(), size, ())
+            .alloc_at(addr.as_usize(), size, ContextVMRAllocation::private())
             .map(VirtAddr::from)
     }
 
+    fn alloc_shared(&self, mapping: Mapping) -> Option<VirtAddr> {
+        let size = mapping.mapping_size();
+        let allocation = ContextVMRAllocation::shared(mapping);
+
+        self.ranges
+            .lock()
+            .alloc(size, allocation)
+            .map(VirtAddr::from)
+    }
+
+    fn map_shared(&self, addr: VirtAddr) -> Option<Mapping> {
+        let ranges = self.ranges.lock();
+        let allocation = ranges.get(addr.as_usize())?;
+
+        if !allocation.shareable {
+            return None;
+        }
+
+        let mapping = allocation.mapping.clone()?;
+        allocation
+            .refcount
+            .set(allocation.refcount.get().checked_add(1)?);
+        Some(mapping)
+    }
+
     fn free(&self, addr: VirtAddr) {
-        self.ranges.lock().free(addr.as_usize());
+        let mut ranges = self.ranges.lock();
+        let Some(allocation) = ranges.get(addr.as_usize()) else {
+            return;
+        };
+
+        if allocation.shareable {
+            let refcount = allocation
+                .refcount
+                .get()
+                .checked_sub(1)
+                .expect("ContextVMR allocation refcount underflow");
+            allocation.refcount.set(refcount);
+            if refcount != 0 {
+                return;
+            }
+        }
+
+        ranges.free(addr.as_usize());
     }
 }
 
@@ -68,8 +141,10 @@ static CONTEXT_VMR_ALLOCATOR: ContextVMRAllocator = ContextVMRAllocator::new();
 ///
 /// All [`ContextVMR`] instances allocate from one shared address allocator, but
 /// each instance owns a separate [`PageTablePart`]. Consequently, mappings
-/// have unique virtual addresses while remaining visible only in page tables
-/// populated from the owning [`ContextVMR`].
+/// have unique virtual addresses by default while remaining visible only in
+/// page tables populated from the owning [`ContextVMR`]. Mappings created with
+/// [`ContextVMR::alloc_shared`] may be installed in multiple instances at the
+/// same virtual address.
 #[derive(Debug)]
 pub struct ContextVMR {
     tree: RWLock<RBTree<VMMAdapter>>,
@@ -156,14 +231,38 @@ impl ContextVMR {
 
     fn insert_allocated(&self, addr: VirtAddr, mapping: Mapping) -> Result<VirtAddr, SvsmError> {
         let vmm = Box::new(VMM::new(addr.pfn(), mapping));
+        let mut tree = self.tree.lock_write();
+
+        if !tree.find(&addr.pfn()).is_null() {
+            CONTEXT_VMR_ALLOCATOR.free(addr);
+            return Err(SvsmError::Mem);
+        }
+
         if let Err(error) = self.map_vmm(&vmm) {
             self.unmap_vmm(&vmm);
             CONTEXT_VMR_ALLOCATOR.free(addr);
             return Err(error);
         }
 
-        self.tree.lock_write().insert(vmm);
+        tree.insert(vmm);
         Ok(addr)
+    }
+
+    /// Allocates a mapping which may be mapped into other [`ContextVMR`]
+    /// instances.
+    pub fn alloc_shared(&self, mapping: Mapping) -> Result<VirtAddr, SvsmError> {
+        let addr = CONTEXT_VMR_ALLOCATOR
+            .alloc_shared(mapping.clone())
+            .ok_or(SvsmError::Mem)?;
+        self.insert_allocated(addr, mapping)
+    }
+
+    /// Maps a shared allocation into this [`ContextVMR`].
+    pub fn map_shared(&self, addr: VirtAddr) -> Result<VirtAddr, SvsmError> {
+        let mapping = CONTEXT_VMR_ALLOCATOR
+            .map_shared(addr)
+            .ok_or(SvsmError::Mem)?;
+        self.insert_allocated(addr, mapping)
     }
 
     /// Inserts a mapping at an exact virtual address.
@@ -305,10 +404,15 @@ impl<V: Borrow<ContextVMR>> Drop for ContextVMRMapping<V> {
 #[cfg(test)]
 mod tests {
     use super::ContextVMR;
+    use crate::error::SvsmError;
+    use crate::locking::SpinLock;
     use crate::mm::vm::VMReserved;
+
+    static TEST_LOCK: SpinLock<()> = SpinLock::new(());
 
     #[test]
     fn allocations_are_unique_between_instances() {
+        let _guard = TEST_LOCK.lock();
         let first = ContextVMR::new(Default::default());
         let second = ContextVMR::new(Default::default());
         let first_addr = first.insert(VMReserved::new_mapping(4096)).unwrap();
@@ -323,5 +427,43 @@ mod tests {
             .insert_at(first_addr, VMReserved::new_mapping(4096))
             .unwrap();
         assert_eq!(third_addr, first_addr);
+    }
+
+    #[test]
+    fn shared_allocations_are_refcounted() {
+        let _guard = TEST_LOCK.lock();
+        let first = ContextVMR::new(Default::default());
+        let second = ContextVMR::new(Default::default());
+        let addr = first.alloc_shared(VMReserved::new_mapping(4096)).unwrap();
+
+        assert_eq!(second.map_shared(addr).unwrap(), addr);
+        assert!(matches!(second.map_shared(addr), Err(SvsmError::Mem)));
+
+        drop(first);
+
+        let third = ContextVMR::new(Default::default());
+        assert!(matches!(
+            third.insert_at(addr, VMReserved::new_mapping(4096)),
+            Err(SvsmError::Mem)
+        ));
+
+        drop(second);
+
+        assert_eq!(
+            third
+                .insert_at(addr, VMReserved::new_mapping(4096))
+                .unwrap(),
+            addr
+        );
+    }
+
+    #[test]
+    fn private_allocations_cannot_be_shared() {
+        let _guard = TEST_LOCK.lock();
+        let first = ContextVMR::new(Default::default());
+        let second = ContextVMR::new(Default::default());
+        let addr = first.insert(VMReserved::new_mapping(4096)).unwrap();
+
+        assert!(matches!(second.map_shared(addr), Err(SvsmError::Mem)));
     }
 }
