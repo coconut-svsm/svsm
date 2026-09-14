@@ -9,7 +9,8 @@
             ],
             "policy": "0x30000",
             "measure": "print",
-            "check-kvm": true
+            "check-kvm": true,
+            "secure-tsc": true
         }
     },
     "kernel": {
