@@ -61,9 +61,6 @@ impl ClockParams {
     }
 }
 
-/// Global clock parameters, initialized once at boot.
-static CLOCK_PARAMS: ImmutAfterInitCell<ClockParams> = ImmutAfterInitCell::uninit();
-
 /// Global monotonic clock accessor.
 ///
 /// This is the primary interface for obtaining time measurements.
@@ -77,19 +74,26 @@ pub static MONOTONIC_CLOCK: MonotonicClock = MonotonicClock::new();
 /// The clock uses SecureTSC as the underlying time source.
 #[derive(Debug)]
 pub struct MonotonicClock {
-    _private: (),
+    clock_params: ImmutAfterInitCell<ClockParams>,
 }
 
 impl MonotonicClock {
     /// Create a new MonotonicClock instance.
     pub const fn new() -> Self {
-        Self { _private: () }
+        Self {
+            clock_params: ImmutAfterInitCell::uninit(),
+        }
+    }
+
+    fn init(&self, cp: ClockParams) -> Result<(), SvsmError> {
+        self.clock_params.init(cp)?;
+        Ok(())
     }
 
     /// Check if the monotonic clock has been initialized.
     #[inline]
     pub fn is_initialized(&self) -> bool {
-        CLOCK_PARAMS.try_get_inner().is_ok()
+        self.clock_params.try_get_inner().is_ok()
     }
 
     /// Get the current instant.
@@ -107,7 +111,7 @@ impl MonotonicClock {
     /// Returns `None` if the clock has not been initialized.
     #[inline]
     pub fn try_now(&self) -> Option<Instant> {
-        let params = CLOCK_PARAMS.try_get_inner().ok()?;
+        let params = self.clock_params.try_get_inner().ok()?;
         let tsc = SECURE_TSC_ACCESSOR.read_tsc();
 
         // Calculate ticks since boot, handling potential wraparound
@@ -154,7 +158,7 @@ impl MonotonicClock {
     ///
     /// Returns `None` if the clock has not been initialized.
     pub fn frequency(&self) -> Option<u64> {
-        CLOCK_PARAMS.try_get_inner().ok().map(|p| p.freq_hz)
+        self.clock_params.try_get_inner().ok().map(|p| p.freq_hz)
     }
 }
 
@@ -446,7 +450,7 @@ pub fn init_monotonic_clock() -> Result<(), SvsmError> {
 
     // Initialize clock parameters
     let params = ClockParams::new(freq_hz, boot_tsc);
-    CLOCK_PARAMS.init(params)?;
+    MONOTONIC_CLOCK.init(params)?;
 
     log::info!(
         "Monotonic clock initialized: frequency = {} Hz or {} MHz",
@@ -522,7 +526,7 @@ mod tests {
     #[test]
     #[cfg(not(test_in_svsm))]
     fn test_monotonic_clock_not_initialized() {
-        // CLOCK_PARAMS is never initialized in unit tests, so the clock
+        // MONOTONIC_CLOCK is never initialized in unit tests, so the clock
         // should report as uninitialized and try_get_instant should return None.
         let clock = MonotonicClock::new();
         assert!(!clock.is_initialized());
