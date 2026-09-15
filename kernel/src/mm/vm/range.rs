@@ -33,6 +33,74 @@ use alloc::vec::Vec;
 /// 4-level paging.
 pub const VMR_GRANULE: usize = PAGE_SIZE * 512 * 512 * 512;
 
+/// A statically-described virtual memory range.
+///
+/// A [`VmRange`] associates a fixed region of the virtual address space with
+/// the allocator that hands out virtual addresses within it, together with the
+/// page-table properties shared by all of those mappings.
+pub trait VmRange: Sized + Sync + core::fmt::Debug {
+    /// The region of the virtual address space covered by this range.
+    const DESCRIPTOR: AddrSpaceDescriptor;
+
+    /// Page-table flags applied to every mapping in this range.
+    const PT_FLAGS: PTEntryFlags;
+
+    /// Whether mappings in this range are per-CPU. This selects the TLB
+    /// flushing behaviour used when mappings are removed.
+    const PER_CPU: bool = false;
+
+    /// The allocator that reserves and tracks the [`Mapping`]s of this range.
+    type Allocator: VmAllocator<Self>;
+}
+
+/// An allocator of [`Mapping`]s within a [`VmRange`].
+///
+/// Implementations reserve virtual address ranges, associate a [`Mapping`]
+/// with each reservation, and answer the reverse lookup used to resolve page
+/// faults.
+pub trait VmAllocator<V: VmRange>: Sync + core::fmt::Debug {
+    /// Creates an allocator managing the region for `V::DESCRIPTOR`.
+    fn new() -> Self;
+
+    /// Reserves `size` bytes at or above `hint`, aligned to `align`, and
+    /// associates `mapping` with the reservation.
+    ///
+    /// Returns the base address of the reservation.
+    fn alloc(
+        &self,
+        hint: VirtAddr,
+        size: usize,
+        align: usize,
+        mapping: Mapping,
+    ) -> Result<VirtAddr, SvsmError>;
+
+    /// Reserves exactly `size` bytes at `at` and associates `mapping` with the
+    /// reservation.
+    fn alloc_at(&self, at: VirtAddr, size: usize, mapping: Mapping) -> Result<VirtAddr, SvsmError>;
+
+    /// Removes the mapping at `base` and returns it.
+    ///
+    /// This allows implementing allocators where teardown involves a two
+    /// step atomic transaction: the mapping is verified to be present and
+    /// locked down, then torn down (e.g. removed from page tables), and
+    /// finally marked as free in allocator itself.
+    ///
+    /// Returns `None` if there is no mapping at `base`, in which case
+    /// `teardown` is not invoked.
+    fn free<F>(&self, base: VirtAddr, teardown: F) -> Option<Mapping>
+    where
+        F: FnOnce(&Mapping);
+
+    /// Returns the base address and [`Mapping`] of the reservation containing
+    /// `addr`, as visible to this allocator instance.
+    fn query(&self, addr: VirtAddr) -> Option<(VirtAddr, Mapping)>;
+
+    /// Invokes `f` for each allocation owned by the allocator
+    fn for_each<F>(&self, f: F)
+    where
+        F: FnMut(VirtAddr, &Mapping);
+}
+
 /// Virtual Memory Region
 ///
 /// This struct manages the mappings in a region of the virtual address space.
