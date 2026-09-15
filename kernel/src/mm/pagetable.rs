@@ -371,6 +371,18 @@ impl PTEntry {
         self.set_unrestricted(addr, supported_flags(flags));
     }
 
+    /// Replaces the flags of the page table entry, preserving its physical
+    /// address including the shared/private encoding.
+    pub fn set_flags(&mut self, flags: PTEntryFlags) {
+        debug_assert!(self.present());
+        let paddr = if is_shared(self.0) {
+            make_shared_address(self.address())
+        } else {
+            make_private_address(self.address())
+        };
+        self.set(paddr, flags);
+    }
+
     /// Inserts the private address mask if the page is present.
     pub fn make_private_if_present(&mut self) {
         if self.present() {
@@ -1200,15 +1212,7 @@ impl PageTable {
                         return Err(SvsmError::Mem);
                     }
 
-                    let flags = PTEntryFlags::data_ro();
-
-                    let paddr = if is_shared(entry.0) {
-                        make_shared_address(entry.address())
-                    } else {
-                        make_private_address(entry.address())
-                    };
-
-                    entry.set(paddr, flags);
+                    entry.set_flags(PTEntryFlags::data_ro());
                 }
                 1 | 2 => {
                     // Ensure we never fell on a huge page while iterating over the region pages.
