@@ -567,13 +567,18 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         #[cfg(feature = "persistence")]
         let persistence_bootstrap_info = persistence_discover().unwrap();
 
-        let secret = run_attestation().unwrap();
-
-        #[cfg(not(feature = "persistence"))]
-        let _ = secret;
-        #[cfg(feature = "persistence")]
-        if let Some(persistence_bootstrap_info) = persistence_bootstrap_info {
-            persistence_init(persistence_bootstrap_info, &secret).unwrap();
+        match run_attestation() {
+            Ok(secret) => {
+                #[cfg(not(feature = "persistence"))]
+                let _ = secret;
+                #[cfg(feature = "persistence")]
+                if let Some(persistence_bootstrap_info) = persistence_bootstrap_info {
+                    persistence_init(persistence_bootstrap_info, &secret).unwrap();
+                }
+            }
+            Err(e) => {
+                log::error!("attestation failed: {e:?}");
+            }
         }
     }
 
