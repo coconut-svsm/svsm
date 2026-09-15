@@ -8,7 +8,6 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::features::{Feature, cpu_has_feat};
 use crate::cpu::mem::unsafe_copy_bytes;
 use crate::cpu::msr::write_msr;
-use crate::cpu::percpu::PerCpu;
 use crate::cpu::{IrqGuard, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::error::SvsmError::HyperV;
@@ -62,7 +61,7 @@ impl HypercallPage {
 ///
 /// `'a` is the lifetime of the borrow of the hypercall page from the
 /// containing [`HypercallPagesGuard`], and `'b` is the lifetime of
-/// the borrow of the pages into the [`PerCpu`].
+/// the borrow of the underlying hypercall page lock.
 #[derive(Debug)]
 struct HypercallInput<'a, 'b, H, T> {
     page: &'a mut WriteLockGuard<'b, HypercallPage>,
@@ -519,14 +518,14 @@ struct HvInputEnableVpVtl {
 }
 
 fn enable_vp_vtl_hypercall(
-    cpu: &PerCpu,
+    cpu_index: usize,
     vtl: u8,
     context: &HvInitialVpContext,
 ) -> Result<(), SvsmError> {
     let input_header = HvInputEnableVpVtl {
         partition_id: HV_PARTITION_ID_SELF,
         vtl,
-        vp_index: cpu.get_cpu_index().try_into().unwrap(),
+        vp_index: cpu_index.try_into().unwrap(),
         context: *context,
         ..Default::default()
     };
@@ -560,14 +559,14 @@ struct HvInputStartVirtualProcessor {
 }
 
 fn start_vp_hypercall(
-    cpu: &PerCpu,
+    cpu_index: usize,
     vtl: u8,
     context: &HvInitialVpContext,
 ) -> Result<(), SvsmError> {
     let input_header = HvInputStartVirtualProcessor {
         partition_id: HV_PARTITION_ID_SELF,
         vtl,
-        vp_index: cpu.get_cpu_index().try_into().unwrap(),
+        vp_index: cpu_index.try_into().unwrap(),
         context: *context,
         ..Default::default()
     };
@@ -592,12 +591,12 @@ fn start_vp_hypercall(
     })
 }
 
-pub fn hyperv_start_cpu(cpu: &PerCpu, context: &HvInitialVpContext) -> Result<(), SvsmError> {
+pub fn hyperv_start_cpu(cpu_index: usize, context: &HvInitialVpContext) -> Result<(), SvsmError> {
     // Enable the current VTL on the target CPU if the current VTL is not
     // VTL 0.
     let vtl = *CURRENT_VTL;
     if vtl != 0 {
-        enable_vp_vtl_hypercall(cpu, vtl, context)?;
+        enable_vp_vtl_hypercall(cpu_index, vtl, context)?;
     }
-    start_vp_hypercall(cpu, vtl, context)
+    start_vp_hypercall(cpu_index, vtl, context)
 }

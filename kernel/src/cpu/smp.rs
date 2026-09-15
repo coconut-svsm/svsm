@@ -70,7 +70,7 @@ fn start_cpu(
     ap_start_context_ref: Option<&ApStartContextRef>,
 ) -> Result<(), SvsmError> {
     let start_rip: u64 = start_ap_entry as *const () as usize as u64;
-    let percpu = PerCpu::alloc(percpu_shared)?;
+    let percpu = PerCpu::alloc()?;
     let pgtable = this_cpu().new_pgtable()?;
     percpu.setup(pgtable)?;
 
@@ -81,7 +81,7 @@ fn start_cpu(
         .unwrap();
     let stack_slot_paddr = percpu.get_pgtable().phys_addr(stack_slot)?;
     let stack_slot_vaddr = phys_to_virt(stack_slot_paddr);
-    let launch = Box::new(CpuLaunch::new_application(percpu));
+    let launch = Box::new(CpuLaunch::new_application(percpu, percpu_shared));
     let launch_ptr = Box::into_raw(launch);
 
     // SAFETY: the stack slot is backed by the target CPU's private stack and
@@ -94,14 +94,13 @@ fn start_cpu(
     }
     fence(Ordering::Release);
 
-    if let Err(err) = platform.start_cpu(percpu, start_rip, ap_start_context_ref) {
+    if let Err(err) = platform.start_cpu(percpu, percpu_shared, start_rip, ap_start_context_ref) {
         // SAFETY: a failed platform launch did not release the target CPU, so
         // ownership of the launch record remains with this CPU.
         drop(unsafe { Box::from_raw(launch_ptr) });
         return Err(err);
     }
 
-    let percpu_shared = percpu.shared();
     while !percpu_shared.is_online() {}
     Ok(())
 }

@@ -13,7 +13,7 @@ use super::super::isst::{
     double_fault_shadow_stack, init_double_fault_shadow_stack, init_isst, load_isst,
 };
 use super::super::shadow_stack::{init_initial_shadow_stack, init_shadow_stack, is_cet_ss_enabled};
-use super::super::smp::init_percpu_shared;
+use super::super::smp::{init_percpu_shared, this_cpu_shared};
 use super::super::tss::{double_fault_stack, init_double_fault_stack, setup_tss, tss_address};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::ShadowStackInit;
@@ -409,10 +409,6 @@ where
     /// Linker-defined CPU-local variables accessed through `%GS`.
     pub(super) percpu_area: PerCpuArea,
 
-    /// Reference to the `PerCpuShared` that is valid in the global, shared
-    /// address space.
-    shared: &'static PerCpuShared,
-
     pgtbl: AtomicPtr<PageTable>,
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     /// PerCpu Virtual Memory Range
@@ -428,7 +424,7 @@ where
 
 impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
-    fn new(shared: &'static PerCpuShared) -> Result<Self, SvsmError> {
+    fn new() -> Result<Self, SvsmError> {
         Ok(Self {
             percpu_area: PerCpuArea::new()?,
             pgtbl: AtomicPtr::new(ptr::null_mut()),
@@ -439,7 +435,6 @@ impl PerCpu {
                 vmr
             },
 
-            shared,
             init_shadow_stack: ImmutAfterInitCell::uninit(),
             context_switch_stack: AtomicUsize::new(0),
             ist: IstStacks::new(),
@@ -448,14 +443,14 @@ impl PerCpu {
 
     /// Creates a new default [`PerCpu`] struct, allocates it via the page
     /// allocator and adds it to the global per-cpu area list.
-    pub fn alloc(shared: &'static PerCpuShared) -> Result<&'static Self, SvsmError> {
-        let page = PageBox::try_new(Self::new(shared)?)?;
+    pub fn alloc() -> Result<&'static Self, SvsmError> {
+        let page = PageBox::try_new(Self::new()?)?;
         let percpu = PageBox::leak(page);
         Ok(percpu)
     }
 
     pub fn shared(&self) -> &PerCpuShared {
-        self.shared
+        this_cpu_shared()
     }
 
     pub fn get_top_of_context_switch_stack(&self) -> Option<VirtAddr> {
@@ -464,7 +459,7 @@ impl PerCpu {
     }
 
     pub fn get_cpu_index(&self) -> usize {
-        self.shared.cpu_index()
+        self.shared().cpu_index()
     }
 
     pub fn get_apic_id(&self) -> u32 {
@@ -659,14 +654,14 @@ impl PerCpu {
         Ok(())
     }
 
-    pub(in crate::cpu) fn setup_percpu_keys(&self) {
+    pub(in crate::cpu) fn setup_percpu_keys(&self, shared: &'static PerCpuShared) {
         let initialize_keys = self.percpu_area.initialize();
         self.percpu_area.load();
         if !initialize_keys {
             return;
         }
 
-        init_percpu_shared(self.shared);
+        init_percpu_shared(shared);
 
         // Publish values prepared by the boot CPU now that this CPU can
         // access its linker-backed per-CPU keys through %gs.
@@ -707,7 +702,7 @@ impl PerCpu {
         platform.setup_percpu_current(self)?;
 
         // The BSP allocates these later, when Hyper-V is initialized.
-        if self.shared.cpu_index() != 0 && cpu_has_feat(Feature::HyperV) {
+        if self.shared().cpu_index() != 0 && cpu_has_feat(Feature::HyperV) {
             allocate_hypercall_pages()?;
         }
         assert!(apic_id() == self.get_apic_id());
@@ -723,7 +718,7 @@ impl PerCpu {
     pub fn setup_idle_task(&self) -> Result<(), SvsmError> {
         self.setup_idle_task_internal(KernelThreadStartInfo::new(
             cpu_idle_loop,
-            self.shared.cpu_index,
+            self.shared().cpu_index,
         ))
     }
 
@@ -928,11 +923,11 @@ impl PerCpu {
     }
 
     pub fn runqueue(&self) -> ReadLockGuardIrqSafe<'_, RunQueue> {
-        self.shared.runqueue()
+        self.shared().runqueue()
     }
 
     pub fn runqueue_mut(&self) -> WriteLockGuardIrqSafe<'_, RunQueue> {
-        self.shared.runqueue_mut()
+        self.shared().runqueue_mut()
     }
 }
 

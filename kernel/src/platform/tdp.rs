@@ -222,6 +222,7 @@ impl SvsmPlatform for TdpPlatform {
     fn start_cpu(
         &self,
         cpu: &PerCpu,
+        shared: &'static crate::cpu::percpu::PerCpuShared,
         start_rip: u64,
         ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError> {
@@ -251,7 +252,7 @@ impl SvsmPlatform for TdpPlatform {
         // this point.
         tdp_context
             .vp_index
-            .store(cpu.get_cpu_index() as u32, Ordering::Release);
+            .store(shared.cpu_index() as u32, Ordering::Release);
         drop(tdp_context);
 
         // When running under Hyper-V, the target vCPU does not begin running
@@ -260,7 +261,7 @@ impl SvsmPlatform for TdpPlatform {
             // Do not expose the actual CPU context via the hypercall since it
             // is not needed.  Use a default context instead.
             let ctx = hyperv::HvInitialVpContext::default();
-            hyperv_start_cpu(cpu, &ctx)?;
+            hyperv_start_cpu(shared.cpu_index(), &ctx)?;
         }
 
         Ok(())

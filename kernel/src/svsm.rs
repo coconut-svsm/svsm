@@ -369,7 +369,7 @@ unsafe fn svsm_start(
     // SAFETY: this is the first CPU, so there can be no other dependencies
     // on multi-threaded access to the per-cpu areas.
     let percpu_shared = unsafe { PERCPU_AREAS.create_new(0) };
-    let bsp_percpu = PerCpu::alloc(percpu_shared).expect("Failed to allocate BSP per-cpu data");
+    let bsp_percpu = PerCpu::alloc().expect("Failed to allocate BSP per-cpu data");
 
     bsp_percpu
         .setup(init_pgtable)
@@ -379,7 +379,7 @@ unsafe fn svsm_start(
     let stack = unsafe {
         MemoryRegion::from_addresses(VirtAddr::from(bsp_stack), VirtAddr::from(bsp_stack_end))
     };
-    initialize_cpu(CpuLaunch::new(bsp_percpu, stack), platform)
+    initialize_cpu(CpuLaunch::new(bsp_percpu, percpu_shared, stack), platform)
         .expect("Failed to initialize boot CPU");
 
     // SAFETY: the boot loader is trusted to allocate an appropriate virtual
