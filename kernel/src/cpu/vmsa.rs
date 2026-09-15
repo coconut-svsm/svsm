@@ -6,6 +6,7 @@
 
 use crate::hyperv;
 use crate::sev::status::sev_flags;
+use crate::sev::vmsa::VmsaPage;
 use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_ATTRIBUTES, SVSM_DS, SVSM_DS_ATTRIBUTES};
 use core::sync::atomic::{AtomicU64, Ordering};
 use cpuarch::sev_status::SEVStatusFlags;
@@ -15,7 +16,13 @@ use super::gdt::GLOBAL_GDT;
 use super::idt::GLOBAL_IDT;
 
 percpu! {
+    static SVSM_VMSA: VmsaPage;
     static RESET_IP: AtomicU64 = AtomicU64::new(0xffff_fff0);
+}
+
+/// Retain the current CPU's SVSM VMSA after loading its per-CPU area.
+pub(crate) fn init_percpu_svsm_vmsa(vmsa: VmsaPage) {
+    assert!(SVSM_VMSA.init(vmsa).is_ok());
 }
 
 pub fn reset_ip() -> u64 {

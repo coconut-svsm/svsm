@@ -24,7 +24,6 @@ use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::cpuid::init_cpuid_table;
 use crate::cpu::features::{Feature, cpu_get_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
-use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::ApStartContextRef;
 use crate::cpu::tlb::TlbFlushScope;
 use crate::cpu::x86::{apic_enable, apic_initialize, apic_sw_enable};
@@ -224,8 +223,8 @@ impl SvsmPlatform for SnpPlatform {
         }
     }
 
-    fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
-        if cpu.shared().cpu_index() == 0 {
+    fn setup_percpu_current(&self) -> Result<(), SvsmError> {
+        if crate::cpu::smp::this_cpu_shared().cpu_index() == 0 {
             verify_ghcb_version();
         }
         setup_ghcb()?;
@@ -397,14 +396,22 @@ impl SvsmPlatform for SnpPlatform {
         false
     }
 
+    fn prepare_cpu(
+        &self,
+        launch: &mut crate::cpu::cpulaunch::CpuLaunch,
+        initial_context: &hyperv::HvInitialVpContext,
+    ) -> Result<(), SvsmError> {
+        launch.alloc_svsm_vmsa(*VTOM as u64, initial_context)
+    }
+
     fn start_cpu(
         &self,
-        cpu: &PerCpu,
         shared: &'static crate::cpu::percpu::PerCpuShared,
-        initial_context: &hyperv::HvInitialVpContext,
+        _initial_context: &hyperv::HvInitialVpContext,
+        svsm_vmsa: Option<(PhysAddr, u64)>,
         _ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError> {
-        let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, initial_context)?;
+        let (vmsa_pa, sev_features) = svsm_vmsa.expect("SNP AP VMSA was not prepared");
 
         with_current_ghcb(|ghcb| ghcb.ap_create(vmsa_pa, shared.apic_id().into(), 0, sev_features))
     }

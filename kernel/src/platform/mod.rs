@@ -28,7 +28,7 @@ use cpufeature::backend::CpuidBackend;
 use crate::address::{PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::cpu::IrqGuard;
-use crate::cpu::percpu::{PerCpu, PerCpuShared};
+use crate::cpu::percpu::PerCpuShared;
 use crate::cpu::smp::ApStartContextRef;
 use crate::cpu::tlb::{TlbFlushScope, flush_tlb};
 use crate::error::SvsmError;
@@ -156,7 +156,7 @@ pub trait SvsmPlatform: Sync {
     }
 
     /// Completes initialization of a per-CPU object on the target CPU.
-    fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError>;
+    fn setup_percpu_current(&self) -> Result<(), SvsmError>;
 
     /// Determines the paging encryption masks for the current architecture.
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks;
@@ -241,11 +241,19 @@ pub trait SvsmPlatform: Sync {
     fn is_external_interrupt(&self, vector: usize) -> bool;
 
     /// Start an additional processor.
+    fn prepare_cpu(
+        &self,
+        _launch: &mut crate::cpu::cpulaunch::CpuLaunch,
+        _initial_context: &crate::hyperv::HvInitialVpContext,
+    ) -> Result<(), SvsmError> {
+        Ok(())
+    }
+
     fn start_cpu(
         &self,
-        cpu: &PerCpu,
         shared: &'static PerCpuShared,
         initial_context: &crate::hyperv::HvInitialVpContext,
+        svsm_vmsa: Option<(PhysAddr, u64)>,
         ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError>;
 
