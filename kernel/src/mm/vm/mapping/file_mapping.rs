@@ -6,9 +6,10 @@
 
 extern crate alloc;
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use super::{VMPageFaultResolution, VirtualMapping};
+use super::{Mapping, VMPageFaultResolution, VirtualMapping};
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::fs::{FileHandle, FsError};
@@ -26,6 +27,9 @@ pub struct VMFileMapping {
 
     /// The flags to apply to the virtual mapping
     flags: VMFlags,
+
+    /// The effective page-table flags of the mapping, derived from its flags
+    prot: PTEntryFlags,
 
     /// A vec containing references to mapped pages within the file
     pages: Vec<PageRef>,
@@ -91,8 +95,29 @@ impl VMFileMapping {
         Ok(Self {
             size: page_size,
             flags,
+            prot: flags.page_prot(),
             pages,
         })
+    }
+
+    /// Clones the page references covering `range`, for use when splitting
+    /// the mapping or changing its access.
+    ///
+    /// # Returns
+    ///
+    /// The cloned page references, `Err(SvsmError::Mem)` if they could not be
+    /// allocated.
+    fn clone_pages<R>(&self, range: R) -> Result<Vec<PageRef>, SvsmError>
+    where
+        R: core::slice::SliceIndex<[PageRef], Output = [PageRef]>,
+    {
+        let src = &self.pages[range];
+        let mut pages = Vec::new();
+        pages
+            .try_reserve_exact(src.len())
+            .map_err(|_| SvsmError::Mem)?;
+        pages.extend_from_slice(src);
+        Ok(pages)
     }
 }
 
@@ -129,17 +154,40 @@ impl VirtualMapping for VMFileMapping {
     }
 
     fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
-        let mut flags = PTEntryFlags::empty();
+        self.prot
+    }
 
-        if self.flags.contains(VMFlags::Write) {
-            flags |= PTEntryFlags::WRITABLE;
+    fn split_at(&self, offset: usize) -> Result<(Mapping, Mapping), SvsmError> {
+        if offset == 0 || offset >= self.size || offset % PAGE_SIZE != 0 {
+            return Err(SvsmError::Mem);
         }
 
-        if !self.flags.contains(VMFlags::Execute) {
-            flags |= PTEntryFlags::NX;
-        }
+        let index = offset >> PAGE_SHIFT;
+        let head = Self {
+            size: offset,
+            flags: self.flags,
+            prot: self.prot,
+            pages: self.clone_pages(..index)?,
+        };
+        let tail = Self {
+            size: self.size - offset,
+            flags: self.flags,
+            prot: self.prot,
+            pages: self.clone_pages(index..)?,
+        };
 
-        flags
+        Ok((Arc::new(head), Arc::new(tail)))
+    }
+
+    fn set_access(&self, access: VMFlags) -> Result<Mapping, SvsmError> {
+        let flags = self.flags.with_access(access);
+
+        Ok(Arc::new(Self {
+            size: self.size,
+            flags,
+            prot: self.prot.with_prot(flags.page_prot()),
+            pages: self.clone_pages(..)?,
+        }))
     }
 
     fn handle_page_fault(
@@ -183,6 +231,95 @@ mod tests {
         let buf = [0xffu8; 5000];
         fh.write(&buf).expect("File write failed");
         (fh, "test1")
+    }
+
+    #[test]
+    fn test_split_at() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let _test_fs = TestFileSystemGuard::setup();
+
+        let (fh, name) = create_16k_test_file();
+        let vm = VMFileMapping::new(&fh, 0, 4 * PAGE_SIZE, VMFlags::Write)
+            .expect("Failed to create new VMFileMapping");
+
+        let (head, tail) = vm.split_at(PAGE_SIZE).expect("Failed to split");
+        assert_eq!(head.mapping_size(), PAGE_SIZE);
+        assert_eq!(tail.mapping_size(), 3 * PAGE_SIZE);
+
+        // Both halves keep mapping the pages they cover, so that the same
+        // offset of the original mapping still resolves to the same page.
+        assert_eq!(head.map(0), vm.map(0));
+        for i in 0..3 {
+            assert_eq!(tail.map(i * PAGE_SIZE), vm.map((i + 1) * PAGE_SIZE));
+        }
+
+        // Nothing is mapped beyond the end of either half.
+        assert!(head.map(PAGE_SIZE).is_none());
+        assert!(tail.map(3 * PAGE_SIZE).is_none());
+
+        unlink(name).unwrap();
+    }
+
+    #[test]
+    fn test_split_at_invalid_offset() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let _test_fs = TestFileSystemGuard::setup();
+
+        let (fh, name) = create_16k_test_file();
+        let vm = VMFileMapping::new(&fh, 0, 4 * PAGE_SIZE, VMFlags::Write)
+            .expect("Failed to create new VMFileMapping");
+
+        // Splitting must leave two non-empty mappings, at a page boundary.
+        assert!(vm.split_at(0).is_err());
+        assert!(vm.split_at(4 * PAGE_SIZE).is_err());
+        assert!(vm.split_at(PAGE_SIZE / 2).is_err());
+
+        unlink(name).unwrap();
+    }
+
+    #[test]
+    fn test_set_access() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let _test_fs = TestFileSystemGuard::setup();
+
+        let (fh, name) = create_16k_test_file();
+        let vm = VMFileMapping::new(&fh, 0, 4 * PAGE_SIZE, VMFlags::Write)
+            .expect("Failed to create new VMFileMapping");
+        assert!(vm.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+
+        let ro = vm.set_access(VMFlags::Read).expect("Failed to set access");
+        assert!(!ro.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+        // The original is left untouched, and the new mapping covers the
+        // same pages.
+        assert!(vm.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+        assert_eq!(ro.mapping_size(), vm.mapping_size());
+        for i in 0..4 {
+            assert_eq!(ro.map(i * PAGE_SIZE), vm.map(i * PAGE_SIZE));
+        }
+
+        // The access is set, not reduced, so it can be granted again.
+        let rw = ro.set_access(VMFlags::Write).expect("Failed to set access");
+        assert!(rw.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+
+        unlink(name).unwrap();
+    }
+
+    #[test]
+    fn test_set_access_preserves_other_flags() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let _test_fs = TestFileSystemGuard::setup();
+
+        let (fh, name) = create_16k_test_file();
+        let mut vm = VMFileMapping::new(&fh, 0, 4 * PAGE_SIZE, VMFlags::Write)
+            .expect("Failed to create new VMFileMapping");
+
+        // Flags not describing access survive a change of access.
+        vm.prot |= PTEntryFlags::ACCESSED;
+        let ro = vm.set_access(VMFlags::Read).expect("Failed to set access");
+        assert!(ro.pt_flags(0).contains(PTEntryFlags::ACCESSED));
+        assert!(!ro.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+
+        unlink(name).unwrap();
     }
 
     #[test]
