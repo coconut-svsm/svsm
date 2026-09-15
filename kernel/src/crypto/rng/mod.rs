@@ -14,8 +14,15 @@ use crate::utils::pool::{Pool, PoolGuard};
 
 use cocoon_tpm_crypto::{CryptoError, rng};
 
+#[cfg(not(feature = "openssl"))]
 mod drbg;
+#[cfg(not(feature = "openssl"))]
 use drbg::SvsmRngImpl;
+
+#[cfg(feature = "openssl")]
+mod ossl;
+#[cfg(feature = "openssl")]
+use ossl::SvsmRngImpl;
 
 /// Number of [`SVSM_RNG_POOL`] slots.
 const SVSM_RNG_POOL_SIZE: usize = 4;
