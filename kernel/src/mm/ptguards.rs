@@ -9,7 +9,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::tlb::flush_tlb_global_percpu_range;
 use crate::error::SvsmError;
-use crate::mm::virtualrange::VRangeAlloc;
+use crate::mm::virtualrange::SubVmAlloc;
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::{MemoryRegion, align_up};
 use core::marker::PhantomData;
@@ -21,7 +21,7 @@ use zerocopy::FromBytes;
 #[derive(Debug)]
 #[must_use = "if unused the mapping will immediately be unmapped"]
 pub struct PerCPUPageMappingGuard {
-    mapping: VRangeAlloc,
+    mapping: SubVmAlloc,
     phys_base: PhysAddr,
 }
 
@@ -64,13 +64,13 @@ impl PerCPUPageMappingGuard {
             && ((paddr_end.bits() & (PAGE_SIZE_2M - 1)) == 0);
 
         let mapping = if huge {
-            let range = VRangeAlloc::new_2m(size, 0)?;
+            let range = SubVmAlloc::new_2m(size, 0)?;
             this_cpu()
                 .get_pgtable()
                 .map_region_2m(range.region(), paddr_start, flags, false)?;
             range
         } else {
-            let range = VRangeAlloc::new_4k(size, 0)?;
+            let range = SubVmAlloc::new_4k(size, 0)?;
             this_cpu()
                 .get_pgtable()
                 .map_region_4k(range.region(), paddr_start, flags, false)?;

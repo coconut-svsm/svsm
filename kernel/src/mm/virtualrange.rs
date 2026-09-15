@@ -75,13 +75,14 @@ pub fn virt_log_usage() {
     );
 }
 
+/// An allocation within a sub-range of the virtual address space.
 #[derive(Debug)]
-pub struct VRangeAlloc {
+pub struct SubVmAlloc {
     region: MemoryRegion<VirtAddr>,
     huge: bool,
 }
 
-impl VRangeAlloc {
+impl SubVmAlloc {
     /// Returns a virtual memory region in the 4K virtual range.
     pub fn new_4k(size: usize, align: usize) -> Result<Self, SvsmError> {
         // Each bit in our bitmap represents a 4K page
@@ -120,7 +121,7 @@ impl VRangeAlloc {
     }
 }
 
-impl Drop for VRangeAlloc {
+impl Drop for SubVmAlloc {
     fn drop(&mut self) {
         let region = self.region();
         if self.huge {
