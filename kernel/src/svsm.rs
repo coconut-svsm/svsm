@@ -21,7 +21,8 @@ use svsm::cpu::features::{Feature, cpu_has_feat};
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::idt::{EARLY_IDT_ENTRIES, IDT, IdtEntry};
-use svsm::cpu::percpu::{PERCPU_AREAS, PerCpu, cpu_idle_loop, this_cpu, try_this_cpu};
+use svsm::cpu::percpu::{PERCPU_AREAS, PerCpu, cpu_idle_loop, try_this_cpu};
+use svsm::cpu::shadow_stack::initial_shadow_stack;
 use svsm::cpu::shadow_stack::{
     MODE_64BIT, S_CET, SCetFlags, set_cet_ss_enabled, shadow_stack_info,
 };
@@ -64,7 +65,9 @@ use svsm::protocols::uefivars::uefi_mm_protocol_init;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::enumerate_early_boot_regions;
 use svsm::svsm_paging::invalidate_early_boot_memory;
-use svsm::task::{KernelThreadStartInfo, schedule_init, start_kernel_task};
+use svsm::task::{
+    KernelThreadStartInfo, current_stack, schedule_init, set_current_stack, start_kernel_task,
+};
 use svsm::types::PAGE_SIZE;
 use svsm::utils::MemoryRegion;
 use svsm::utils::ScopedMut;
@@ -257,7 +260,7 @@ unsafe fn memory_init(
 }
 
 fn boot_stack_info() {
-    let bs = this_cpu().get_current_stack();
+    let bs = current_stack();
     log::info!("Boot stack @ {bs:#018x}");
 }
 
@@ -366,7 +369,7 @@ unsafe fn svsm_start(
     let bsp_percpu = PerCpu::alloc(percpu_shared).expect("Failed to allocate BSP per-cpu data");
 
     bsp_percpu
-        .setup(platform, init_pgtable)
+        .setup(init_pgtable)
         .expect("Failed to setup BSP per-cpu area");
     bsp_percpu
         .setup_on_cpu(platform)
@@ -376,7 +379,7 @@ unsafe fn svsm_start(
     // SAFETY: the stack addresses were initialized during kernel entry and
     // are known to be correct at this point.
     unsafe {
-        bsp_percpu.set_current_stack(MemoryRegion::from_addresses(
+        set_current_stack(MemoryRegion::from_addresses(
             VirtAddr::from(bsp_stack),
             VirtAddr::from(bsp_stack_end),
         ));
@@ -425,7 +428,7 @@ unsafe fn svsm_start(
 
     sse_init();
 
-    bsp_percpu.get_top_of_shadow_stack()
+    initial_shadow_stack()
 }
 
 /// # Safety

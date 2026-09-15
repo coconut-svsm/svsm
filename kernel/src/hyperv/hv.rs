@@ -14,7 +14,7 @@ use crate::error::SvsmError;
 use crate::error::SvsmError::HyperV;
 use crate::hyperv;
 use crate::hyperv::{HvInitialVpContext, HyperVMsr};
-use crate::locking::WriteLockGuard;
+use crate::locking::{RWLock, WriteLockGuard};
 use crate::mm::alloc::allocate_pages;
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::PTEntryFlags;
@@ -38,6 +38,10 @@ pub struct HypercallPage {
     page: SharedBox<[u8; PAGE_SIZE]>,
     // Physical address of the shared page.
     paddr: PhysAddr,
+}
+
+percpu! {
+    static HYPERCALL_PAGES: RWLock<(HypercallPage, HypercallPage)>;
 }
 
 impl HypercallPage {
@@ -174,7 +178,6 @@ impl<'a, 'b, T> HypercallOutput<'a, 'b, T> {
 }
 
 /// A guard that holds an exclusive borrow of the Hyper-V hypercall pages.
-/// This type is typically constructed from [`PerCpu::get_hypercall_pages`].
 ///
 /// The type guarantees that no other piece of code attempts to modify
 /// the hypercall pages. The pages remain usable until the structure is
@@ -235,6 +238,26 @@ impl<'a> HypercallPagesGuard<'a> {
         // output page.
         unsafe { HypercallOutput::new(&self.output, count) }
     }
+}
+
+/// Allocates hypercall input/output pages for the current CPU.
+pub fn allocate_hypercall_pages() -> Result<(), SvsmError> {
+    let pages = (HypercallPage::try_new()?, HypercallPage::try_new()?);
+    assert!(
+        HYPERCALL_PAGES.init(RWLock::new(pages)).is_ok(),
+        "Hypercall pages already allocated"
+    );
+    Ok(())
+}
+
+fn with_hypercall_pages<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut HypercallPagesGuard<'_>) -> R,
+{
+    HYPERCALL_PAGES.with(|pages| {
+        let mut guard = HypercallPagesGuard::new(pages.write_noblock());
+        f(&mut guard)
+    })
 }
 
 #[bitfield(u64)]
@@ -335,7 +358,7 @@ pub fn hyperv_setup() -> Result<(), SvsmError> {
     // First, determine if this is a Hyper-V system.
     if cpu_has_feat(Feature::HyperV) {
         // If this is the BSP, then configure hypercall pages.
-        this_cpu().allocate_hypercall_pages()?;
+        allocate_hypercall_pages()?;
 
         // Complete the work required to configure hypercalls.
         hyperv_setup_hypercalls()?;
@@ -445,26 +468,23 @@ pub fn get_vp_register(name: hyperv::HvRegisterName) -> Result<u64, SvsmError> {
         ..Default::default()
     };
 
-    let mut hypercall_pages = this_cpu().get_hypercall_pages();
-    let mut input_page = hypercall_pages.hypercall_rep_input::<HvInputGetVpRegister, u32>();
-    input_page.write_header(&input_header);
-    input_page.write_rep(0, name as u32);
+    with_hypercall_pages(|hypercall_pages| {
+        let mut input_page = hypercall_pages.hypercall_rep_input::<HvInputGetVpRegister, u32>();
+        input_page.write_header(&input_header);
+        input_page.write_rep(0, name as u32);
 
-    // SAFETY: the GetVpRegisters hypercall does not write to any memory other
-    // than the hypercall page, and does not consume memory that is not
-    // included in the hypercall input.
-    let call_output = unsafe { SVSM_PLATFORM.hypercall(input_control, &hypercall_pages) };
-    let status = call_output.status();
-    if status != 0 {
-        return Err(HyperV(status));
-    }
+        // SAFETY: the GetVpRegisters hypercall does not write to any memory other
+        // than the hypercall page, and does not consume memory that is not
+        // included in the hypercall input.
+        let call_output = unsafe { SVSM_PLATFORM.hypercall(input_control, hypercall_pages) };
+        let status = call_output.status();
+        if status != 0 {
+            return Err(HyperV(status));
+        }
 
-    let output_page = hypercall_pages.hypercall_output::<u64>(call_output);
-    let reg = output_page.read(0);
-
-    drop(hypercall_pages);
-
-    Ok(reg)
+        let output_page = hypercall_pages.hypercall_output::<u64>(call_output);
+        Ok(output_page.read(0))
+    })
 }
 
 #[repr(C)]
@@ -492,20 +512,21 @@ fn enable_vp_vtl_hypercall(
 
     let input_control = HvHypercallInput::new().with_call_code(HvCallCode::EnableVpVtl as u16);
 
-    let mut hypercall_pages = this_cpu().get_hypercall_pages();
-    let mut input_page = hypercall_pages.hypercall_input::<HvInputEnableVpVtl>();
-    input_page.write_header(&input_header);
+    with_hypercall_pages(|hypercall_pages| {
+        let mut input_page = hypercall_pages.hypercall_input::<HvInputEnableVpVtl>();
+        input_page.write_header(&input_header);
 
-    // SAFETY: the EnableVpVtl hypercall does not write to any memory and
-    // does not consume memory that is not included in the hypercall input.
-    let call_output = unsafe { SVSM_PLATFORM.hypercall(input_control, &hypercall_pages) };
-    let status = call_output.status();
+        // SAFETY: the EnableVpVtl hypercall does not write to any memory and
+        // does not consume memory that is not included in the hypercall input.
+        let call_output = unsafe { SVSM_PLATFORM.hypercall(input_control, hypercall_pages) };
+        let status = call_output.status();
 
-    if status != 0 {
-        Err(HyperV(status))
-    } else {
-        Ok(())
-    }
+        if status != 0 {
+            Err(HyperV(status))
+        } else {
+            Ok(())
+        }
+    })
 }
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, IntoBytes)]
@@ -533,20 +554,21 @@ fn start_vp_hypercall(
     let input_control =
         HvHypercallInput::new().with_call_code(HvCallCode::StartVirtualProcessor as u16);
 
-    let mut hypercall_pages = this_cpu().get_hypercall_pages();
-    let mut input_page = hypercall_pages.hypercall_input::<HvInputStartVirtualProcessor>();
-    input_page.write_header(&input_header);
+    with_hypercall_pages(|hypercall_pages| {
+        let mut input_page = hypercall_pages.hypercall_input::<HvInputStartVirtualProcessor>();
+        input_page.write_header(&input_header);
 
-    // SAFETY: the StartVp hypercall does not write to any memory and does not
-    // consume memory that is not included in the hypercall input.
-    let call_output = unsafe { SVSM_PLATFORM.hypercall(input_control, &hypercall_pages) };
-    let status = call_output.status();
+        // SAFETY: the StartVp hypercall does not write to any memory and does
+        // not consume memory that is not included in the hypercall input.
+        let call_output = unsafe { SVSM_PLATFORM.hypercall(input_control, hypercall_pages) };
+        let status = call_output.status();
 
-    if status != 0 {
-        Err(HyperV(status))
-    } else {
-        Ok(())
-    }
+        if status != 0 {
+            Err(HyperV(status))
+        } else {
+            Ok(())
+        }
+    })
 }
 
 pub fn hyperv_start_cpu(cpu: &PerCpu, context: &HvInitialVpContext) -> Result<(), SvsmError> {

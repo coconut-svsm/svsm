@@ -23,6 +23,18 @@ pub const BUSY: usize = 1;
 pub static IS_CET_SUPPORTED: AtomicBool = AtomicBool::new(false);
 pub static IS_CET_ENABLED: AtomicBool = AtomicBool::new(false);
 
+percpu! {
+    static INIT_SHADOW_STACK: Option<VirtAddr>;
+}
+
+pub fn init_initial_shadow_stack(stack: Option<VirtAddr>) {
+    assert!(INIT_SHADOW_STACK.init(stack).is_ok());
+}
+
+pub fn initial_shadow_stack() -> Option<VirtAddr> {
+    INIT_SHADOW_STACK.with(|stack| *stack)
+}
+
 pub fn set_cet_ss_enabled() {
     IS_CET_ENABLED.store(true, Ordering::Relaxed);
 }

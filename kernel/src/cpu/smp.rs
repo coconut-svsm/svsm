@@ -8,21 +8,37 @@ use super::idt::load_static_idt;
 use crate::acpi::tables::ACPICPUInfo;
 use crate::address::PhysAddr;
 use crate::address::{Address, VirtAddr};
-use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu, this_cpu_shared};
-use crate::cpu::shadow_stack::{MODE_64BIT, S_CET, SCetFlags, is_cet_ss_enabled};
+use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu};
+use crate::cpu::shadow_stack::{
+    MODE_64BIT, S_CET, SCetFlags, initial_shadow_stack, is_cet_ss_enabled,
+};
 use crate::cpu::sse::sse_init;
 use crate::cpu::tlb::set_tlb_flush_smp;
+use crate::cpu::tss::load_gdt_tss;
 use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::STACK_SIZE;
 use crate::platform::{SVSM_PLATFORM, SvsmPlatform};
-use crate::task::schedule_init;
+use crate::task::{schedule_init, set_current_stack};
 use crate::utils::MemoryRegion;
 use bootdefs::kernel_launch::ApStartContext;
 use core::arch::global_asm;
 use cpuarch::x86::EFERFlags;
+
+percpu! {
+    #[percpu_asm_symbol("__svsm_percpu_shared")]
+    static PERCPU_SHARED: &'static PerCpuShared;
+}
+
+pub(super) fn init_percpu_shared(percpu_shared: &'static PerCpuShared) {
+    assert!(PERCPU_SHARED.init(percpu_shared).is_ok());
+}
+
+pub fn this_cpu_shared() -> &'static PerCpuShared {
+    PERCPU_SHARED.with(|percpu_shared| *percpu_shared)
+}
 
 #[derive(Debug)]
 pub struct ApStartContextRef {
@@ -53,7 +69,7 @@ fn start_cpu(
     let start_rip: u64 = (start_ap as *const u8) as u64;
     let percpu = PerCpu::alloc(percpu_shared)?;
     let pgtable = this_cpu().get_pgtable().clone_shared()?;
-    percpu.setup(platform, pgtable)?;
+    percpu.setup(pgtable)?;
 
     platform.start_cpu(percpu, start_rip, ap_start_context_ref)?;
 
@@ -102,11 +118,19 @@ pub fn start_secondary_cpus(
 
 #[unsafe(no_mangle)]
 extern "C" fn start_ap_setup(top_of_stack: u64) {
+    // Initialize the per-CPU TSS before loading its descriptor.
+    this_cpu().setup_percpu_keys();
+
     // Initialize the GDT, TSS, and IDT.
-    this_cpu().load_gdt_tss(true);
+    load_gdt_tss(true);
     load_static_idt();
+
+    // Loading the GS selector above resets its base, so reinstall the per-CPU
+    // area after the segment registers have their final values.
+    this_cpu().setup_percpu_keys();
+
     // Now the stack unwinder can be used
-    this_cpu().set_current_stack(MemoryRegion::new(
+    set_current_stack(MemoryRegion::new(
         VirtAddr::from(top_of_stack)
             .checked_sub(STACK_SIZE)
             .unwrap(),
@@ -194,9 +218,10 @@ pub fn set_ap_start_context(
 #[unsafe(no_mangle)]
 extern "C" fn start_ap() -> ! {
     let percpu = this_cpu();
+    percpu.setup_percpu_keys();
 
     if is_cet_ss_enabled() {
-        let ssp_token = percpu.get_top_of_shadow_stack().unwrap();
+        let ssp_token = initial_shadow_stack().unwrap();
         enable_shadow_stacks!(ssp_token);
     }
 

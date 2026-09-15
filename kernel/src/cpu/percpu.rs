@@ -7,33 +7,29 @@
 extern crate alloc;
 
 use super::features::{Feature, cpu_has_feat};
-use super::gdt::GDT;
 use super::ipi::IpiState;
-use super::isst::Isst;
-use super::msr::write_msr;
-use super::shadow_stack::{ISST_ADDR, init_shadow_stack, is_cet_ss_enabled};
-use super::tss::{IST_DF, X86Tss};
+use super::isst::{
+    double_fault_shadow_stack, init_double_fault_shadow_stack, init_isst, load_isst,
+};
+use super::shadow_stack::{init_initial_shadow_stack, init_shadow_stack, is_cet_ss_enabled};
+use super::smp::init_percpu_shared;
+use super::tss::{double_fault_stack, init_double_fault_stack, setup_tss, tss_address};
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::IrqState;
-use crate::cpu::LocalApic;
 use crate::cpu::ShadowStackInit;
+use crate::cpu::apic::init_apic_emulation;
 use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
-use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
-use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
+use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, reset_ip};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
-use crate::cpu::x86::{ApicAccess, X86Apic};
-use crate::error::{ApicError, SvsmError};
-use crate::hyperv::HypercallPagesGuard;
-use crate::hyperv::{self, HypercallPage};
+use crate::cpu::x86::apic_id;
+use crate::error::SvsmError;
+use crate::hyperv::{self, allocate_hypercall_pages};
 use crate::locking::{
-    LockGuard, RWLock, RWLockIrqSafe, ReadLockGuard, ReadLockGuardIrqSafe, SpinLock,
-    WriteLockGuard, WriteLockGuardIrqSafe,
+    LockGuard, RWLock, RWLockIrqSafe, ReadLockGuardIrqSafe, SpinLock, WriteLockGuardIrqSafe,
 };
-use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::virtualrange::VirtualRange;
+use crate::mm::virtualrange::{init_vrange_2m, init_vrange_4k};
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
 use crate::mm::{
     PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU_BASE,
@@ -42,10 +38,8 @@ use crate::mm::{
     SVSM_SHADOW_STACK_ISST_DF_BASE, SVSM_SHADOW_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
     virt_to_phys,
 };
-use crate::platform::{SVSM_PLATFORM, SvsmPlatform};
+use crate::platform::SvsmPlatform;
 use crate::requests::SvsmCaa;
-use crate::sev::ghcb::{GHCB, GhcbPage};
-use crate::sev::hv_doorbell::{HVDoorbell, allocate_hv_doorbell_page};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
 use crate::task::KernelThreadStartInfo;
@@ -55,9 +49,8 @@ use crate::task::TaskPointer;
 use crate::task::schedule;
 use crate::task::scheduler_idle;
 use crate::task::wake_and_schedule_task;
-use crate::types::{
-    PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
-};
+use crate::task::{init_current_stack, set_current_stack};
+use crate::types::{PAGE_SIZE, SVSM_TR_ATTRIBUTES, SVSM_TSS};
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use alloc::boxed::Box;
@@ -67,15 +60,21 @@ use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::mem::offset_of;
 use core::mem::size_of;
-use core::ops::Deref;
 use core::ptr::{self, NonNull};
 use core::slice::Iter;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicU32;
-use core::sync::atomic::AtomicU64;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use cpuarch::vmsa::VMSA;
+
+#[macro_use]
+mod key;
+
+use key::PerCpuArea;
+pub use key::PerCpuKey;
+#[doc(hidden)]
+pub use key::PerCpuStorage;
 
 // PERCPU areas virtual addresses into shared memory
 pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
@@ -380,10 +379,14 @@ impl PerCpuShared {
     }
 }
 
-// Expose the offsets of critical per-CPU fields to assembly.
-pub const PERCPU_CTXT_SWITCH_STACK_OFFSET: usize = offset_of!(PerCpu, context_switch_stack);
-pub const PERCPU_PAGING_ROOT_OFFSET: usize = offset_of!(PerCpu, cr3);
-pub const PERCPU_SHARED_OFFSET: usize = offset_of!(PerCpu, shared);
+percpu! {
+    #[percpu_asm_symbol("__svsm_percpu_context_switch_stack")]
+    static CONTEXT_SWITCH_STACK: AtomicUsize = AtomicUsize::new(0);
+    #[percpu_asm_symbol("__svsm_percpu_cr3")]
+    static CR3: AtomicUsize = AtomicUsize::new(0);
+}
+
+// Expose the offset of critical shared per-CPU fields to assembly.
 pub const PERCPU_SHARED_INDEX_OFFSET: usize = offset_of!(PerCpuShared, cpu_index);
 
 const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
@@ -407,78 +410,43 @@ pub struct PerCpu
 where
     Self: Sync,
 {
+    /// Linker-defined CPU-local variables accessed through `%GS`.
+    percpu_area: PerCpuArea,
+
     /// Reference to the `PerCpuShared` that is valid in the global, shared
     /// address space.
     shared: &'static PerCpuShared,
 
-    /// APIC access object
-    apic: X86Apic,
-
-    /// PerCpu IRQ state tracking
-    irq_state: IrqState,
-
     pgtbl: AtomicUsize,
-    cr3: AtomicUsize,
-    tss: X86Tss,
-    isst: RWLock<Isst>,
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
-    reset_ip: AtomicU64,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
-    /// Address allocator for per-cpu 4k temporary mappings
-    vrange_4k: RWLock<VirtualRange>,
-    /// Address allocator for per-cpu 2m temporary mappings
-    vrange_2m: RWLock<VirtualRange>,
-    /// Local APIC state for APIC emulation if enabled
-    guest_apic: RWLock<Option<LocalApic>>,
-
-    /// GHCB page for this CPU.
-    ghcb: ImmutAfterInitCell<GhcbPage>,
-
-    /// Hypercall input/output pages for this CPU if running under Hyper-V.
-    hypercall_pages: RWLock<Option<(HypercallPage, HypercallPage)>>,
-
-    /// `#HV` doorbell page for this CPU.
-    hv_doorbell: ImmutAfterInitCell<SharedBox<HVDoorbell>>,
-
     init_shadow_stack: ImmutAfterInitCell<VirtAddr>,
+    /// Stages the context-switch stack address until the target CPU can
+    /// initialize its linker-backed per-CPU key.
     context_switch_stack: AtomicUsize,
+    /// Stages IST stack addresses allocated by the boot CPU until the target
+    /// CPU can initialize its linker-backed per-CPU keys through `%gs`.
     ist: IstStacks,
-
-    /// Stack boundaries of the currently running task.
-    current_stack: RWLock<MemoryRegion<VirtAddr>>,
 }
 
 impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
     fn new(shared: &'static PerCpuShared) -> Result<Self, SvsmError> {
         Ok(Self {
+            percpu_area: PerCpuArea::new()?,
             pgtbl: AtomicUsize::new(0),
-            cr3: AtomicUsize::new(0),
-            apic: X86Apic::default(),
-            irq_state: IrqState::new(),
-            tss: X86Tss::new(),
-            isst: RWLock::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
-            reset_ip: AtomicU64::new(0xffff_fff0),
             vm_range: {
                 let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL)?;
                 vmr.set_per_cpu(true);
                 vmr
             },
 
-            vrange_4k: RWLock::new(VirtualRange::new()),
-            vrange_2m: RWLock::new(VirtualRange::new()),
-            guest_apic: RWLock::new(None),
-
             shared,
-            ghcb: ImmutAfterInitCell::uninit(),
-            hypercall_pages: RWLock::new(None),
-            hv_doorbell: ImmutAfterInitCell::uninit(),
             init_shadow_stack: ImmutAfterInitCell::uninit(),
             context_switch_stack: AtomicUsize::new(0),
             ist: IstStacks::new(),
-            current_stack: RWLock::new(MemoryRegion::new(VirtAddr::null(), 0)),
         })
     }
 
@@ -494,165 +462,9 @@ impl PerCpu {
         self.shared
     }
 
-    pub fn initialize_apic(&self, accessor: &'static dyn ApicAccess) {
-        self.apic.set_accessor(accessor);
-    }
-
-    /// Get a reference to the [`X86Apic`] object for this cpu.
-    ///
-    /// # Returns
-    ///
-    /// Reference to the [`X86Apic`] object of the local CPU.
-    pub fn get_apic(&self) -> &X86Apic {
-        &self.apic
-    }
-
-    /// Disables IRQs on the current CPU. Keeps track of the nesting level and
-    /// the original IRQ state.
-    ///
-    /// Caller needs to make sure to match every `disable()` call with an
-    /// `enable()` call.
-    #[inline(always)]
-    pub fn irqs_disable(&self) {
-        self.irq_state.disable();
-    }
-
-    /// Reduces IRQ-disable nesting level on the current CPU and restores the
-    /// original IRQ state when the level reaches 0.
-    ///
-    /// Caller needs to make sure to match every `disable()` call with an
-    /// `enable()` call.
-    #[inline(always)]
-    pub fn irqs_enable(&self) {
-        self.irq_state.enable();
-    }
-
-    /// Increments IRQ-disable nesting level on the current CPU without
-    /// disabling interrupts.  This is used by exception and interrupt dispatch
-    /// routines that have already disabled interrupts.
-    ///
-    /// Caller needs to make sure to match every `push_nesting()` call with a
-    /// `pop_nesting()` call.
-    #[inline(always)]
-    pub fn irqs_push_nesting(&self, was_enabled: bool) {
-        self.irq_state.push_nesting(was_enabled);
-    }
-
-    /// Reduces IRQ-disable nesting level on the current CPU without restoring
-    /// the original IRQ state original IRQ state.  This is used by exception
-    /// and interrupt dispatch routines that will restore interrupt state
-    /// naturally.
-    ///
-    /// Caller needs to make sure to match every `disable()` call with a
-    /// `pop_state()` call.
-    #[inline(always)]
-    pub fn irqs_pop_nesting(&self) {
-        let _ = self.irq_state.pop_nesting();
-    }
-
-    /// Get IRQ-disable nesting count on the current CPU
-    ///
-    /// # Returns
-    ///
-    /// Current nesting depth of irq_disable() calls.
-    pub fn irq_nesting_count(&self) -> i32 {
-        self.irq_state.count()
-    }
-
-    /// Raises TPR on the current CPU.  Keeps track of the nesting level.
-    ///
-    /// The caller must ensure that every `raise_tpr()` call is followed by a
-    /// matching call to `lower_tpr()`.
-    #[inline(always)]
-    pub fn raise_tpr(&self, tpr_value: usize) {
-        self.irq_state.raise_tpr(tpr_value);
-    }
-
-    /// Lowers TPR from the current level to the new level required by the
-    /// current nesting state.
-    ///
-    /// The caller must ensure that a `lower_tpr()` call balances a preceding
-    /// `raise_tpr()` call to the indicated level.
-    ///
-    /// * `tpr_value` - The TPR from which the caller would like to lower.
-    ///   Must be less than or equal to the current TPR.
-    #[inline(always)]
-    pub fn lower_tpr(&self, tpr_value: usize) {
-        self.irq_state.lower_tpr(tpr_value);
-    }
-
-    /// Sets up the CPU-local GHCB page.
-    pub fn setup_ghcb(&self) -> Result<(), SvsmError> {
-        self.ghcb.try_init_from_fn(GhcbPage::new)?;
-        Ok(())
-    }
-
-    fn ghcb(&self) -> Option<&GhcbPage> {
-        self.ghcb.try_get_inner().ok()
-    }
-
-    /// Allocates hypercall input/output pages for this CPU.
-    pub fn allocate_hypercall_pages(&self) -> Result<(), SvsmError> {
-        let p1 = HypercallPage::try_new()?;
-        let p2 = HypercallPage::try_new()?;
-        *self.hypercall_pages.write_noblock() = Some((p1, p2));
-        Ok(())
-    }
-
-    pub fn get_hypercall_pages(&self) -> HypercallPagesGuard<'_> {
-        // The hypercall page cell is never mutated, but is borrowed mutably
-        // to ensure that only a single reference can ever be taken at a time.
-        let page_ref = self.hypercall_pages.write_noblock();
-        HypercallPagesGuard::new(WriteLockGuard::map(page_ref, |o| o.as_mut().unwrap()))
-    }
-
-    pub fn hv_doorbell(&self) -> Option<&HVDoorbell> {
-        self.hv_doorbell.try_get_inner().ok().map(Deref::deref)
-    }
-
-    pub fn process_hv_events_if_required(&self) {
-        if let Ok(doorbell) = self.hv_doorbell.try_get_inner() {
-            doorbell.process_if_required(&self.irq_state);
-        }
-    }
-
-    /// Gets a pointer to the location of the HV doorbell pointer in the
-    /// PerCpu structure.
-    pub fn hv_doorbell_addr(&self) -> *const *const HVDoorbell {
-        self.hv_doorbell
-            .try_get_inner()
-            .ok()
-            .map(SharedBox::ptr_ref)
-            .unwrap_or(ptr::null())
-    }
-
-    pub fn get_top_of_shadow_stack(&self) -> Option<VirtAddr> {
-        self.init_shadow_stack.try_get_inner().ok().copied()
-    }
-
     pub fn get_top_of_context_switch_stack(&self) -> Option<VirtAddr> {
         let vaddr = self.context_switch_stack.load(Ordering::Relaxed);
         if vaddr == 0 { None } else { Some(vaddr.into()) }
-    }
-
-    pub fn get_top_of_df_stack(&self) -> Option<VirtAddr> {
-        self.ist.double_fault_stack.try_get_inner().ok().copied()
-    }
-
-    pub fn get_top_of_df_shadow_stack(&self) -> Option<VirtAddr> {
-        self.ist
-            .double_fault_shadow_stack
-            .try_get_inner()
-            .ok()
-            .copied()
-    }
-
-    pub fn get_current_stack(&self) -> MemoryRegion<VirtAddr> {
-        *self.current_stack.read_noblock()
-    }
-
-    pub fn set_current_stack(&self, stack: MemoryRegion<VirtAddr>) {
-        *self.current_stack.write_noblock() = stack;
     }
 
     pub fn get_cpu_index(&self) -> usize {
@@ -679,9 +491,6 @@ impl PerCpu {
         self.pgtbl
             .compare_exchange(0, vaddr.into(), Ordering::Relaxed, Ordering::Relaxed)
             .unwrap();
-        // Capture the physical address as well for use in task switch.
-        let paddr = virt_to_phys(vaddr);
-        self.cr3.store(paddr.into(), Ordering::Relaxed);
     }
 
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
@@ -755,37 +564,6 @@ impl PerCpu {
         }
     }
 
-    /// Registers an already set up GHCB page for this CPU.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the GHCB for this CPU has not been set up via
-    /// [`PerCpu::setup_ghcb()`].
-    pub fn register_ghcb(&self) -> Result<(), SvsmError> {
-        self.ghcb().unwrap().register()
-    }
-
-    pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
-        self.hv_doorbell
-            .try_init_from_fn(|| allocate_hv_doorbell_page(current_ghcb()))?;
-        Ok(())
-    }
-
-    fn setup_tss(&self) {
-        let double_fault_stack = self.get_top_of_df_stack().unwrap();
-        // SAFETY: the stck pointer is known to be correct.
-        unsafe {
-            self.tss.set_ist_stack(IST_DF, double_fault_stack);
-        }
-    }
-
-    fn setup_isst(&self) {
-        let double_fault_shadow_stack = self.get_top_of_df_shadow_stack().unwrap();
-        self.isst
-            .write_noblock()
-            .set(IST_DF, double_fault_shadow_stack);
-    }
-
     pub fn map_self(&self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(ptr::from_ref(self));
         let paddr = virt_to_phys(vaddr);
@@ -795,23 +573,13 @@ impl PerCpu {
     }
 
     fn initialize_vm_ranges(&self) -> Result<(), SvsmError> {
-        const PAGE_COUNT_4K: usize = SVSM_PERCPU_TEMP_SIZE_4K / PAGE_SIZE;
-        const { assert!(PAGE_COUNT_4K < VirtualRange::CAPACITY) };
-
         let temp_mapping_4k = VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_4K);
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_4K, temp_mapping_4k)?;
-        self.vrange_4k_mut()
-            .init(SVSM_PERCPU_TEMP_BASE_4K, PAGE_COUNT_4K, PAGE_SHIFT);
-
-        const PAGE_COUNT_2M: usize = SVSM_PERCPU_TEMP_SIZE_2M / PAGE_SIZE_2M;
-        const { assert!(PAGE_COUNT_2M < VirtualRange::CAPACITY) };
 
         let temp_mapping_2m = VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_2M);
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_2M, temp_mapping_2m)?;
-        self.vrange_2m_mut()
-            .init(SVSM_PERCPU_TEMP_BASE_2M, PAGE_COUNT_2M, PAGE_SHIFT_2M);
 
         Ok(())
     }
@@ -825,15 +593,14 @@ impl PerCpu {
         self.vm_range.dump_ranges();
     }
 
-    pub fn setup(
-        &self,
-        platform: &dyn SvsmPlatform,
-        pgtable: PageBox<PageTable>,
-    ) -> Result<(), SvsmError> {
+    pub fn setup(&self, pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
         self.init_page_table(pgtable)?;
 
         // Map PerCpu data in own page-table
         self.map_self()?;
+
+        // Allocate the linker-defined CPU-local data in this CPU's VMR.
+        self.percpu_area.map(self)?;
 
         // Reserve ranges and initialize allocator for temporary mappings
         self.initialize_vm_ranges()?;
@@ -852,35 +619,65 @@ impl PerCpu {
         // Allocate IST stacks
         self.allocate_ist_stacks()?;
 
-        // Setup TSS
-        self.setup_tss();
-
         if cpu_has_feat(Feature::CetSS) {
             // Allocate ISST shadow stacks
             self.allocate_isst_shadow_stacks()?;
-
-            // Setup ISST
-            self.setup_isst();
         }
 
         self.finish_page_table();
 
-        // Complete platform-specific initialization.
-        platform.setup_percpu(self)?;
+        Ok(())
+    }
 
-        // Allocate hypercall pages if running on Hyper-V, unless this is the
-        // BSP (where they will be allocated later).
-        if self.shared.cpu_index() != 0 && cpu_has_feat(Feature::HyperV) {
-            self.allocate_hypercall_pages()?;
+    pub(super) fn setup_percpu_keys(&self) {
+        let initialize_keys = self.percpu_area.initialize();
+        self.percpu_area.load();
+        if !initialize_keys {
+            return;
         }
 
-        Ok(())
+        init_percpu_shared(self.shared);
+
+        // Publish values prepared by the boot CPU now that this CPU can
+        // access its linker-backed per-CPU keys through %gs.
+        let pgtbl = VirtAddr::from(self.pgtbl.load(Ordering::Relaxed));
+        CR3.with(|cr3| {
+            cr3.store(virt_to_phys(pgtbl).into(), Ordering::Relaxed);
+        });
+        CONTEXT_SWITCH_STACK.with(|context_switch_stack| {
+            context_switch_stack.store(
+                self.context_switch_stack.load(Ordering::Relaxed),
+                Ordering::Relaxed,
+            );
+        });
+        init_current_stack();
+        let init_shadow_stack = self.init_shadow_stack.try_get_inner().ok().copied();
+        init_initial_shadow_stack(init_shadow_stack);
+        let staged_df_stack = self.ist.double_fault_stack.try_get_inner().ok().copied();
+        init_double_fault_stack(staged_df_stack);
+        let staged_df_shadow_stack = self
+            .ist
+            .double_fault_shadow_stack
+            .try_get_inner()
+            .ok()
+            .copied();
+        init_double_fault_shadow_stack(staged_df_shadow_stack);
+        setup_tss(double_fault_stack().unwrap());
+        init_isst(double_fault_shadow_stack());
+        init_vrange_4k();
+        init_vrange_2m();
     }
 
     // Setup code which needs to run on the target CPU
     pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
+        self.setup_percpu_keys();
+
+        // The BSP allocates these later, when Hyper-V is initialized.
+        if self.shared.cpu_index() != 0 && cpu_has_feat(Feature::HyperV) {
+            allocate_hypercall_pages()?;
+        }
         platform.setup_percpu_current(self)?;
-        assert!(self.get_apic().id() == self.get_apic_id());
+        assert!(apic_id() == self.get_apic_id());
         Ok(())
     }
 
@@ -901,40 +698,21 @@ impl PerCpu {
         self.setup_idle_task_internal(start_info)
     }
 
-    pub fn load_gdt_tss(&'static self, init_gdt: bool) {
-        // Create a temporary GDT to use to configure the TSS.
-        let mut gdt = GDT::new();
-        gdt.load();
-        // Load the GDT selectors if requested.
-        if init_gdt {
-            gdt.load_selectors();
-        }
-        gdt.load_tss(&self.tss);
-    }
-
-    pub fn load_isst(&self) {
-        let isst = self.isst.as_ptr();
-        // SAFETY: ISST is already setup when this is called.
-        unsafe { write_msr(ISST_ADDR, isst as u64) };
-    }
-
     pub fn load(&'static self) {
         // SAFETY: along with the page table we are also uploading the right
         // TSS and ISST to ensure a memory safe execution state
         unsafe { self.get_pgtable().load() };
-        self.load_gdt_tss(false);
+        super::tss::load_gdt_tss(false);
         if is_cet_ss_enabled() {
-            self.load_isst();
+            load_isst();
         }
-    }
-
-    pub fn set_reset_ip(&self, reset_ip: u64) {
-        self.reset_ip.store(reset_ip, Ordering::Relaxed);
     }
 
     /// Fill in the initial context structure for the SVSM.
     pub fn get_initial_context(&self, start_rip: u64) -> hyperv::HvInitialVpContext {
         let data_segment = svsm_data_segment();
+        let mut gs_segment = data_segment;
+        gs_segment.base = self.percpu_area.gs_base() as u64;
 
         hyperv::HvInitialVpContext {
             rip: start_rip,
@@ -952,7 +730,7 @@ impl PerCpu {
             ds: data_segment,
             es: data_segment,
             fs: data_segment,
-            gs: data_segment,
+            gs: gs_segment,
             tr: self.svsm_tr_segment(),
 
             gdtr: svsm_gdt_segment(),
@@ -1005,43 +783,17 @@ impl PerCpu {
     }
 
     pub fn alloc_guest_vmsa(&self) -> Result<PhysAddr, SvsmError> {
-        // Enable alternate injection if the hypervisor supports it.
-        let use_alternate_injection = SVSM_PLATFORM.query_apic_registration_state();
-        if use_alternate_injection {
-            *self.guest_apic.write_noblock() = Some(LocalApic::new());
-
-            // Configure the interrupt injection vector.
-            let ghcb = self.ghcb().unwrap();
-            ghcb.configure_interrupt_injection(INT_INJ_VECTOR)?;
-        }
+        let use_alternate_injection = init_apic_emulation()?;
 
         let mut vmsa = VmsaPage::new(RMPFlags::GUEST_VMPL)?;
         let paddr = vmsa.paddr();
 
-        init_guest_vmsa(
-            &mut vmsa,
-            self.reset_ip.load(Ordering::Relaxed),
-            use_alternate_injection,
-        );
+        init_guest_vmsa(&mut vmsa, reset_ip(), use_alternate_injection);
 
         self.shared().update_guest_vmsa(paddr);
         let _ = VmsaPage::leak(vmsa);
 
         Ok(paddr)
-    }
-
-    /// Returns a shared reference to the local APIC, or `None` if APIC
-    /// emulation is not enabled.
-    fn guest_apic(&self) -> Option<ReadLockGuard<'_, LocalApic>> {
-        let apic = self.guest_apic.read_noblock();
-        ReadLockGuard::filter_map(apic, Option::as_ref).ok()
-    }
-
-    /// Returns a mutable reference to the local APIC, or `None` if APIC
-    /// emulation is not enabled.
-    fn guest_apic_mut(&self) -> Option<WriteLockGuard<'_, LocalApic>> {
-        let apic = self.guest_apic.write_noblock();
-        WriteLockGuard::filter_map(apic, Option::as_mut).ok()
     }
 
     fn unmap_caa(&self) {
@@ -1088,93 +840,12 @@ impl PerCpu {
         ret
     }
 
-    pub fn disable_apic_emulation(&self) {
-        if let Some(mut apic) = self.guest_apic_mut() {
-            let mut vmsa_ref = self.guest_vmsa_ref();
-            let caa = vmsa_ref.caa();
-            let vmsa = vmsa_ref.vmsa();
-            apic.disable_apic_emulation(vmsa, caa);
-        }
-    }
-
-    pub fn clear_pending_interrupts(&self) {
-        if let Some(mut apic) = self.guest_apic_mut() {
-            let mut vmsa_ref = self.guest_vmsa_ref();
-            let caa = vmsa_ref.caa();
-            let vmsa = vmsa_ref.vmsa();
-            apic.check_delivered_interrupts(vmsa, caa);
-        }
-    }
-
-    pub fn update_apic_emulation(&self, vmsa: &mut VMSA, caa: Option<NonNull<SvsmCaa>>) {
-        if let Some(mut apic) = self.guest_apic_mut() {
-            apic.present_interrupts(self.shared(), vmsa, caa);
-        }
-    }
-
-    pub fn ai_handle_intercepts(&self, vmsa: &mut VMSA) {
-        let use_alternate_injection = SVSM_PLATFORM.query_apic_registration_state();
-        let g_eii = vmsa.guest_exitintinfo;
-
-        if !use_alternate_injection {
-            return;
-        }
-
-        // Re-inject events when intercept happens
-        if g_eii.valid() {
-            vmsa.event_inj = g_eii;
-        }
-
-        // Clear busy bit
-        let mut vintr_ctrl = vmsa.vintr_ctrl;
-        if vintr_ctrl.busy() {
-            vintr_ctrl.set_busy(false);
-            vmsa.vintr_ctrl = vintr_ctrl;
-        }
-    }
-
-    pub fn use_apic_emulation(&self) -> bool {
-        self.guest_apic().is_some()
-    }
-
-    pub fn read_apic_register(&self, register: u64) -> Result<u64, SvsmError> {
-        let mut vmsa_ref = self.guest_vmsa_ref();
-        let caa = vmsa_ref.caa();
-        let vmsa = vmsa_ref.vmsa();
-        self.guest_apic_mut()
-            .ok_or(SvsmError::Apic(ApicError::Disabled))?
-            .read_register(self.shared(), vmsa, caa, register)
-    }
-
-    pub fn write_apic_register(&self, register: u64, value: u64) -> Result<(), SvsmError> {
-        let mut vmsa_ref = self.guest_vmsa_ref();
-        let caa_addr = vmsa_ref.caa();
-        let vmsa = vmsa_ref.vmsa();
-        self.guest_apic_mut()
-            .ok_or(SvsmError::Apic(ApicError::Disabled))?
-            .write_register(vmsa, caa_addr, register, value)
-    }
-
-    pub fn configure_apic_vector(&self, vector: u8, allowed: bool) -> Result<(), SvsmError> {
-        self.guest_apic_mut()
-            .ok_or(SvsmError::Apic(ApicError::Disabled))?
-            .configure_vector(vector, allowed);
-        Ok(())
-    }
-
-    pub fn configure_apic_all_vectors(&self, allowed: bool) -> Result<(), SvsmError> {
-        self.guest_apic_mut()
-            .ok_or(SvsmError::Apic(ApicError::Disabled))?
-            .configure_all_vectors(allowed);
-        Ok(())
-    }
-
     fn svsm_tr_segment(&self) -> hyperv::HvSegmentRegister {
         hyperv::HvSegmentRegister {
             selector: SVSM_TSS,
             attributes: SVSM_TR_ATTRIBUTES,
             limit: TSS_LIMIT as u32,
-            base: &raw const self.tss as u64,
+            base: tss_address(self),
         }
     }
 
@@ -1209,9 +880,9 @@ impl PerCpu {
     }
 
     pub fn schedule_init(&self) -> TaskPointer {
-        self.irq_state.set_restore_state(true);
+        crate::cpu::irq_state::with_irq_state(|irq_state| irq_state.set_restore_state(true));
         let task = self.runqueue_mut().schedule_init();
-        self.set_current_stack(task.stack_bounds());
+        set_current_stack(task.stack_bounds());
         task
     }
 
@@ -1229,33 +900,6 @@ impl PerCpu {
 
     pub fn current_task(&self) -> TaskPointer {
         self.runqueue().current_task()
-    }
-
-    pub fn vrange_4k(&self) -> ReadLockGuard<'_, VirtualRange> {
-        self.vrange_4k.read_noblock()
-    }
-
-    pub fn vrange_4k_mut(&self) -> WriteLockGuard<'_, VirtualRange> {
-        self.vrange_4k.write_noblock()
-    }
-
-    pub fn vrange_2m(&self) -> ReadLockGuard<'_, VirtualRange> {
-        self.vrange_2m.read_noblock()
-    }
-
-    pub fn vrange_2m_mut(&self) -> WriteLockGuard<'_, VirtualRange> {
-        self.vrange_2m.write_noblock()
-    }
-
-    /// # Safety
-    /// No checks are performed on the stack address.  The caller must
-    /// ensure that the address is valid for stack usage.
-    pub unsafe fn set_tss_rsp0(&self, addr: VirtAddr) {
-        // SAFETY: the caller has guaranteed the correctness of the stack
-        // pointer.
-        unsafe {
-            self.tss.set_rsp0(addr);
-        }
     }
 }
 
@@ -1288,71 +932,6 @@ pub fn try_this_cpu() -> Option<&'static PerCpu> {
                 options(att_syntax, nostack));
     }
     if rcx == 0 { Some(this_cpu()) } else { None }
-}
-
-pub fn this_cpu_shared() -> &'static PerCpuShared {
-    this_cpu().shared()
-}
-
-/// Disables IRQs on the current CPU. Keeps track of the nesting level and
-/// the original IRQ state.
-///
-/// Caller needs to make sure to match every `irqs_disable()` call with an
-/// `irqs_enable()` call.
-#[inline(always)]
-pub fn irqs_disable() {
-    this_cpu().irqs_disable();
-}
-
-/// Reduces IRQ-disable nesting level on the current CPU and restores the
-/// original IRQ state when the level reaches 0.
-///
-/// Caller needs to make sure to match every `irqs_disable()` call with an
-/// `irqs_enable()` call.
-#[inline(always)]
-pub fn irqs_enable() {
-    this_cpu().irqs_enable();
-}
-
-/// Get IRQ-disable nesting count on the current CPU
-///
-/// # Returns
-///
-/// Current nesting depth of irq_disable() calls.
-pub fn irq_nesting_count() -> i32 {
-    this_cpu().irq_nesting_count()
-}
-
-/// Raises TPR on the current CPU.  Keeps track of the nesting level.
-///
-/// The caller must ensure that every `raise_tpr()` call is followed by a
-/// matching call to `lower_tpr()`.
-#[inline(always)]
-pub fn raise_tpr(tpr_value: usize) {
-    this_cpu().raise_tpr(tpr_value);
-}
-
-/// Lowers TPR from the current level to the new level required by the
-/// current nesting state.
-///
-/// The caller must ensure that a `lower_tpr()` call balances a preceding
-/// `raise_tpr()` call to the indicated level.
-///
-/// * `tpr_value` - The TPR from which the caller would like to lower.
-///   Must be less than or equal to the current TPR.
-#[inline(always)]
-pub fn lower_tpr(tpr_value: usize) {
-    this_cpu().lower_tpr(tpr_value);
-}
-
-/// Gets the GHCB for this CPU.
-///
-/// # Panics
-///
-/// Panics if the GHCB for this CPU has not been set up via
-/// [`PerCpu::setup_ghcb()`].
-pub fn current_ghcb() -> &'static GHCB {
-    this_cpu().ghcb().unwrap()
 }
 
 #[derive(Debug, Clone, Copy)]

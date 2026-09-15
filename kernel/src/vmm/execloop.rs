@@ -5,6 +5,7 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use super::GuestExitMessage;
+use crate::cpu::apic::{ai_handle_intercepts, update_apic_emulation};
 use crate::cpu::percpu::{GuestVmsaRef, this_cpu};
 use crate::cpu::{IrqGuard, flush_tlb_global_sync};
 use crate::mm::TryPtr;
@@ -101,7 +102,7 @@ pub fn enter_guest(mut regs: RequestOutput) -> GuestExitMessage {
         let guard = IrqGuard::new();
 
         // Update APIC interrupt emulation state if required.
-        cpu.update_apic_emulation(vmsa, caa_addr);
+        update_apic_emulation(vmsa, caa_addr);
 
         // Make VMSA runnable again by setting EFER.SVME.
         vmsa.enable();
@@ -132,7 +133,7 @@ pub fn enter_guest(mut regs: RequestOutput) -> GuestExitMessage {
             // Clear EFER.SVME in guest VMSA.
             vmsa.disable();
 
-            cpu.ai_handle_intercepts(vmsa);
+            ai_handle_intercepts(vmsa);
 
             if let Some(msg) = get_svsm_request_message(vmsa_ref.deref_mut()) {
                 return msg;

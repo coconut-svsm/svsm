@@ -105,6 +105,7 @@ pub unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
 }
 
 /// SharedBox is a safe wrapper around memory pages shared with the host.
+#[repr(transparent)]
 pub struct SharedBox<T> {
     ptr: NonNull<T>,
 }
@@ -169,21 +170,6 @@ impl<T> SharedBox<T> {
         unsafe {
             unsafe_copy_bytes(value, self.ptr.as_ptr(), 1);
         }
-    }
-
-    /// Leak the memory.
-    pub fn leak(self) -> NonNull<T> {
-        let ptr = self.ptr;
-        core::mem::forget(self);
-        ptr
-    }
-
-    // Gets the address of the inner pointer
-    pub fn ptr_ref(&self) -> *const *const T {
-        // We are casting a `*const NonNull<T>` to a `*const *const T`.
-        // The cast is valid because `NonNull<T>` is transparent over
-        // `*mut T`, and `*mut T` has the same layout as `*const T`.
-        (&raw const self.ptr).cast()
     }
 }
 

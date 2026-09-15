@@ -7,11 +7,20 @@
 use crate::hyperv;
 use crate::sev::status::sev_flags;
 use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_ATTRIBUTES, SVSM_DS, SVSM_DS_ATTRIBUTES};
+use core::sync::atomic::{AtomicU64, Ordering};
 use cpuarch::sev_status::SEVStatusFlags;
 use cpuarch::vmsa::{VIntrCtrl, VMSA, VMSASegment};
 
 use super::gdt::GLOBAL_GDT;
 use super::idt::GLOBAL_IDT;
+
+percpu! {
+    static RESET_IP: AtomicU64 = AtomicU64::new(0xffff_fff0);
+}
+
+pub fn reset_ip() -> u64 {
+    RESET_IP.with(|reset_ip| reset_ip.load(Ordering::Relaxed))
+}
 
 pub fn svsm_code_segment() -> hyperv::HvSegmentRegister {
     hyperv::HvSegmentRegister {

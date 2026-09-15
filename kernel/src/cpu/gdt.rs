@@ -108,12 +108,16 @@ impl GDT {
         self.set_tss_entry(GDTEntry::null(), GDTEntry::null());
     }
 
-    pub fn load_tss(&mut self, tss: &'static X86Tss) {
+    /// # Safety
+    ///
+    /// The caller must ensure that `tss` remains valid while it is installed
+    /// in the task register.
+    pub unsafe fn load_tss(&mut self, tss: &X86Tss) {
         let (desc0, desc1) = tss.to_gdt_entry();
 
         self.set_tss_entry(desc0, desc1);
-        // SAFETY: loading task register must me done in assembly.
-        // tss is ensured to have a static lifetime so this is safe.
+        // SAFETY: Loading the task register must be done in assembly. The
+        // caller ensures that the referenced TSS remains valid while loaded.
         unsafe { asm!("ltr %ax", in("ax") SVSM_TSS, options(att_syntax)) };
         self.clear_tss_entry()
     }

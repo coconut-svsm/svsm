@@ -6,11 +6,6 @@
 
 .code64
 
-.section .data
-.globl HV_DOORBELL_ADDR
-HV_DOORBELL_ADDR:
-	.quad 0
-
 .pushsection .entry.text, "ax"
 
 .macro push_regs
@@ -299,15 +294,11 @@ continue_hv:
 	rdsspq	%rdx
 	pushq	%rdx
 handle_as_hv:
-	// Load the address of the #HV doorbell page.  The global address
-	// might not yet be configured, and the per-CPU page might also not
-	// yet be configured, so only process events if there is a valid
-	// doorbell page.
-	movq	HV_DOORBELL_ADDR(%rip), %rsi
+	// Load the address of the #HV doorbell page.  The per-CPU pointer is
+	// initialized to NULL until the page is configured.
+	movq	%gs:__svsm_percpu_hv_doorbell(%rip), %rdi
+	movq	%rdi, %rsi
 	testq	%rsi, %rsi
-	jz	default_return
-	movq	(%rsi), %rdi
-	testq	%rdi, %rdi
 	jz	default_return
 handle_as_hv_with_doorbell:
 	call	process_hv_events
@@ -325,10 +316,7 @@ return_all_paths:
 	// #HV.
 	testl	${IF}, {EXCEP_FLAGS_OFF}(%rsp) // check EFLAGS.IF in exception frame
 	jz	begin_iret_return
-	movq	HV_DOORBELL_ADDR(%rip), %rdi
-	test	%rdi, %rdi
-	jz	begin_iret_return
-	movq	(%rdi), %rdi
+	movq	%gs:__svsm_percpu_hv_doorbell(%rip), %rdi
 	test	%rdi, %rdi
 	jz	begin_iret_return
 	testw	$0x8000, (%rdi)
