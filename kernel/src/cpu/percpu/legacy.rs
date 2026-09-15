@@ -174,21 +174,6 @@ impl PerCpuAreas {
     }
 }
 
-#[derive(Debug)]
-struct IstStacks {
-    double_fault_stack: ImmutAfterInitCell<VirtAddr>,
-    double_fault_shadow_stack: ImmutAfterInitCell<VirtAddr>,
-}
-
-impl IstStacks {
-    const fn new() -> Self {
-        IstStacks {
-            double_fault_stack: ImmutAfterInitCell::uninit(),
-            double_fault_shadow_stack: ImmutAfterInitCell::uninit(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GuestVmsaRef {
     vmsa: Option<PhysAddr>,
@@ -405,9 +390,12 @@ where
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
-    /// Stages IST stack addresses allocated by the boot CPU until the target
-    /// CPU can initialize its linker-backed per-CPU keys through `%gs`.
-    ist: IstStacks,
+}
+
+#[derive(Debug)]
+pub struct ExceptionStacks {
+    double_fault: VirtAddr,
+    double_fault_shadow: Option<VirtAddr>,
 }
 
 impl PerCpu {
@@ -421,8 +409,6 @@ impl PerCpu {
                 vmr.set_per_cpu(true);
                 vmr
             },
-
-            ist: IstStacks::new(),
         })
     }
 
@@ -493,19 +479,12 @@ impl PerCpu {
         Ok(())
     }
 
-    fn allocate_ist_stacks(&self) -> Result<(), SvsmError> {
-        self.ist
-            .double_fault_stack
-            .try_init_from_fn(|| self.allocate_stack(SVSM_STACK_IST_DF_BASE))?;
-        Ok(())
+    fn allocate_ist_stacks(&self) -> Result<VirtAddr, SvsmError> {
+        self.allocate_stack(SVSM_STACK_IST_DF_BASE)
     }
 
-    fn allocate_isst_shadow_stacks(&self) -> Result<(), SvsmError> {
-        self.ist.double_fault_shadow_stack.try_init_from_fn(|| {
-            self.allocate_shadow_stack(SVSM_SHADOW_STACK_ISST_DF_BASE, ShadowStackInit::Exception)
-        })?;
-
-        Ok(())
+    fn allocate_isst_shadow_stacks(&self) -> Result<VirtAddr, SvsmError> {
+        self.allocate_shadow_stack(SVSM_SHADOW_STACK_ISST_DF_BASE, ShadowStackInit::Exception)
     }
 
     pub fn map_self(&self) -> Result<(), SvsmError> {
@@ -539,7 +518,15 @@ impl PerCpu {
     pub fn setup(
         &self,
         mut pgtable: PageBox<PageTable>,
-    ) -> Result<(PageBox<PageTable>, VirtAddr, Option<VirtAddr>), SvsmError> {
+    ) -> Result<
+        (
+            PageBox<PageTable>,
+            VirtAddr,
+            Option<VirtAddr>,
+            ExceptionStacks,
+        ),
+        SvsmError,
+    > {
         self.init_page_table()?;
 
         // Map PerCpu data in own page-table
@@ -563,16 +550,23 @@ impl PerCpu {
         }
 
         // Allocate IST stacks
-        self.allocate_ist_stacks()?;
+        let double_fault = self.allocate_ist_stacks()?;
 
-        if cpu_has_feat(Feature::CetSS) {
-            // Allocate ISST shadow stacks
-            self.allocate_isst_shadow_stacks()?;
-        }
+        let double_fault_shadow = cpu_has_feat(Feature::CetSS)
+            .then(|| self.allocate_isst_shadow_stacks())
+            .transpose()?;
 
         self.finish_page_table(&mut pgtable);
 
-        Ok((pgtable, context_switch_stack, init_shadow_stack))
+        Ok((
+            pgtable,
+            context_switch_stack,
+            init_shadow_stack,
+            ExceptionStacks {
+                double_fault,
+                double_fault_shadow,
+            },
+        ))
     }
 
     pub(in crate::cpu) fn setup_percpu_keys(
@@ -581,6 +575,7 @@ impl PerCpu {
         pgtable: &'static mut PageTable,
         context_switch_stack: VirtAddr,
         init_shadow_stack: Option<VirtAddr>,
+        exception_stacks: ExceptionStacks,
     ) {
         let initialize_keys = self.percpu_area.initialize();
         self.percpu_area.load();
@@ -596,15 +591,8 @@ impl PerCpu {
         init_context_switch_stack(context_switch_stack);
         init_current_stack();
         init_initial_shadow_stack(init_shadow_stack);
-        let staged_df_stack = self.ist.double_fault_stack.try_get_inner().ok().copied();
-        init_double_fault_stack(staged_df_stack);
-        let staged_df_shadow_stack = self
-            .ist
-            .double_fault_shadow_stack
-            .try_get_inner()
-            .ok()
-            .copied();
-        init_double_fault_shadow_stack(staged_df_shadow_stack);
+        init_double_fault_stack(Some(exception_stacks.double_fault));
+        init_double_fault_shadow_stack(exception_stacks.double_fault_shadow);
         setup_tss(double_fault_stack().unwrap());
         init_isst(double_fault_shadow_stack());
         init_vrange_4k();

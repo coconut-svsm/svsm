@@ -5,6 +5,7 @@
 //! Owned CPU startup state and local initialization.
 
 use super::isst::load_isst;
+use super::percpu::ExceptionStacks;
 use super::percpu::PerCpu;
 use super::percpu::PerCpuShared;
 use super::shadow_stack::is_cet_ss_enabled;
@@ -26,6 +27,7 @@ pub struct CpuLaunch {
     pgtable: PageBox<PageTable>,
     context_switch_stack: VirtAddr,
     init_shadow_stack: Option<VirtAddr>,
+    exception_stacks: ExceptionStacks,
     current_stack: MemoryRegion<VirtAddr>,
 }
 
@@ -36,6 +38,7 @@ impl CpuLaunch {
         pgtable: PageBox<PageTable>,
         context_switch_stack: VirtAddr,
         init_shadow_stack: Option<VirtAddr>,
+        exception_stacks: ExceptionStacks,
         current_stack: MemoryRegion<VirtAddr>,
     ) -> Self {
         Self {
@@ -44,6 +47,7 @@ impl CpuLaunch {
             pgtable,
             context_switch_stack,
             init_shadow_stack,
+            exception_stacks,
             current_stack,
         }
     }
@@ -54,6 +58,7 @@ impl CpuLaunch {
         pgtable: PageBox<PageTable>,
         context_switch_stack: VirtAddr,
         init_shadow_stack: Option<VirtAddr>,
+        exception_stacks: ExceptionStacks,
     ) -> Self {
         let current_stack = MemoryRegion::new(
             context_switch_stack
@@ -67,6 +72,7 @@ impl CpuLaunch {
             pgtable,
             context_switch_stack,
             init_shadow_stack,
+            exception_stacks,
             current_stack,
         )
     }
@@ -102,6 +108,7 @@ pub fn initialize_cpu(launch: CpuLaunch, platform: &dyn SvsmPlatform) -> Result<
         pgtable,
         launch.context_switch_stack,
         launch.init_shadow_stack,
+        launch.exception_stacks,
     );
 
     // SAFETY: the per-CPU virtual range, stack, TSS, and ISST have been

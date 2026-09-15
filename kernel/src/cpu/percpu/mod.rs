@@ -11,6 +11,7 @@ mod legacy;
 pub use key::PerCpuKey;
 #[doc(hidden)]
 pub use key::PerCpuStorage;
+pub use legacy::ExceptionStacks;
 pub use legacy::{
     GuestVmsaRef, PERCPU_AREAS, PERCPU_SHARED_INDEX_OFFSET, PERCPU_VMSAS, PerCpu, PerCpuAreas,
     PerCpuShared, PerCpuVmsas, VmsaRegistryEntry, cpu_idle_loop, current_task, this_cpu,
