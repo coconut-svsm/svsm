@@ -23,7 +23,7 @@ pub struct VMalloc {
     /// [`RawAllocMapping`] used for memory allocation
     alloc: RawAllocMapping,
     /// Page-table flags to map pages
-    flags: PTEntryFlags,
+    prot: PTEntryFlags,
 }
 
 impl VMalloc {
@@ -39,15 +39,15 @@ impl VMalloc {
     pub fn new(size: usize, flags: VMFileMappingFlags) -> Result<Self, SvsmError> {
         let mut vmalloc = VMalloc {
             alloc: RawAllocMapping::new(size),
-            flags: PTEntryFlags::ACCESSED,
+            prot: PTEntryFlags::ACCESSED,
         };
 
         if flags.contains(VMFileMappingFlags::Write) {
-            vmalloc.flags |= PTEntryFlags::WRITABLE | PTEntryFlags::DIRTY;
+            vmalloc.prot |= PTEntryFlags::WRITABLE | PTEntryFlags::DIRTY;
         }
 
         if !flags.contains(VMFileMappingFlags::Execute) {
-            vmalloc.flags |= PTEntryFlags::NX;
+            vmalloc.prot |= PTEntryFlags::NX;
         }
 
         vmalloc.alloc_pages()?;
@@ -86,6 +86,6 @@ impl VirtualMapping for VMalloc {
     }
 
     fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
-        self.flags
+        self.prot
     }
 }
