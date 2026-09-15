@@ -28,7 +28,7 @@ use cpufeature::backend::CpuidBackend;
 use crate::address::{PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::cpu::IrqGuard;
-use crate::cpu::percpu::PerCpu;
+use crate::cpu::percpu::{PerCpu, PerCpuShared};
 use crate::cpu::smp::ApStartContextRef;
 use crate::cpu::tlb::{TlbFlushScope, flush_tlb};
 use crate::error::SvsmError;
@@ -244,6 +244,7 @@ pub trait SvsmPlatform: Sync {
     fn start_cpu(
         &self,
         cpu: &PerCpu,
+        shared: &'static PerCpuShared,
         start_rip: u64,
         ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError>;

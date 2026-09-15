@@ -399,12 +399,13 @@ impl SvsmPlatform for SnpPlatform {
     fn start_cpu(
         &self,
         cpu: &PerCpu,
+        shared: &'static crate::cpu::percpu::PerCpuShared,
         start_rip: u64,
         _ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError> {
         let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, start_rip)?;
 
-        with_current_ghcb(|ghcb| ghcb.ap_create(vmsa_pa, cpu.get_apic_id().into(), 0, sev_features))
+        with_current_ghcb(|ghcb| ghcb.ap_create(vmsa_pa, shared.apic_id().into(), 0, sev_features))
     }
 
     fn start_svsm_request_loop(&self) -> bool {
