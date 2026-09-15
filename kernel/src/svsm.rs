@@ -371,7 +371,7 @@ unsafe fn svsm_start(
     let percpu_shared = unsafe { PERCPU_AREAS.create_new(0) };
     let bsp_percpu = PerCpu::alloc().expect("Failed to allocate BSP per-cpu data");
 
-    let (init_pgtable, context_switch_stack) = bsp_percpu
+    let (init_pgtable, context_switch_stack, init_shadow_stack) = bsp_percpu
         .setup(init_pgtable)
         .expect("Failed to setup BSP per-cpu area");
     // SAFETY: the stack addresses were initialized during kernel entry and
@@ -385,6 +385,7 @@ unsafe fn svsm_start(
             percpu_shared,
             init_pgtable,
             context_switch_stack,
+            init_shadow_stack,
             stack,
         ),
         platform,

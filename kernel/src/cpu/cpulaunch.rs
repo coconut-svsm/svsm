@@ -25,6 +25,7 @@ pub struct CpuLaunch {
     shared: &'static PerCpuShared,
     pgtable: PageBox<PageTable>,
     context_switch_stack: VirtAddr,
+    init_shadow_stack: Option<VirtAddr>,
     current_stack: MemoryRegion<VirtAddr>,
 }
 
@@ -34,6 +35,7 @@ impl CpuLaunch {
         shared: &'static PerCpuShared,
         pgtable: PageBox<PageTable>,
         context_switch_stack: VirtAddr,
+        init_shadow_stack: Option<VirtAddr>,
         current_stack: MemoryRegion<VirtAddr>,
     ) -> Self {
         Self {
@@ -41,6 +43,7 @@ impl CpuLaunch {
             shared,
             pgtable,
             context_switch_stack,
+            init_shadow_stack,
             current_stack,
         }
     }
@@ -50,6 +53,7 @@ impl CpuLaunch {
         shared: &'static PerCpuShared,
         pgtable: PageBox<PageTable>,
         context_switch_stack: VirtAddr,
+        init_shadow_stack: Option<VirtAddr>,
     ) -> Self {
         let current_stack = MemoryRegion::new(
             context_switch_stack
@@ -57,7 +61,14 @@ impl CpuLaunch {
                 .unwrap(),
             crate::mm::STACK_SIZE,
         );
-        Self::new(percpu, shared, pgtable, context_switch_stack, current_stack)
+        Self::new(
+            percpu,
+            shared,
+            pgtable,
+            context_switch_stack,
+            init_shadow_stack,
+            current_stack,
+        )
     }
 
     pub fn percpu(&self) -> &'static PerCpu {
@@ -86,7 +97,12 @@ impl CpuLaunch {
 pub fn initialize_cpu(launch: CpuLaunch, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
     let percpu = launch.percpu;
     let pgtable = PageBox::leak(launch.pgtable);
-    percpu.setup_percpu_keys(launch.shared, pgtable, launch.context_switch_stack);
+    percpu.setup_percpu_keys(
+        launch.shared,
+        pgtable,
+        launch.context_switch_stack,
+        launch.init_shadow_stack,
+    );
 
     // SAFETY: the per-CPU virtual range, stack, TSS, and ISST have been
     // populated in this page table before the CPU is allowed to use it.

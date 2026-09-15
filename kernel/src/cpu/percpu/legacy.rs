@@ -405,7 +405,6 @@ where
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
-    init_shadow_stack: ImmutAfterInitCell<VirtAddr>,
     /// Stages IST stack addresses allocated by the boot CPU until the target
     /// CPU can initialize its linker-backed per-CPU keys through `%gs`.
     ist: IstStacks,
@@ -423,7 +422,6 @@ impl PerCpu {
                 vmr
             },
 
-            init_shadow_stack: ImmutAfterInitCell::uninit(),
             ist: IstStacks::new(),
         })
     }
@@ -479,11 +477,8 @@ impl PerCpu {
         Ok(ssp)
     }
 
-    fn allocate_init_shadow_stack(&self) -> Result<(), SvsmError> {
-        self.init_shadow_stack.try_init_from_fn(|| {
-            self.allocate_shadow_stack(SVSM_SHADOW_STACKS_INIT_TASK, ShadowStackInit::Init)
-        })?;
-        Ok(())
+    fn allocate_init_shadow_stack(&self) -> Result<VirtAddr, SvsmError> {
+        self.allocate_shadow_stack(SVSM_SHADOW_STACKS_INIT_TASK, ShadowStackInit::Init)
     }
 
     fn allocate_context_switch_stack(&self) -> Result<VirtAddr, SvsmError> {
@@ -544,7 +539,7 @@ impl PerCpu {
     pub fn setup(
         &self,
         mut pgtable: PageBox<PageTable>,
-    ) -> Result<(PageBox<PageTable>, VirtAddr), SvsmError> {
+    ) -> Result<(PageBox<PageTable>, VirtAddr, Option<VirtAddr>), SvsmError> {
         self.init_page_table()?;
 
         // Map PerCpu data in own page-table
@@ -556,9 +551,9 @@ impl PerCpu {
         // Reserve ranges and initialize allocator for temporary mappings
         self.initialize_vm_ranges()?;
 
-        if cpu_has_feat(Feature::CetSS) {
-            self.allocate_init_shadow_stack()?;
-        }
+        let init_shadow_stack = cpu_has_feat(Feature::CetSS)
+            .then(|| self.allocate_init_shadow_stack())
+            .transpose()?;
 
         // Allocate per-cpu context switch stack
         let context_switch_stack = self.allocate_context_switch_stack()?;
@@ -577,7 +572,7 @@ impl PerCpu {
 
         self.finish_page_table(&mut pgtable);
 
-        Ok((pgtable, context_switch_stack))
+        Ok((pgtable, context_switch_stack, init_shadow_stack))
     }
 
     pub(in crate::cpu) fn setup_percpu_keys(
@@ -585,6 +580,7 @@ impl PerCpu {
         shared: &'static PerCpuShared,
         pgtable: &'static mut PageTable,
         context_switch_stack: VirtAddr,
+        init_shadow_stack: Option<VirtAddr>,
     ) {
         let initialize_keys = self.percpu_area.initialize();
         self.percpu_area.load();
@@ -599,7 +595,6 @@ impl PerCpu {
         init_percpu_pgtable(pgtable);
         init_context_switch_stack(context_switch_stack);
         init_current_stack();
-        let init_shadow_stack = self.init_shadow_stack.try_get_inner().ok().copied();
         init_initial_shadow_stack(init_shadow_stack);
         let staged_df_stack = self.ist.double_fault_stack.try_get_inner().ok().copied();
         init_double_fault_stack(staged_df_stack);
