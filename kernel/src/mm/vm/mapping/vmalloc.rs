@@ -40,15 +40,11 @@ impl VMalloc {
     pub fn new(size: usize, flags: VMFlags) -> Result<Self, SvsmError> {
         let mut vmalloc = VMalloc {
             alloc: RawAllocMapping::new(size),
-            prot: PTEntryFlags::ACCESSED,
+            prot: flags.page_prot() | PTEntryFlags::ACCESSED,
         };
 
         if flags.contains(VMFlags::Write) {
-            vmalloc.prot |= PTEntryFlags::WRITABLE | PTEntryFlags::DIRTY;
-        }
-
-        if !flags.contains(VMFlags::Execute) {
-            vmalloc.prot |= PTEntryFlags::NX;
+            vmalloc.prot |= PTEntryFlags::DIRTY;
         }
 
         vmalloc.alloc_pages()?;
