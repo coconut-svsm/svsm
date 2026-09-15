@@ -15,6 +15,7 @@ use crate::mm::zero_user_mem;
 use crate::mm::{USER_MEM_END, mmap_user};
 use crate::task::{create_user_task, current_task, finish_user_task, schedule};
 use crate::types::PAGE_SIZE;
+use crate::utils::MemoryRegion;
 use crate::utils::align_up;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
@@ -135,6 +136,27 @@ pub fn exec(info: UserExecInfo) -> Result<u64, SvsmError> {
                 remaining_len,
                 flags,
             )?;
+        }
+    }
+
+    // If the ELF file contains a PT_GNU_RELRO program header, make every
+    // whole page overlapping it read-only, as glibc's _dl_protect_relro()
+    // does.
+    //
+    // Following glibc semantics, both range boundaries are aligned down.
+    if let Some(relro) = elf_bin.image_relro_vaddr_range(virt_base) {
+        let relro_start = VirtAddr::from(relro.vaddr_begin).page_align();
+        let relro_end = VirtAddr::from(relro.vaddr_end).page_align();
+        if relro_start < relro_end {
+            let region = MemoryRegion::from_addresses(relro_start, relro_end);
+            current_task.set_user_access(region, VMFlags::Read)?;
+        } else {
+            log::warn!(
+                "RELRO region {:#x}..{:#x} of {} smaller than a page, not protected",
+                relro.vaddr_begin,
+                relro.vaddr_end,
+                info.binary
+            );
         }
     }
 

@@ -935,6 +935,29 @@ impl Task {
         vmr.remove(addr).map(|_| ())
     }
 
+    /// Sets the access to a region of this task's user address space.
+    ///
+    /// # Arguments
+    ///
+    /// * `region` - The user virtual memory region to change. Start and end
+    ///   addresses must be aligned to 4KiB and the region must be fully
+    ///   mapped.
+    /// * `access` - The access the region permits afterwards. As for
+    ///   [`VMR::set_access()`], this is the access the region ends up with and
+    ///   not the change to make to it.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, `Err(SvsmError)` on failure.
+    pub fn set_user_access(
+        &self,
+        region: MemoryRegion<VirtAddr>,
+        access: VMFlags,
+    ) -> Result<(), SvsmError> {
+        let vmr = self.mm.user_range().ok_or(SvsmError::Mem)?;
+        vmr.set_access(region, access)
+    }
+
     /// Adds an object to the current task.
     ///
     /// # Arguments
