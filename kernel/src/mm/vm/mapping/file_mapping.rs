@@ -8,33 +8,15 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use bitflags::bitflags;
-
 use super::{VMPageFaultResolution, VirtualMapping};
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::fs::{FileHandle, FsError};
 use crate::mm::PageRef;
-use crate::mm::vm::VMR;
+use crate::mm::vm::{VMFlags, VMR};
 use crate::mm::{PAGE_SIZE, pagetable::PTEntryFlags};
 use crate::types::PAGE_SHIFT;
 use crate::utils::align_up;
-
-bitflags! {
-    #[derive(Debug, PartialEq, Copy, Clone)]
-    pub struct VMFileMappingFlags : u32 {
-        /// Read-only access to the file
-        const Read = 1 << 0;
-        // Read/Write access to a copy of the files pages
-        const Write = 1 << 1;
-        // Read-only access that allows execution
-        const Execute = 1 << 2;
-        // Map private copies of file pages
-        const Private = 1 << 3;
-        // Map at a fixed address
-        const Fixed = 1 << 4;
-    }
-}
 
 /// Map view of a ramfs file into virtual memory
 #[derive(Debug)]
@@ -43,7 +25,7 @@ pub struct VMFileMapping {
     size: usize,
 
     /// The flags to apply to the virtual mapping
-    flags: VMFileMappingFlags,
+    flags: VMFlags,
 
     /// A vec containing references to mapped pages within the file
     pages: Vec<PageRef>,
@@ -71,7 +53,7 @@ impl VMFileMapping {
         file: &FileHandle,
         offset: usize,
         size: usize,
-        flags: VMFileMappingFlags,
+        flags: VMFlags,
     ) -> Result<Self, SvsmError> {
         let page_size = align_up(size, PAGE_SIZE);
         let file_size = align_up(file.size(), PAGE_SIZE);
@@ -87,10 +69,8 @@ impl VMFileMapping {
         }
 
         // Permission checks
-        if (flags.contains(VMFileMappingFlags::Write)
-            && !flags.contains(VMFileMappingFlags::Private)
-            && !file.writable())
-            || (flags.contains(VMFileMappingFlags::Read) && !file.readable())
+        if (flags.contains(VMFlags::Write) && !flags.contains(VMFlags::Private) && !file.writable())
+            || (flags.contains(VMFlags::Read) && !file.readable())
         {
             return Err(SvsmError::FileSystem(FsError::bad_handle()));
         }
@@ -102,7 +82,7 @@ impl VMFileMapping {
             let page_ref = file
                 .mapping(offset + page_index * PAGE_SIZE)
                 .ok_or(SvsmError::Mem)?;
-            if flags.contains(VMFileMappingFlags::Private) {
+            if flags.contains(VMFlags::Private) {
                 pages.push(page_ref.try_copy_page()?);
             } else {
                 pages.push(page_ref);
@@ -151,11 +131,11 @@ impl VirtualMapping for VMFileMapping {
     fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
         let mut flags = PTEntryFlags::empty();
 
-        if self.flags.contains(VMFileMappingFlags::Write) {
+        if self.flags.contains(VMFlags::Write) {
             flags |= PTEntryFlags::WRITABLE;
         }
 
-        if !self.flags.contains(VMFileMappingFlags::Execute) {
+        if !self.flags.contains(VMFlags::Execute) {
             flags |= PTEntryFlags::NX;
         }
 
@@ -211,10 +191,10 @@ mod tests {
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_512b_test_file();
-        let vm = VMFileMapping::new(&fh, 0, 512, VMFileMappingFlags::Read)
+        let vm = VMFileMapping::new(&fh, 0, 512, VMFlags::Read)
             .expect("Failed to create new VMFileMapping");
         assert_eq!(vm.mapping_size(), PAGE_SIZE);
-        assert!(vm.flags.contains(VMFileMappingFlags::Read));
+        assert!(vm.flags.contains(VMFlags::Read));
         assert_eq!(vm.pages.len(), 1);
         unlink(name).unwrap();
     }
@@ -229,7 +209,7 @@ mod tests {
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open_rw(name).unwrap();
-        let vm = VMFileMapping::new(&fh, offset, fh2.size() - offset, VMFileMappingFlags::Read);
+        let vm = VMFileMapping::new(&fh, offset, fh2.size() - offset, VMFlags::Read);
         assert!(vm.is_err());
         unlink(name).unwrap();
     }
@@ -241,7 +221,7 @@ mod tests {
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open_rw(name).unwrap();
-        let vm = VMFileMapping::new(&fh, 0, fh2.size() + 1, VMFileMappingFlags::Read);
+        let vm = VMFileMapping::new(&fh, 0, fh2.size() + 1, VMFlags::Read);
         assert!(vm.is_err());
         unlink(name).unwrap();
     }
@@ -253,12 +233,12 @@ mod tests {
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open_rw(name).unwrap();
-        let vm = VMFileMapping::new(&fh, PAGE_SIZE, fh2.size(), VMFileMappingFlags::Read);
+        let vm = VMFileMapping::new(&fh, PAGE_SIZE, fh2.size(), VMFlags::Read);
         assert!(vm.is_err());
         unlink(name).unwrap();
     }
 
-    fn test_map_first_page(flags: VMFileMappingFlags) {
+    fn test_map_first_page(flags: VMFlags) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
@@ -280,7 +260,7 @@ mod tests {
         unlink(name).unwrap();
     }
 
-    fn test_map_multiple_pages(flags: VMFileMappingFlags) {
+    fn test_map_multiple_pages(flags: VMFlags) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
@@ -304,7 +284,7 @@ mod tests {
         unlink(name).unwrap();
     }
 
-    fn test_map_unaligned_file_size(flags: VMFileMappingFlags) {
+    fn test_map_unaligned_file_size(flags: VMFlags) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
@@ -331,7 +311,7 @@ mod tests {
         unlink(name).unwrap();
     }
 
-    fn test_map_non_zero_offset(flags: VMFileMappingFlags) {
+    fn test_map_non_zero_offset(flags: VMFlags) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
@@ -358,41 +338,41 @@ mod tests {
 
     #[test]
     fn test_map_first_page_readonly() {
-        test_map_first_page(VMFileMappingFlags::Read)
+        test_map_first_page(VMFlags::Read)
     }
 
     #[test]
     fn test_map_multiple_pages_readonly() {
-        test_map_multiple_pages(VMFileMappingFlags::Read)
+        test_map_multiple_pages(VMFlags::Read)
     }
 
     #[test]
     fn test_map_unaligned_file_size_readonly() {
-        test_map_unaligned_file_size(VMFileMappingFlags::Read)
+        test_map_unaligned_file_size(VMFlags::Read)
     }
 
     #[test]
     fn test_map_non_zero_offset_readonly() {
-        test_map_non_zero_offset(VMFileMappingFlags::Read)
+        test_map_non_zero_offset(VMFlags::Read)
     }
 
     #[test]
     fn test_map_first_page_readwrite() {
-        test_map_first_page(VMFileMappingFlags::Write)
+        test_map_first_page(VMFlags::Write)
     }
 
     #[test]
     fn test_map_multiple_pages_readwrite() {
-        test_map_multiple_pages(VMFileMappingFlags::Write)
+        test_map_multiple_pages(VMFlags::Write)
     }
 
     #[test]
     fn test_map_unaligned_file_size_readwrite() {
-        test_map_unaligned_file_size(VMFileMappingFlags::Write)
+        test_map_unaligned_file_size(VMFlags::Write)
     }
 
     #[test]
     fn test_map_non_zero_offset_readwrite() {
-        test_map_non_zero_offset(VMFileMappingFlags::Write)
+        test_map_non_zero_offset(VMFlags::Write)
     }
 }

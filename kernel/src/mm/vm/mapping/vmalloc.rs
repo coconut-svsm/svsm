@@ -9,7 +9,8 @@ use crate::error::SvsmError;
 use crate::mm::pagetable::PTEntryFlags;
 
 use super::rawalloc::RawAllocMapping;
-use super::{Mapping, VMFileMappingFlags, VirtualMapping};
+use super::{Mapping, VirtualMapping};
+use crate::mm::vm::VMFlags;
 
 extern crate alloc;
 use alloc::sync::Arc;
@@ -36,17 +37,17 @@ impl VMalloc {
     /// # Returns
     ///
     /// New instance on success, Err(SvsmError::Mem) on error
-    pub fn new(size: usize, flags: VMFileMappingFlags) -> Result<Self, SvsmError> {
+    pub fn new(size: usize, flags: VMFlags) -> Result<Self, SvsmError> {
         let mut vmalloc = VMalloc {
             alloc: RawAllocMapping::new(size),
             prot: PTEntryFlags::ACCESSED,
         };
 
-        if flags.contains(VMFileMappingFlags::Write) {
+        if flags.contains(VMFlags::Write) {
             vmalloc.prot |= PTEntryFlags::WRITABLE | PTEntryFlags::DIRTY;
         }
 
-        if !flags.contains(VMFileMappingFlags::Execute) {
+        if !flags.contains(VMFlags::Execute) {
             vmalloc.prot |= PTEntryFlags::NX;
         }
 
@@ -63,7 +64,7 @@ impl VMalloc {
     /// # Returns
     ///
     /// New [`Mapping`] on success, Err(SvsmError::Mem) on error
-    pub fn new_mapping(size: usize, flags: VMFileMappingFlags) -> Result<Mapping, SvsmError> {
+    pub fn new_mapping(size: usize, flags: VMFlags) -> Result<Mapping, SvsmError> {
         Ok(Arc::new(Self::new(size, flags)?))
     }
 

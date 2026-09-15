@@ -7,7 +7,7 @@
 use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
-use crate::mm::vm::{Mapping, VMFileMapping, VMFileMappingFlags, VMalloc};
+use crate::mm::vm::{Mapping, VMFileMapping, VMFlags, VMalloc};
 use crate::task::current_task;
 
 extern crate alloc;
@@ -17,13 +17,13 @@ pub fn create_file_mapping(
     file: &FileHandle,
     offset: usize,
     size: usize,
-    flags: VMFileMappingFlags,
+    flags: VMFlags,
 ) -> Result<Mapping, SvsmError> {
     let file_mapping = VMFileMapping::new(file, offset, size, flags)?;
     Ok(Arc::new(file_mapping))
 }
 
-pub fn create_anon_mapping(size: usize, flags: VMFileMappingFlags) -> Result<Mapping, SvsmError> {
+pub fn create_anon_mapping(size: usize, flags: VMFlags) -> Result<Mapping, SvsmError> {
     let alloc = VMalloc::new(size, flags)?;
     Ok(Arc::new(alloc))
 }
@@ -33,7 +33,7 @@ pub fn mmap_user(
     file: Option<&FileHandle>,
     offset: usize,
     size: usize,
-    flags: VMFileMappingFlags,
+    flags: VMFlags,
 ) -> Result<VirtAddr, SvsmError> {
     current_task().mmap_user(addr, file, offset, size, flags)
 }
@@ -43,7 +43,7 @@ pub fn mmap_kernel(
     file: Option<&FileHandle>,
     offset: usize,
     size: usize,
-    flags: VMFileMappingFlags,
+    flags: VMFlags,
 ) -> Result<VirtAddr, SvsmError> {
     current_task().mmap_kernel(addr, file, offset, size, flags)
 }
