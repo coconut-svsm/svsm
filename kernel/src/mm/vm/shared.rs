@@ -303,3 +303,101 @@ impl VmAllocator<TaskVm> for TaskVmAllocator {
         self.inner.for_each(f);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::SvsmError;
+    use crate::locking::SpinLock;
+    use crate::mm::SVSM_PERTASK;
+    use crate::mm::vm::{VMReserved, VmAllocator};
+    use crate::types::PAGE_SIZE;
+
+    // All instances draw from a single global pool, so the tests must not run
+    // concurrently.
+    static TEST_LOCK: SpinLock<()> = SpinLock::new(());
+
+    #[test]
+    fn allocations_are_unique_between_instances() {
+        let _guard = TEST_LOCK.lock();
+        let first = TaskVmAllocator::new();
+        let second = TaskVmAllocator::new();
+        let first_addr = first
+            .alloc(
+                SVSM_PERTASK.base(),
+                PAGE_SIZE,
+                PAGE_SIZE,
+                VMReserved::new_mapping(PAGE_SIZE),
+            )
+            .unwrap();
+        let second_addr = second
+            .alloc(
+                SVSM_PERTASK.base(),
+                PAGE_SIZE,
+                PAGE_SIZE,
+                VMReserved::new_mapping(PAGE_SIZE),
+            )
+            .unwrap();
+
+        assert_ne!(first_addr, second_addr);
+
+        // Each instance only sees its own mappings.
+        assert!(first.query(first_addr).is_some());
+        assert!(second.query(first_addr).is_none());
+
+        drop(first);
+
+        let third = TaskVmAllocator::new();
+        let third_addr = third
+            .alloc_at(first_addr, PAGE_SIZE, VMReserved::new_mapping(PAGE_SIZE))
+            .unwrap();
+        assert_eq!(third_addr, first_addr);
+    }
+
+    #[test]
+    fn shared_allocations_are_refcounted() {
+        let _guard = TEST_LOCK.lock();
+        let first = TaskVmAllocator::new();
+        let second = TaskVmAllocator::new();
+        let addr = first
+            .alloc_shared(VMReserved::new_mapping(PAGE_SIZE))
+            .unwrap();
+
+        assert!(second.map_shared(addr).is_ok());
+        assert!(matches!(second.map_shared(addr), Err(SvsmError::Mem)));
+
+        drop(first);
+
+        let third = TaskVmAllocator::new();
+        assert!(matches!(
+            third.alloc_at(addr, PAGE_SIZE, VMReserved::new_mapping(PAGE_SIZE)),
+            Err(SvsmError::Mem)
+        ));
+
+        drop(second);
+
+        assert_eq!(
+            third
+                .alloc_at(addr, PAGE_SIZE, VMReserved::new_mapping(PAGE_SIZE))
+                .unwrap(),
+            addr
+        );
+    }
+
+    #[test]
+    fn private_allocations_cannot_be_shared() {
+        let _guard = TEST_LOCK.lock();
+        let first = TaskVmAllocator::new();
+        let second = TaskVmAllocator::new();
+        let addr = first
+            .alloc(
+                SVSM_PERTASK.base(),
+                PAGE_SIZE,
+                PAGE_SIZE,
+                VMReserved::new_mapping(PAGE_SIZE),
+            )
+            .unwrap();
+
+        assert!(matches!(second.map_shared(addr), Err(SvsmError::Mem)));
+    }
+}
