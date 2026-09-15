@@ -729,7 +729,6 @@ pub struct Vmr<V: VmRange> {
     pgtbl_parts: RWLock<Vec<PageTablePart>>,
 }
 
-#[expect(dead_code)]
 impl<V: VmRange> Vmr<V> {
     /// Creates a new [`Vmr`] for the region described by `V`.
     pub fn new() -> Self {
@@ -1031,5 +1030,69 @@ impl<V: VmRange> Vmr<V> {
         let (start, mapping) = self.alloc.query(vaddr).ok_or(SvsmError::Mem)?;
         mapping.handle_page_fault(vaddr - start, write)?;
         Ok(())
+    }
+}
+
+/// A mapping in a [`Vmr`], holding a reference `B` to that range.
+/// The mapping is torn down on drop.
+#[derive(Debug)]
+pub struct VmrMapping<V: VmRange, B: Borrow<Vmr<V>>> {
+    vmr: B,
+    va: VirtAddr,
+    _range: PhantomData<V>,
+}
+
+impl<V: VmRange, B: Borrow<Vmr<V>>> VmrMapping<V, B> {
+    pub fn new(vmr: B, mapping: Mapping) -> Result<Self, SvsmError> {
+        let va = vmr.borrow().insert(mapping)?;
+        Ok(Self {
+            vmr,
+            va,
+            _range: PhantomData,
+        })
+    }
+
+    pub fn new_at(vmr: B, addr: VirtAddr, mapping: Mapping) -> Result<Self, SvsmError> {
+        let va = vmr.borrow().insert_at(addr, mapping)?;
+        Ok(Self {
+            vmr,
+            va,
+            _range: PhantomData,
+        })
+    }
+
+    pub fn new_hint(vmr: B, addr: VirtAddr, mapping: Mapping) -> Result<Self, SvsmError> {
+        let va = vmr.borrow().insert_hint(addr, mapping)?;
+        Ok(Self {
+            vmr,
+            va,
+            _range: PhantomData,
+        })
+    }
+
+    pub fn leak(self) -> VirtAddr {
+        let md = ManuallyDrop::new(self);
+        md.va
+    }
+
+    pub fn virt_addr(&self) -> VirtAddr {
+        self.va
+    }
+}
+
+impl<V: VmRange, B: Borrow<Vmr<V>>> Deref for VmrMapping<V, B> {
+    type Target = VirtAddr;
+
+    fn deref(&self) -> &VirtAddr {
+        &self.va
+    }
+}
+
+impl<V: VmRange, B: Borrow<Vmr<V>>> Drop for VmrMapping<V, B> {
+    fn drop(&mut self) {
+        self.vmr
+            .borrow()
+            .remove(self.va)
+            .expect("Error removing VmrMapping virtual memory range");
     }
 }
