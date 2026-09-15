@@ -657,7 +657,7 @@ impl VMR {
         }
 
         let off = vaddr - start;
-        node.get_mapping().handle_page_fault(self, off, write)?;
+        node.get_mapping().handle_page_fault(off, write)?;
         Ok(())
     }
 }
