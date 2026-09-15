@@ -85,4 +85,66 @@ impl VirtualMapping for VMalloc {
     fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
         self.prot
     }
+
+    fn split_at(&self, offset: usize) -> Result<(Mapping, Mapping), SvsmError> {
+        let (head, tail) = self.alloc.split_at(offset)?;
+
+        Ok((
+            Arc::new(Self {
+                alloc: head,
+                prot: self.prot,
+            }),
+            Arc::new(Self {
+                alloc: tail,
+                prot: self.prot,
+            }),
+        ))
+    }
+
+    fn set_access(&self, access: VMFlags) -> Result<Mapping, SvsmError> {
+        Ok(Arc::new(Self {
+            alloc: self.alloc.try_clone()?,
+            prot: self.prot.with_prot(access.page_prot()),
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mm::alloc::{DEFAULT_TEST_MEMORY_SIZE, TestRootMem};
+    use crate::types::PAGE_SIZE;
+
+    #[test]
+    fn test_set_access() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let vm = VMalloc::new(4 * PAGE_SIZE, VMFlags::Write).expect("Failed to create VMalloc");
+        assert!(vm.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+
+        let ro = vm.set_access(VMFlags::Read).expect("Failed to set access");
+        assert!(!ro.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+        // The original is left untouched.
+        assert!(vm.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+
+        // The access is set, not reduced, so it can be granted again.
+        let rw = ro.set_access(VMFlags::Write).expect("Failed to set access");
+        assert!(rw.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+    }
+
+    #[test]
+    fn test_split_at() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let vm = VMalloc::new(4 * PAGE_SIZE, VMFlags::Write).expect("Failed to create VMalloc");
+
+        let (head, tail) = vm.split_at(PAGE_SIZE).expect("Failed to split");
+        assert_eq!(head.mapping_size(), PAGE_SIZE);
+        assert_eq!(tail.mapping_size(), 3 * PAGE_SIZE);
+
+        // Splitting at an invalid offset is rejected.
+        assert!(vm.split_at(0).is_err());
+        assert!(vm.split_at(4 * PAGE_SIZE).is_err());
+        assert!(vm.split_at(PAGE_SIZE / 2).is_err());
+    }
 }
