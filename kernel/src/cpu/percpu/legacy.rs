@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use super::super::cpulaunch::CpuLaunch;
 use super::super::features::{Feature, cpu_has_feat};
 use super::super::ipi::IpiState;
 use super::super::isst::{
@@ -13,7 +14,6 @@ use super::super::isst::{
 };
 use super::super::shadow_stack::{init_initial_shadow_stack, init_shadow_stack, is_cet_ss_enabled};
 use super::super::smp::init_percpu_shared;
-use super::super::tss::load_gdt_tss;
 use super::super::tss::{double_fault_stack, init_double_fault_stack, setup_tss, tss_address};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::ShadowStackInit;
@@ -576,7 +576,7 @@ impl PerCpu {
 
     /// Returns the initial page table for this CPU. Note this page table is
     /// no longer active after switching to task context.
-    fn get_pgtable(&self) -> &'static mut PageTable {
+    pub(in crate::cpu) fn get_pgtable(&self) -> &'static mut PageTable {
         // SAFETY: `self.pgtbl` is a write-once variable that holds the
         // physical address of this processor's paging root.  It is stored as
         // an `AtomicUsize` so it can be read from contexts that cannot
@@ -699,7 +699,10 @@ impl PerCpu {
     }
 
     // Setup code which needs to run on the target CPU
-    fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
+    pub(in crate::cpu) fn setup_on_cpu(
+        &self,
+        platform: &dyn SvsmPlatform,
+    ) -> Result<(), SvsmError> {
         // Initialize platform resources before allocating shared pages.
         platform.setup_percpu_current(self)?;
 
@@ -738,28 +741,6 @@ impl PerCpu {
         }
     }
 
-    /// Initialize state which must be installed by the CPU that owns it.
-    pub fn initialize_cpu(
-        &'static self,
-        platform: &dyn SvsmPlatform,
-        current_stack: MemoryRegion<VirtAddr>,
-    ) -> Result<(), SvsmError> {
-        self.setup_percpu_keys();
-
-        // SAFETY: the per-CPU virtual range, stack, TSS, and ISST have been
-        // populated in this page table before the CPU is allowed to use it.
-        unsafe { self.get_pgtable().load() };
-
-        load_gdt_tss(true);
-
-        if is_cet_ss_enabled() {
-            load_isst();
-        }
-
-        set_current_stack(current_stack);
-        self.setup_on_cpu(platform)
-    }
-
     /// Fill in the initial context structure for the SVSM.
     pub fn get_initial_context(&self, start_rip: u64) -> hyperv::HvInitialVpContext {
         let data_segment = svsm_data_segment();
@@ -774,7 +755,12 @@ impl PerCpu {
             // page table because it resides in the PerCpu virtual range.
             //
             // See switch_to() for details.
-            rsp: self.get_top_of_context_switch_stack().unwrap().into(),
+            rsp: self
+                .get_top_of_context_switch_stack()
+                .unwrap()
+                .checked_sub(size_of::<*mut CpuLaunch>())
+                .unwrap()
+                .into(),
             rflags: 2,
 
             cs: svsm_code_segment(),

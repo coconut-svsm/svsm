@@ -18,6 +18,7 @@ use svsm::boot_params::BootParamBox;
 use svsm::boot_params::BootParams;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::dump_cpuid_table;
+use svsm::cpu::cpulaunch::{CpuLaunch, initialize_cpu};
 use svsm::cpu::features::{Feature, cpu_has_feat};
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
@@ -378,8 +379,7 @@ unsafe fn svsm_start(
     let stack = unsafe {
         MemoryRegion::from_addresses(VirtAddr::from(bsp_stack), VirtAddr::from(bsp_stack_end))
     };
-    bsp_percpu
-        .initialize_cpu(platform, stack)
+    initialize_cpu(CpuLaunch::new(bsp_percpu, stack), platform)
         .expect("Failed to initialize boot CPU");
 
     // SAFETY: the boot loader is trusted to allocate an appropriate virtual
