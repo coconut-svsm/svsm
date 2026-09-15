@@ -34,9 +34,11 @@ use crate::locking::{
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
+use crate::mm::vm::{
+    Mapping, PrivateVmAllocator, VMKernelStack, VMPhysMem, VMReserved, VmRange, Vmr, VmrMapping,
+};
 use crate::mm::{
-    PERCPU_TEMP_2M, PERCPU_TEMP_4K, PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK,
+    AddrSpaceDescriptor, PERCPU_TEMP_2M, PERCPU_TEMP_4K, PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK,
     SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU, SVSM_PERCPU_CAA, SVSM_PERCPU_VMSA_BASE,
     SVSM_SHADOW_STACK_ISST_DF_BASE, SVSM_SHADOW_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
     virt_to_phys,
@@ -387,6 +389,17 @@ pub const PERCPU_SHARED_INDEX_OFFSET: usize = offset_of!(PerCpuShared, cpu_index
 
 const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
 
+/// The per-CPU virtual memory range.
+#[derive(Debug)]
+pub struct PerCpuVm;
+
+impl VmRange for PerCpuVm {
+    const DESCRIPTOR: AddrSpaceDescriptor = SVSM_PERCPU;
+    const PT_FLAGS: PTEntryFlags = PTEntryFlags::GLOBAL;
+    const PER_CPU: bool = true;
+    type Allocator = PrivateVmAllocator<Self>;
+}
+
 /// CPU-local data.
 ///
 /// While the contents of this struct are never accessed outside the local CPU
@@ -423,7 +436,7 @@ where
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     reset_ip: AtomicU64,
     /// PerCpu Virtual Memory Range
-    vm_range: VMR,
+    vm_range: Vmr<PerCpuVm>,
     /// Address allocator for per-cpu 4k temporary mappings
     vrange_4k: RWLock<VirtualRange>,
     /// Address allocator for per-cpu 2m temporary mappings
@@ -460,11 +473,7 @@ impl PerCpu {
             isst: RWLock::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
             reset_ip: AtomicU64::new(0xffff_fff0),
-            vm_range: {
-                let mut vmr = VMR::new(SVSM_PERCPU, PTEntryFlags::GLOBAL)?;
-                vmr.set_per_cpu(true);
-                vmr
-            },
+            vm_range: Vmr::new(),
 
             vrange_4k: RWLock::new(VirtualRange::new()),
             vrange_2m: RWLock::new(VirtualRange::new()),
@@ -663,11 +672,7 @@ impl PerCpu {
     }
 
     pub fn init_page_table(&self, pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
-        // SAFETY: The per-CPU address range is fully aligned to top-level
-        // paging boundaries.
-        unsafe {
-            self.vm_range.initialize()?;
-        }
+        self.vm_range.initialize()?;
         self.set_pgtable(PageBox::leak(pgtable));
 
         Ok(())
@@ -1186,12 +1191,15 @@ impl PerCpu {
     ///
     /// # Returns
     ///
-    /// On success, a new ['VMRMapping'} that provides a virtual memory address for
-    /// the mapping which remains valid until the ['VRMapping'] is dropped.
+    /// On success, a new [`VmrMapping`] that provides a virtual memory address for
+    /// the mapping which remains valid until the [`VmrMapping`] is dropped.
     ///
     /// On error, an ['SvsmError'].
-    pub fn new_mapping(&self, mapping: Mapping) -> Result<VMRMapping<&VMR>, SvsmError> {
-        VMRMapping::new(&self.vm_range, mapping)
+    pub fn new_mapping(
+        &self,
+        mapping: Mapping,
+    ) -> Result<VmrMapping<PerCpuVm, &Vmr<PerCpuVm>>, SvsmError> {
+        VmrMapping::new(&self.vm_range, mapping)
     }
 
     /// Add the PerCpu virtual range into the provided pagetable
