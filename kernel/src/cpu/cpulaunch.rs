@@ -10,12 +10,16 @@ use super::percpu::PerCpu;
 use super::percpu::PerCpuShared;
 use super::shadow_stack::is_cet_ss_enabled;
 use super::tss::load_gdt_tss;
+use super::vmsa::{init_percpu_svsm_vmsa, init_svsm_vmsa};
+use crate::address::PhysAddr;
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::mm::PageBox;
 use crate::mm::pagetable::{PageTable, load_initial_pgtable};
 use crate::platform::SvsmPlatform;
+use crate::sev::utils::RMPFlags;
+use crate::sev::vmsa::{VMSAControl, VmsaPage};
 use crate::task::set_current_stack;
 use crate::utils::MemoryRegion;
 
@@ -28,6 +32,7 @@ pub struct CpuLaunch {
     context_switch_stack: VirtAddr,
     init_shadow_stack: Option<VirtAddr>,
     exception_stacks: ExceptionStacks,
+    svsm_vmsa: Option<VmsaPage>,
     current_stack: MemoryRegion<VirtAddr>,
 }
 
@@ -48,6 +53,7 @@ impl CpuLaunch {
             context_switch_stack,
             init_shadow_stack,
             exception_stacks,
+            svsm_vmsa: None,
             current_stack,
         }
     }
@@ -97,6 +103,24 @@ impl CpuLaunch {
         self.percpu
             .get_initial_context(start_rip, &self.pgtable, self.context_switch_stack)
     }
+
+    pub fn alloc_svsm_vmsa(
+        &mut self,
+        vtom: u64,
+        context: &hyperv::HvInitialVpContext,
+    ) -> Result<(), SvsmError> {
+        let mut vmsa = VmsaPage::new(RMPFlags::VMPL1)?;
+        init_svsm_vmsa(&mut vmsa, vtom, context);
+        vmsa.enable();
+        self.svsm_vmsa = Some(vmsa);
+        Ok(())
+    }
+
+    pub fn svsm_vmsa_info(&self) -> Option<(PhysAddr, u64)> {
+        self.svsm_vmsa
+            .as_ref()
+            .map(|vmsa| (vmsa.paddr(), vmsa.sev_features))
+    }
 }
 
 /// Initialize state which must be installed by the CPU that owns it.
@@ -110,6 +134,9 @@ pub fn initialize_cpu(launch: CpuLaunch, platform: &dyn SvsmPlatform) -> Result<
         launch.init_shadow_stack,
         launch.exception_stacks,
     );
+    if let Some(vmsa) = launch.svsm_vmsa {
+        init_percpu_svsm_vmsa(vmsa);
+    }
 
     // SAFETY: the per-CPU virtual range, stack, TSS, and ISST have been
     // populated in this page table before the CPU is allowed to use it.

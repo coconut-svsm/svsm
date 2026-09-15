@@ -21,7 +21,7 @@ use crate::cpu::apic::init_apic_emulation;
 use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::tss::TSS_LIMIT;
-use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, reset_ip};
+use crate::cpu::vmsa::{init_guest_vmsa, reset_ip};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
 use crate::cpu::x86::apic_id;
 use crate::error::SvsmError;
@@ -44,7 +44,7 @@ use crate::mm::{
 use crate::platform::SvsmPlatform;
 use crate::requests::SvsmCaa;
 use crate::sev::utils::RMPFlags;
-use crate::sev::vmsa::{VMSAControl, VmsaPage};
+use crate::sev::vmsa::VmsaPage;
 use crate::task::KernelThreadStartInfo;
 use crate::task::RunQueue;
 use crate::task::Task;
@@ -55,7 +55,6 @@ use crate::task::wake_and_schedule_task;
 use crate::task::{init_context_switch_stack, init_current_stack, set_current_stack};
 use crate::types::{PAGE_SIZE, SVSM_TR_ATTRIBUTES, SVSM_TSS};
 use crate::utils::MemoryRegion;
-use crate::utils::immut_after_init::ImmutAfterInitCell;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -387,7 +386,6 @@ where
     /// Linker-defined CPU-local variables accessed through `%GS`.
     pub(super) percpu_area: PerCpuArea,
 
-    svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
 }
@@ -403,7 +401,6 @@ impl PerCpu {
     fn new() -> Result<Self, SvsmError> {
         Ok(Self {
             percpu_area: PerCpuArea::new()?,
-            svsm_vmsa: ImmutAfterInitCell::uninit(),
             vm_range: {
                 let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL)?;
                 vmr.set_per_cpu(true);
@@ -605,7 +602,7 @@ impl PerCpu {
         platform: &dyn SvsmPlatform,
     ) -> Result<(), SvsmError> {
         // Initialize platform resources before allocating shared pages.
-        platform.setup_percpu_current(self)?;
+        platform.setup_percpu_current()?;
 
         // The BSP allocates these later, when Hyper-V is initialized.
         if self.shared().cpu_index() != 0 && cpu_has_feat(Feature::HyperV) {
@@ -686,26 +683,6 @@ impl PerCpu {
 
             ..Default::default()
         }
-    }
-
-    /// Allocates and initializes a new VMSA for this CPU. Returns its
-    /// physical address and SEV features. Returns an error if allocation
-    /// fails of this CPU's VMSA was already initialized.
-    pub fn alloc_svsm_vmsa(
-        &self,
-        vtom: u64,
-        context: &hyperv::HvInitialVpContext,
-    ) -> Result<(PhysAddr, u64), SvsmError> {
-        let vmsa = self.svsm_vmsa.try_init_from_fn(|| {
-            let mut vmsa = VmsaPage::new(RMPFlags::VMPL1)?;
-
-            // Initialize VMSA
-            init_svsm_vmsa(&mut vmsa, vtom, context);
-            vmsa.enable();
-            Ok::<_, SvsmError>(vmsa)
-        })?;
-
-        Ok((vmsa.paddr(), vmsa.sev_features))
     }
 
     fn unmap_guest_vmsa(&self) {

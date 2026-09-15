@@ -14,7 +14,6 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::features::{Feature, cpu_get_feat, cpu_has_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
-use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::ApStartContextRef;
 use crate::cpu::smp::set_ap_start_context;
 use crate::cpu::x86::{apic_in_service, apic_initialize, apic_sw_enable};
@@ -90,7 +89,7 @@ impl SvsmPlatform for TdpPlatform {
         CpuVendor::Intel
     }
 
-    fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
+    fn setup_percpu_current(&self) -> Result<(), SvsmError> {
         apic_initialize(&TDX_APIC_ACCESSOR);
         // apic_enable() is not needed as both KVM and Hyper-V hosts initialize
         // TD APICs with (APIC_ENABLE_MASK | APIC_X2_ENABLE_MASK)
@@ -221,9 +220,9 @@ impl SvsmPlatform for TdpPlatform {
 
     fn start_cpu(
         &self,
-        _cpu: &PerCpu,
         shared: &'static crate::cpu::percpu::PerCpuShared,
         initial_context: &hyperv::HvInitialVpContext,
+        _svsm_vmsa: Option<(PhysAddr, u64)>,
         ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError> {
         // Translate this context into an AP start context and place it in the

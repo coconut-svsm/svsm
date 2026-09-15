@@ -18,7 +18,6 @@ use crate::cpu::IrqGuard;
 use crate::cpu::features::{CPU_VENDOR_ID, Feature, cpu_get_feat, cpu_has_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::msr::write_msr;
-use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::ApStartContextRef;
 use crate::cpu::smp::set_ap_start_context;
 use crate::cpu::x86::{
@@ -100,7 +99,7 @@ impl SvsmPlatform for NativePlatform {
         }
     }
 
-    fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
+    fn setup_percpu_current(&self) -> Result<(), SvsmError> {
         apic_initialize(&X2APIC_ACCESSOR);
         apic_enable();
         apic_sw_enable();
@@ -213,9 +212,9 @@ impl SvsmPlatform for NativePlatform {
 
     fn start_cpu(
         &self,
-        _cpu: &PerCpu,
         shared: &'static crate::cpu::percpu::PerCpuShared,
         initial_context: &hyperv::HvInitialVpContext,
+        _svsm_vmsa: Option<(PhysAddr, u64)>,
         ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError> {
         let context = *initial_context;

@@ -81,7 +81,7 @@ fn start_cpu(
         .unwrap();
     let stack_slot_paddr = pgtable.phys_addr(stack_slot)?;
     let stack_slot_vaddr = phys_to_virt(stack_slot_paddr);
-    let launch = Box::new(CpuLaunch::new_application(
+    let mut launch = Box::new(CpuLaunch::new_application(
         percpu,
         percpu_shared,
         pgtable,
@@ -90,6 +90,8 @@ fn start_cpu(
         exception_stacks,
     ));
     let initial_context = launch.get_initial_context(start_rip);
+    platform.prepare_cpu(&mut launch, &initial_context)?;
+    let svsm_vmsa = launch.svsm_vmsa_info();
     let launch_ptr = Box::into_raw(launch);
 
     // SAFETY: the stack slot is backed by the target CPU's private stack and
@@ -103,9 +105,9 @@ fn start_cpu(
     fence(Ordering::Release);
 
     if let Err(err) = platform.start_cpu(
-        percpu,
         percpu_shared,
         &initial_context,
+        svsm_vmsa,
         ap_start_context_ref,
     ) {
         // SAFETY: a failed platform launch did not release the target CPU, so
