@@ -245,7 +245,7 @@ pub trait SvsmPlatform: Sync {
         &self,
         cpu: &PerCpu,
         shared: &'static PerCpuShared,
-        start_rip: u64,
+        initial_context: &crate::hyperv::HvInitialVpContext,
         ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError>;
 

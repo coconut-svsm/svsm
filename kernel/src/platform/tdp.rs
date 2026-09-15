@@ -221,17 +221,13 @@ impl SvsmPlatform for TdpPlatform {
 
     fn start_cpu(
         &self,
-        cpu: &PerCpu,
+        _cpu: &PerCpu,
         shared: &'static crate::cpu::percpu::PerCpuShared,
-        start_rip: u64,
+        initial_context: &hyperv::HvInitialVpContext,
         ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError> {
-        // Translate this context into an AP start context and place it in the
-        // AP startup transition page.
-        let context = cpu.get_initial_context(start_rip);
-
         // Set up the AP start context.
-        set_ap_start_context(&context, ap_start_context_ref.unwrap());
+        set_ap_start_context(initial_context, ap_start_context_ref.unwrap());
 
         // Map the reset page to populate the TDP start context consumed
         // by stage1, including the VP index of the CPU being started.  This

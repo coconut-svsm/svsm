@@ -11,8 +11,8 @@ use core::ptr::NonNull;
 use crate::address::VirtAddr;
 use crate::cpu::flush_tlb_global_sync_page;
 use crate::cpu::mem::{unsafe_copy_bytes, write_bytes};
-use crate::cpu::percpu::with_pgtable_mut;
 use crate::error::SvsmError;
+use crate::mm::pagetable::with_pgtable_mut;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
 };

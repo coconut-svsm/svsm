@@ -6,9 +6,9 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::msr::{SEV_GHCB, write_msr};
-use crate::cpu::percpu::with_pgtable_mut;
 use crate::cpu::{IrqGuard, X86GeneralRegs, flush_tlb_global_sync_page};
 use crate::error::SvsmError;
+use crate::mm::pagetable::with_pgtable_mut;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
 };
