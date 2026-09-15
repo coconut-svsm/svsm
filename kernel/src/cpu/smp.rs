@@ -20,6 +20,7 @@ use crate::cpu::tlb::set_tlb_flush_smp;
 use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
 use crate::hyperv;
+use crate::mm::pagetable::new_pgtable;
 use crate::mm::{PerCPUPageMappingGuard, phys_to_virt};
 use crate::platform::{SVSM_PLATFORM, SvsmPlatform};
 use crate::task::schedule_init;
@@ -71,17 +72,18 @@ fn start_cpu(
 ) -> Result<(), SvsmError> {
     let start_rip: u64 = start_ap_entry as *const () as usize as u64;
     let percpu = PerCpu::alloc()?;
-    let pgtable = this_cpu().new_pgtable()?;
-    percpu.setup(pgtable)?;
+    let pgtable = new_pgtable()?;
+    let pgtable = percpu.setup(pgtable)?;
 
     let stack_slot = percpu
         .get_top_of_context_switch_stack()
         .unwrap()
         .checked_sub(size_of::<*mut CpuLaunch>())
         .unwrap();
-    let stack_slot_paddr = percpu.get_pgtable().phys_addr(stack_slot)?;
+    let stack_slot_paddr = pgtable.phys_addr(stack_slot)?;
     let stack_slot_vaddr = phys_to_virt(stack_slot_paddr);
-    let launch = Box::new(CpuLaunch::new_application(percpu, percpu_shared));
+    let launch = Box::new(CpuLaunch::new_application(percpu, percpu_shared, pgtable));
+    let initial_context = launch.get_initial_context(start_rip);
     let launch_ptr = Box::into_raw(launch);
 
     // SAFETY: the stack slot is backed by the target CPU's private stack and
@@ -94,7 +96,12 @@ fn start_cpu(
     }
     fence(Ordering::Release);
 
-    if let Err(err) = platform.start_cpu(percpu, percpu_shared, start_rip, ap_start_context_ref) {
+    if let Err(err) = platform.start_cpu(
+        percpu,
+        percpu_shared,
+        &initial_context,
+        ap_start_context_ref,
+    ) {
         // SAFETY: a failed platform launch did not release the target CPU, so
         // ownership of the launch record remains with this CPU.
         drop(unsafe { Box::from_raw(launch_ptr) });

@@ -221,14 +221,14 @@ impl SvsmPlatform for TdpPlatform {
 
     fn start_cpu(
         &self,
-        cpu: &PerCpu,
+        _cpu: &PerCpu,
         shared: &'static crate::cpu::percpu::PerCpuShared,
-        start_rip: u64,
+        initial_context: &hyperv::HvInitialVpContext,
         ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError> {
         // Translate this context into an AP start context and place it in the
         // AP startup transition page.
-        let mut context = cpu.get_initial_context(start_rip);
+        let mut context = *initial_context;
 
         // Set the initial EFER to zero so that it is not reloaded.  This
         // is necessary since the TDX module does not permit changes to EFER

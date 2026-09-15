@@ -213,12 +213,12 @@ impl SvsmPlatform for NativePlatform {
 
     fn start_cpu(
         &self,
-        cpu: &PerCpu,
+        _cpu: &PerCpu,
         shared: &'static crate::cpu::percpu::PerCpuShared,
-        start_rip: u64,
+        initial_context: &hyperv::HvInitialVpContext,
         ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError> {
-        let context = cpu.get_initial_context(start_rip);
+        let context = *initial_context;
         if cpu_has_feat(Feature::HyperV) {
             return hyperv_start_cpu(shared.cpu_index(), &context);
         }

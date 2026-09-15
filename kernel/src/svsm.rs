@@ -371,7 +371,7 @@ unsafe fn svsm_start(
     let percpu_shared = unsafe { PERCPU_AREAS.create_new(0) };
     let bsp_percpu = PerCpu::alloc().expect("Failed to allocate BSP per-cpu data");
 
-    bsp_percpu
+    let init_pgtable = bsp_percpu
         .setup(init_pgtable)
         .expect("Failed to setup BSP per-cpu area");
     // SAFETY: the stack addresses were initialized during kernel entry and
@@ -379,8 +379,11 @@ unsafe fn svsm_start(
     let stack = unsafe {
         MemoryRegion::from_addresses(VirtAddr::from(bsp_stack), VirtAddr::from(bsp_stack_end))
     };
-    initialize_cpu(CpuLaunch::new(bsp_percpu, percpu_shared, stack), platform)
-        .expect("Failed to initialize boot CPU");
+    initialize_cpu(
+        CpuLaunch::new(bsp_percpu, percpu_shared, init_pgtable, stack),
+        platform,
+    )
+    .expect("Failed to initialize boot CPU");
 
     // SAFETY: the boot loader is trusted to allocate an appropriate virtual
     // address for the IDT page.

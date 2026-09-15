@@ -18,7 +18,7 @@ use super::super::tss::{double_fault_stack, init_double_fault_stack, setup_tss, 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::ShadowStackInit;
 use crate::cpu::apic::init_apic_emulation;
-use crate::cpu::control_regs::{read_cr0, read_cr3, read_cr4};
+use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, reset_ip};
@@ -29,7 +29,9 @@ use crate::hyperv::{self, allocate_hypercall_pages};
 use crate::locking::{
     LockGuard, RWLock, RWLockIrqSafe, ReadLockGuardIrqSafe, SpinLock, WriteLockGuardIrqSafe,
 };
-use crate::mm::pagetable::{PTEntryFlags, PageTable};
+use crate::mm::pagetable::{
+    PTEntryFlags, PageTable, init_percpu_pgtable, load_initial_pgtable, with_pgtable_mut,
+};
 use crate::mm::virtualrange::{init_vrange_2m, init_vrange_4k};
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
 use crate::mm::{
@@ -64,7 +66,6 @@ use core::mem::size_of;
 use core::ptr::{self, NonNull};
 use core::slice::Iter;
 use core::sync::atomic::AtomicBool;
-use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
@@ -378,8 +379,6 @@ impl PerCpuShared {
 percpu! {
     #[percpu_asm_symbol("__svsm_percpu_context_switch_stack")]
     static CONTEXT_SWITCH_STACK: AtomicUsize = AtomicUsize::new(0);
-    #[percpu_asm_symbol("__svsm_percpu_cr3")]
-    static CR3: AtomicUsize = AtomicUsize::new(0);
 }
 
 // Expose the offset of critical shared per-CPU fields to assembly.
@@ -409,7 +408,6 @@ where
     /// Linker-defined CPU-local variables accessed through `%GS`.
     pub(super) percpu_area: PerCpuArea,
 
-    pgtbl: AtomicPtr<PageTable>,
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
@@ -427,7 +425,6 @@ impl PerCpu {
     fn new() -> Result<Self, SvsmError> {
         Ok(Self {
             percpu_area: PerCpuArea::new()?,
-            pgtbl: AtomicPtr::new(ptr::null_mut()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
             vm_range: {
                 let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL)?;
@@ -466,15 +463,13 @@ impl PerCpu {
         self.shared().apic_id()
     }
 
-    fn set_pgtable(&self, pgtable: &'static mut PageTable) {
-        self.pgtbl
-            .compare_exchange(
-                ptr::null_mut(),
-                pgtable,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            )
-            .unwrap();
+    pub fn init_page_table(&self) -> Result<(), SvsmError> {
+        // SAFETY: The per-CPU address range is fully aligned to top-level
+        // paging boundaries.
+        unsafe {
+            self.vm_range.initialize()?;
+        }
+        Ok(())
     }
 
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
@@ -537,54 +532,6 @@ impl PerCpu {
         Ok(())
     }
 
-    /// Run callback `f` with an immutable reference to the currently active
-    /// page table. This method is private so that users outside this module
-    /// cannot call it on a remote `PerCpu` instance (e.g. the BSP when setting
-    /// up an AP's `PerCpu`.)
-    fn with_pgtable<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&PageTable) -> R,
-    {
-        if read_cr3().bits() == CR3.with(|cr3| cr3.load(Ordering::Relaxed)) {
-            f(self.get_pgtable())
-        } else {
-            let task = self.runqueue().current_task();
-            f(&mut task.page_table.lock_read())
-        }
-    }
-
-    /// Run callback `f` with a mutable reference to the currently active page
-    /// table. This method is private so that users outside this module cannot
-    /// call it on a remote `PerCpu` instance (e.g. the BSP when setting up an
-    /// AP's `PerCpu`.)
-    fn with_pgtable_mut<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut PageTable) -> R,
-    {
-        if read_cr3().bits() == CR3.with(|cr3| cr3.load(Ordering::Relaxed)) {
-            f(self.get_pgtable())
-        } else {
-            let task = self.runqueue().current_task();
-            f(&mut task.page_table.lock_write())
-        }
-    }
-
-    /// Returns the initial page table for this CPU. Note this page table is
-    /// no longer active after switching to task context.
-    pub(in crate::cpu) fn get_pgtable(&self) -> &'static mut PageTable {
-        // SAFETY: `self.pgtbl` is a write-once variable that holds the
-        // physical address of this processor's paging root.  It is stored as
-        // an `AtomicUsize` so it can be read from contexts that cannot
-        // acquire locks.
-        unsafe { self.pgtbl.load(Ordering::Relaxed).as_mut().unwrap() }
-    }
-
-    /// Return a new page table. The new page table will be empty, except
-    /// for the shared portion of the virtual address space.
-    pub fn new_pgtable(&self) -> Result<PageBox<PageTable>, SvsmError> {
-        self.get_pgtable().clone_shared()
-    }
-
     pub fn map_self(&self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(ptr::from_ref(self));
         let paddr = virt_to_phys(vaddr);
@@ -605,21 +552,16 @@ impl PerCpu {
         Ok(())
     }
 
-    fn install_pagetable(&self, mut pgtable: PageBox<PageTable>) {
-        self.vm_range.populate(&mut pgtable);
-        self.set_pgtable(PageBox::leak(pgtable));
+    fn finish_page_table(&self, pgtable: &mut PageTable) {
+        self.vm_range.populate(pgtable);
     }
 
     pub fn dump_vm_ranges(&self) {
         self.vm_range.dump_ranges();
     }
 
-    pub fn setup(&self, pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
-        // SAFETY: The per-CPU address range is fully aligned to top-level
-        // paging boundaries.
-        unsafe {
-            self.vm_range.initialize()?;
-        }
+    pub fn setup(&self, mut pgtable: PageBox<PageTable>) -> Result<PageBox<PageTable>, SvsmError> {
+        self.init_page_table()?;
 
         // Map PerCpu data in own page-table
         self.map_self()?;
@@ -649,12 +591,16 @@ impl PerCpu {
             self.allocate_isst_shadow_stacks()?;
         }
 
-        self.install_pagetable(pgtable);
+        self.finish_page_table(&mut pgtable);
 
-        Ok(())
+        Ok(pgtable)
     }
 
-    pub(in crate::cpu) fn setup_percpu_keys(&self, shared: &'static PerCpuShared) {
+    pub(in crate::cpu) fn setup_percpu_keys(
+        &self,
+        shared: &'static PerCpuShared,
+        pgtable: &'static mut PageTable,
+    ) {
         let initialize_keys = self.percpu_area.initialize();
         self.percpu_area.load();
         if !initialize_keys {
@@ -665,10 +611,7 @@ impl PerCpu {
 
         // Publish values prepared by the boot CPU now that this CPU can
         // access its linker-backed per-CPU keys through %gs.
-        let pgtbl = VirtAddr::from(self.pgtbl.load(Ordering::Relaxed) as usize);
-        CR3.with(|cr3| {
-            cr3.store(virt_to_phys(pgtbl).into(), Ordering::Relaxed);
-        });
+        init_percpu_pgtable(pgtable);
         CONTEXT_SWITCH_STACK.with(|context_switch_stack| {
             context_switch_stack.store(
                 self.context_switch_stack.load(Ordering::Relaxed),
@@ -729,7 +672,7 @@ impl PerCpu {
     pub fn load(&'static self) {
         // SAFETY: along with the page table we are also uploading the right
         // TSS and ISST to ensure a memory safe execution state
-        unsafe { self.get_pgtable().load() };
+        unsafe { load_initial_pgtable() };
         super::super::tss::load_gdt_tss(false);
         if is_cet_ss_enabled() {
             load_isst();
@@ -737,7 +680,11 @@ impl PerCpu {
     }
 
     /// Fill in the initial context structure for the SVSM.
-    pub fn get_initial_context(&self, start_rip: u64) -> hyperv::HvInitialVpContext {
+    pub(in crate::cpu) fn get_initial_context(
+        &self,
+        start_rip: u64,
+        pgtable: &PageTable,
+    ) -> hyperv::HvInitialVpContext {
         let data_segment = svsm_data_segment();
         let mut gs_segment = data_segment;
         gs_segment.base = self.percpu_area.gs_base() as u64;
@@ -770,7 +717,7 @@ impl PerCpu {
             idtr: svsm_idt_segment(),
 
             cr0: read_cr0().bits(),
-            cr3: self.get_pgtable().cr3_value().into(),
+            cr3: pgtable.cr3_value().into(),
             cr4: read_cr4().bits(),
             efer: read_efer().bits(),
             pat: 0x0007040600070406u64,
@@ -782,13 +729,16 @@ impl PerCpu {
     /// Allocates and initializes a new VMSA for this CPU. Returns its
     /// physical address and SEV features. Returns an error if allocation
     /// fails of this CPU's VMSA was already initialized.
-    pub fn alloc_svsm_vmsa(&self, vtom: u64, start_rip: u64) -> Result<(PhysAddr, u64), SvsmError> {
+    pub fn alloc_svsm_vmsa(
+        &self,
+        vtom: u64,
+        context: &hyperv::HvInitialVpContext,
+    ) -> Result<(PhysAddr, u64), SvsmError> {
         let vmsa = self.svsm_vmsa.try_init_from_fn(|| {
             let mut vmsa = VmsaPage::new(RMPFlags::VMPL1)?;
 
             // Initialize VMSA
-            let context = self.get_initial_context(start_rip);
-            init_svsm_vmsa(&mut vmsa, vtom, &context);
+            init_svsm_vmsa(&mut vmsa, vtom, context);
             vmsa.enable();
             Ok::<_, SvsmError>(vmsa)
         })?;
@@ -908,7 +858,7 @@ impl PerCpu {
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        self.with_pgtable_mut(|pg| self.vm_range.handle_page_fault(pg, vaddr, write))
+        with_pgtable_mut(|pg| self.vm_range.handle_page_fault(pg, vaddr, write))
     }
 
     pub fn schedule_init(&self) -> TaskPointer {
@@ -1097,24 +1047,6 @@ impl PerCpuVmsas {
 
 pub fn current_task() -> TaskPointer {
     this_cpu().runqueue().current_task()
-}
-
-/// Run callback `f` with an immutable reference to the currently
-/// active page table.
-pub fn with_pgtable<F, R>(f: F) -> R
-where
-    F: FnOnce(&PageTable) -> R,
-{
-    this_cpu().with_pgtable(f)
-}
-
-/// Run callback `f` with a mutable reference to the currently
-/// active page table.
-pub fn with_pgtable_mut<F, R>(f: F) -> R
-where
-    F: FnOnce(&mut PageTable) -> R,
-{
-    this_cpu().with_pgtable_mut(f)
 }
 
 pub fn cpu_idle_loop(cpu_index: usize) {

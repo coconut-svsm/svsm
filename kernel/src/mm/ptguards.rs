@@ -6,9 +6,9 @@
 
 use super::pagetable::PTEntryFlags;
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::percpu::with_pgtable_mut;
 use crate::cpu::tlb::flush_tlb_global_percpu_range;
 use crate::error::SvsmError;
+use crate::mm::pagetable::with_pgtable_mut;
 use crate::mm::virtualrange::VRangeAlloc;
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::{MemoryRegion, align_up};
