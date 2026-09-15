@@ -4,24 +4,23 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::idt::load_static_idt;
 use crate::acpi::tables::ACPICPUInfo;
+use crate::address::Address;
 use crate::address::PhysAddr;
-use crate::address::{Address, VirtAddr};
+use crate::cpu::idt::load_static_idt;
 use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu};
 use crate::cpu::shadow_stack::{
     MODE_64BIT, S_CET, SCetFlags, initial_shadow_stack, is_cet_ss_enabled,
 };
 use crate::cpu::sse::sse_init;
 use crate::cpu::tlb::set_tlb_flush_smp;
-use crate::cpu::tss::load_gdt_tss;
 use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::STACK_SIZE;
 use crate::platform::{SVSM_PLATFORM, SvsmPlatform};
-use crate::task::{schedule_init, set_current_stack};
+use crate::task::schedule_init;
 use crate::utils::MemoryRegion;
 use bootdefs::kernel_launch::ApStartContext;
 use core::arch::global_asm;
@@ -116,28 +115,6 @@ pub fn start_secondary_cpus(
     }
 }
 
-#[unsafe(no_mangle)]
-extern "C" fn start_ap_setup(top_of_stack: u64) {
-    // Initialize the per-CPU TSS before loading its descriptor.
-    this_cpu().setup_percpu_keys();
-
-    // Initialize the GDT, TSS, and IDT.
-    load_gdt_tss(true);
-    load_static_idt();
-
-    // Loading the GS selector above resets its base, so reinstall the per-CPU
-    // area after the segment registers have their final values.
-    this_cpu().setup_percpu_keys();
-
-    // Now the stack unwinder can be used
-    set_current_stack(MemoryRegion::new(
-        VirtAddr::from(top_of_stack)
-            .checked_sub(STACK_SIZE)
-            .unwrap(),
-        STACK_SIZE,
-    ));
-}
-
 unsafe extern "C" {
     fn start_ap_indirect();
 }
@@ -179,15 +156,6 @@ global_asm!(
         /* Mark the next stack frame as the bottom frame */
         xor     %rbp, %rbp
 
-        /*
-         * Call a startup function to complete setup in the local
-         * environment.
-         *
-         * %r12 is preserved per x86-64 calling convention.
-         */
-        mov     %rsp, %rdi
-        call    start_ap_setup
-
         /* Begin execution from the starting RIP */
         call    *%r12
         int3
@@ -218,16 +186,18 @@ pub fn set_ap_start_context(
 #[unsafe(no_mangle)]
 extern "C" fn start_ap() -> ! {
     let percpu = this_cpu();
-    percpu.setup_percpu_keys();
+    let top_of_stack = percpu.get_top_of_context_switch_stack().unwrap();
+    let stack = MemoryRegion::new(top_of_stack.checked_sub(STACK_SIZE).unwrap(), STACK_SIZE);
+
+    percpu
+        .initialize_cpu(&**SVSM_PLATFORM, stack)
+        .expect("Failed to initialize AP");
+    load_static_idt();
 
     if is_cet_ss_enabled() {
         let ssp_token = initial_shadow_stack().unwrap();
         enable_shadow_stacks!(ssp_token);
     }
-
-    percpu
-        .setup_on_cpu(&**SVSM_PLATFORM)
-        .expect("setup_on_cpu() failed");
 
     percpu
         .setup_idle_task()

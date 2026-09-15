@@ -68,9 +68,7 @@ use svsm::protocols::uefivars::uefi_mm_protocol_init;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::enumerate_early_boot_regions;
 use svsm::svsm_paging::invalidate_early_boot_memory;
-use svsm::task::{
-    KernelThreadStartInfo, current_stack, schedule_init, set_current_stack, start_kernel_task,
-};
+use svsm::task::{KernelThreadStartInfo, current_stack, schedule_init, start_kernel_task};
 use svsm::types::PAGE_SIZE;
 use svsm::utils::MemoryRegion;
 use svsm::utils::ScopedMut;
@@ -375,19 +373,14 @@ unsafe fn svsm_start(
     bsp_percpu
         .setup(init_pgtable)
         .expect("Failed to setup BSP per-cpu area");
-    bsp_percpu
-        .setup_on_cpu(platform)
-        .expect("Failed to run percpu.setup_on_cpu()");
-    bsp_percpu.load();
-    // Now the stack unwinder can be used
     // SAFETY: the stack addresses were initialized during kernel entry and
     // are known to be correct at this point.
-    unsafe {
-        set_current_stack(MemoryRegion::from_addresses(
-            VirtAddr::from(bsp_stack),
-            VirtAddr::from(bsp_stack_end),
-        ));
-    }
+    let stack = unsafe {
+        MemoryRegion::from_addresses(VirtAddr::from(bsp_stack), VirtAddr::from(bsp_stack_end))
+    };
+    bsp_percpu
+        .initialize_cpu(platform, stack)
+        .expect("Failed to initialize boot CPU");
 
     // SAFETY: the boot loader is trusted to allocate an appropriate virtual
     // address for the IDT page.

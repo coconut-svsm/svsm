@@ -13,6 +13,7 @@ use super::super::isst::{
 };
 use super::super::shadow_stack::{init_initial_shadow_stack, init_shadow_stack, is_cet_ss_enabled};
 use super::super::smp::init_percpu_shared;
+use super::super::tss::load_gdt_tss;
 use super::super::tss::{double_fault_stack, init_double_fault_stack, setup_tss, tss_address};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::ShadowStackInit;
@@ -698,9 +699,7 @@ impl PerCpu {
     }
 
     // Setup code which needs to run on the target CPU
-    pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
-        self.setup_percpu_keys();
-
+    fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
         // Initialize platform resources before allocating shared pages.
         platform.setup_percpu_current(self)?;
 
@@ -737,6 +736,28 @@ impl PerCpu {
         if is_cet_ss_enabled() {
             load_isst();
         }
+    }
+
+    /// Initialize state which must be installed by the CPU that owns it.
+    pub fn initialize_cpu(
+        &'static self,
+        platform: &dyn SvsmPlatform,
+        current_stack: MemoryRegion<VirtAddr>,
+    ) -> Result<(), SvsmError> {
+        self.setup_percpu_keys();
+
+        // SAFETY: the per-CPU virtual range, stack, TSS, and ISST have been
+        // populated in this page table before the CPU is allowed to use it.
+        unsafe { self.get_pgtable().load() };
+
+        load_gdt_tss(true);
+
+        if is_cet_ss_enabled() {
+            load_isst();
+        }
+
+        set_current_stack(current_stack);
+        self.setup_on_cpu(platform)
     }
 
     /// Fill in the initial context structure for the SVSM.
