@@ -6,6 +6,7 @@
 
 mod mapping;
 mod range;
+mod shared;
 
 pub use mapping::{
     Mapping, RawAllocMapping, VMFileMapping, VMFileMappingFlags, VMKernelStack, VMM, VMMAdapter,
