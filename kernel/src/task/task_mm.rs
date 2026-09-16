@@ -10,47 +10,19 @@ use core::borrow::Borrow;
 
 use alloc::sync::Arc;
 
-use crate::address::VirtAddr;
 use crate::error::SvsmError;
-use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::vm::{PrivateVmAllocator, VMR, VMReserved, VmRange, Vmr};
-use crate::mm::{AddrSpaceDescriptor, USER_MEM};
-use crate::mm::{SVSM_PERTASK, alloc::AllocError};
-use crate::utils::MemoryRegion;
-use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
+use crate::mm::vm::{PrivateVmAllocator, TaskVmAllocator, VmRange, Vmr};
+use crate::mm::{AddrSpaceDescriptor, SVSM_PERTASK, USER_MEM};
 
-static KTASK_VADDR_BITMAP: SpinLock<BitmapAllocator1024> =
-    SpinLock::new(BitmapAllocator1024::new_empty());
-
-// The task virtual range guard manages the allocation of a task virtual
-// address range within the task address space.  The address range is reserved
-// as long as the guard continues to exist.
+/// The per-task kernel-mode virtual memory range.
 #[derive(Debug)]
-struct TaskVirtualRegionGuard {
-    index: usize,
-}
+pub struct TaskVm;
 
-impl TaskVirtualRegionGuard {
-    fn alloc() -> Result<Self, SvsmError> {
-        let index = KTASK_VADDR_BITMAP
-            .lock()
-            .alloc(1, 0)
-            .ok_or(SvsmError::Alloc(AllocError::OutOfMemory))?;
-        Ok(Self { index })
-    }
-
-    fn vaddr_region(&self) -> MemoryRegion<VirtAddr> {
-        const SPAN: usize = SVSM_PERTASK.size() / BitmapAllocator1024::CAPACITY;
-        let base = SVSM_PERTASK.base() + (self.index * SPAN);
-        MemoryRegion::<VirtAddr>::new(base, SPAN)
-    }
-}
-
-impl Drop for TaskVirtualRegionGuard {
-    fn drop(&mut self) {
-        KTASK_VADDR_BITMAP.lock().free(self.index, 1);
-    }
+impl VmRange for TaskVm {
+    const DESCRIPTOR: AddrSpaceDescriptor = SVSM_PERTASK;
+    const PT_FLAGS: PTEntryFlags = PTEntryFlags::empty();
+    type Allocator = TaskVmAllocator;
 }
 
 /// The per-task user-mode virtual memory range.
@@ -65,13 +37,8 @@ impl VmRange for UserVm {
 
 #[derive(Debug)]
 pub struct TaskMM {
-    /// Virtual address region that has been allocated for this task.
-    /// This is not referenced but must be stored so that it is dropped when
-    /// the Task is dropped.
-    _ktask_region: TaskVirtualRegionGuard,
-
     /// Task virtual memory range for use at CPL 0
-    vm_kernel_range: VMR,
+    vm_kernel_range: Vmr<TaskVm>,
 
     /// Task virtual memory range for use at CPL 3 - None for kernel tasks
     vm_user_range: Option<Vmr<UserVm>>,
@@ -88,48 +55,21 @@ impl TaskMM {
     ///
     /// `Ok(TaskMM)` on success, `Err(SvsmError)` on failure.
     pub fn create(user_vmr: Option<Vmr<UserVm>>) -> Result<Self, SvsmError> {
-        let ktask_region = TaskVirtualRegionGuard::alloc()?;
-        let kvregion = ktask_region.vaddr_region();
-
-        // A VMR must have a size of exactly one VMR_GRANULE, so use the whole
-        // per-TASK virtual address space
-        let vm_kernel_range = VMR::new(SVSM_PERTASK, PTEntryFlags::empty())?;
-
-        // Now limit the usable virtual address space by inserting `VMReserved`
-        // mappings. These mappings are empty, but prevent the VMR from
-        // inserting new mappings in the address space covered by them.
-        if kvregion.start() > SVSM_PERTASK.base() {
-            let size = kvregion.start() - SVSM_PERTASK.base();
-            let mapping = VMReserved::new_mapping(size);
-            vm_kernel_range.insert_at(SVSM_PERTASK.base(), mapping)?;
-        }
-
-        if kvregion.end() < SVSM_PERTASK.end() {
-            let size = SVSM_PERTASK.end() - kvregion.end();
-            let mapping = VMReserved::new_mapping(size);
-            vm_kernel_range.insert_at(kvregion.end(), mapping)?;
-        }
-
-        // SAFETY: The selected kernel mode task address range is the only
-        // range that will live within the top-level entry associated with the
-        // task address space.
-        unsafe {
-            vm_kernel_range.initialize()?;
-        }
+        let vm_kernel_range = Vmr::new();
+        vm_kernel_range.initialize()?;
 
         Ok(TaskMM {
-            _ktask_region: ktask_region,
             vm_kernel_range,
             vm_user_range: user_vmr,
         })
     }
 
-    /// Return a reference to the `[VMR]` for the per-task kernel region.
+    /// Return a reference to the `[Vmr]` for the per-task kernel region.
     ///
     /// # Returns
     ///
-    /// Reference to the kernel region `[VMR]`.
-    pub fn kernel_range(&self) -> &VMR {
+    /// Reference to the kernel region `[Vmr]`.
+    pub fn kernel_range(&self) -> &Vmr<TaskVm> {
         &self.vm_kernel_range
     }
 
@@ -143,8 +83,8 @@ impl TaskMM {
     }
 }
 
-impl Borrow<VMR> for Arc<TaskMM> {
-    fn borrow(&self) -> &VMR {
+impl Borrow<Vmr<TaskVm>> for Arc<TaskMM> {
+    fn borrow(&self) -> &Vmr<TaskVm> {
         self.kernel_range()
     }
 }

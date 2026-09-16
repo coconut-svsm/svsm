@@ -48,6 +48,7 @@ use crate::types::{SVSM_USER_CPL, SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::{MemoryRegion, is_aligned};
 use intrusive_collections::{LinkedList, LinkedListAtomicLink, intrusive_adapter};
 
+use super::TaskVm;
 use super::exec::exec;
 use super::schedule::complete_task_switch;
 use super::schedule::terminate;
@@ -354,10 +355,10 @@ pub struct Task {
     pub page_table: SpinLock<PageBox<PageTable>>,
 
     /// Task kernel stack mapping
-    _kernel_stack: VMRMapping<Arc<TaskMM>>,
+    _kernel_stack: VmrMapping<TaskVm, Arc<TaskMM>>,
 
     /// Task shadow stack mapping
-    _shadow_stack: Option<VMRMapping<Arc<TaskMM>>>,
+    _shadow_stack: Option<VmrMapping<TaskVm, Arc<TaskMM>>>,
 
     /// Task memory management state
     mm: Arc<TaskMM>,
@@ -500,7 +501,7 @@ impl Task {
             let base_token_addr;
 
             // Map shadow stack into virtual address range
-            let mapping = VMRMapping::new(task_mm.clone(), Arc::new(shadow_stack))?;
+            let mapping = VmrMapping::new(task_mm.clone(), Arc::new(shadow_stack))?;
             let stack_base = mapping.virt_addr();
 
             // Initialize shadow stack
@@ -534,7 +535,7 @@ impl Task {
                 info.start_parameter,
             )?,
         };
-        let kernel_stack_mapping = VMRMapping::new(task_mm.clone(), stack)?;
+        let kernel_stack_mapping = VmrMapping::new(task_mm.clone(), stack)?;
         let stack_start = kernel_stack_mapping.virt_addr();
 
         task_mm.kernel_range().populate(&mut pgtable);
@@ -914,7 +915,7 @@ impl Task {
         size: usize,
         flags: VMFileMappingFlags,
     ) -> Result<VirtAddr, SvsmError> {
-        let guard = Self::mmap_common(self.mm.kernel_range(), addr, file, offset, size, flags)?;
+        let guard = Self::mmap_range(self.mm.kernel_range(), addr, file, offset, size, flags)?;
         Ok(guard.leak())
     }
 
@@ -925,8 +926,8 @@ impl Task {
         offset: usize,
         size: usize,
         flags: VMFileMappingFlags,
-    ) -> Result<VMRMapping<&'a VMR>, SvsmError> {
-        Self::mmap_common(self.mm.kernel_range(), addr, file, offset, size, flags)
+    ) -> Result<VmrMapping<TaskVm, &'a Vmr<TaskVm>>, SvsmError> {
+        Self::mmap_range(self.mm.kernel_range(), addr, file, offset, size, flags)
     }
 
     pub fn mmap_user(
