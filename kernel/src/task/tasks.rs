@@ -38,8 +38,8 @@ use crate::locking::RWLock;
 use crate::locking::SpinLock;
 use crate::locking::SpinLockIrqSafe;
 use crate::mm::pagetable::PageTable;
-use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR, VMRMapping};
-use crate::mm::vm::{VmRange, Vmr, VmrMapping};
+use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack};
+use crate::mm::vm::{VMR, VMRMapping, VmRange};
 use crate::mm::{
     PageBox, SVSM_PERTASK, USER_MEM, mappings::create_anon_mapping, mappings::create_file_mapping,
 };
@@ -355,10 +355,10 @@ pub struct Task {
     pub page_table: SpinLock<PageBox<PageTable>>,
 
     /// Task kernel stack mapping
-    _kernel_stack: VmrMapping<TaskVm, Arc<TaskMM>>,
+    _kernel_stack: VMRMapping<TaskVm, Arc<TaskMM>>,
 
     /// Task shadow stack mapping
-    _shadow_stack: Option<VmrMapping<TaskVm, Arc<TaskMM>>>,
+    _shadow_stack: Option<VMRMapping<TaskVm, Arc<TaskMM>>>,
 
     /// Task memory management state
     mm: Arc<TaskMM>,
@@ -453,7 +453,7 @@ struct CreateTaskArguments {
 
     // For a user task, supplies the `VMR` that will represent the user-mode
     // address space.
-    vm_user_range: Option<Vmr<UserVm>>,
+    vm_user_range: Option<VMR<UserVm>>,
 
     // The root directory that will be associated with this task.
     rootdir: Arc<dyn Directory>,
@@ -501,7 +501,7 @@ impl Task {
             let base_token_addr;
 
             // Map shadow stack into virtual address range
-            let mapping = VmrMapping::new(task_mm.clone(), Arc::new(shadow_stack))?;
+            let mapping = VMRMapping::new(task_mm.clone(), Arc::new(shadow_stack))?;
             let stack_base = mapping.virt_addr();
 
             // Initialize shadow stack
@@ -535,7 +535,7 @@ impl Task {
                 info.start_parameter,
             )?,
         };
-        let kernel_stack_mapping = VmrMapping::new(task_mm.clone(), stack)?;
+        let kernel_stack_mapping = VMRMapping::new(task_mm.clone(), stack)?;
         let stack_start = kernel_stack_mapping.virt_addr();
 
         task_mm.kernel_range().populate(&mut pgtable);
@@ -598,7 +598,7 @@ impl Task {
         root: Arc<dyn Directory>,
         name: Arc<str>,
     ) -> Result<TaskPointer, SvsmError> {
-        let vm_user_range = Vmr::new();
+        let vm_user_range = VMR::new();
         vm_user_range.initialize_lazy()?;
 
         // Destroy the Box and get the pointer to the raw data
@@ -866,34 +866,13 @@ impl Task {
     }
 
     fn mmap_range<'a, V: VmRange>(
-        vmr: &'a Vmr<V>,
+        vmr: &'a VMR<V>,
         addr: VirtAddr,
         file: Option<&FileHandle>,
         offset: usize,
         size: usize,
         flags: VMFileMappingFlags,
-    ) -> Result<VmrMapping<V, &'a Vmr<V>>, SvsmError> {
-        let mapping = if let Some(f) = file {
-            create_file_mapping(f, offset, size, flags)?
-        } else {
-            create_anon_mapping(size, flags)?
-        };
-
-        if flags.contains(VMFileMappingFlags::Fixed) {
-            VmrMapping::new_at(vmr, addr, mapping)
-        } else {
-            VmrMapping::new_hint(vmr, addr, mapping)
-        }
-    }
-
-    pub fn mmap_common<'a>(
-        vmr: &'a VMR,
-        addr: VirtAddr,
-        file: Option<&FileHandle>,
-        offset: usize,
-        size: usize,
-        flags: VMFileMappingFlags,
-    ) -> Result<VMRMapping<&'a VMR>, SvsmError> {
+    ) -> Result<VMRMapping<V, &'a VMR<V>>, SvsmError> {
         let mapping = if let Some(f) = file {
             create_file_mapping(f, offset, size, flags)?
         } else {
@@ -926,7 +905,7 @@ impl Task {
         offset: usize,
         size: usize,
         flags: VMFileMappingFlags,
-    ) -> Result<VmrMapping<TaskVm, &'a Vmr<TaskVm>>, SvsmError> {
+    ) -> Result<VMRMapping<TaskVm, &'a VMR<TaskVm>>, SvsmError> {
         Self::mmap_range(self.mm.kernel_range(), addr, file, offset, size, flags)
     }
 

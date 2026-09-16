@@ -35,7 +35,7 @@ use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{
-    Mapping, PrivateVmAllocator, VMKernelStack, VMPhysMem, VMReserved, VmRange, Vmr, VmrMapping,
+    Mapping, PrivateVmAllocator, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved, VmRange,
 };
 use crate::mm::{
     AddrSpaceDescriptor, PERCPU_TEMP_2M, PERCPU_TEMP_4K, PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK,
@@ -436,7 +436,7 @@ where
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     reset_ip: AtomicU64,
     /// PerCpu Virtual Memory Range
-    vm_range: Vmr<PerCpuVm>,
+    vm_range: VMR<PerCpuVm>,
     /// Address allocator for per-cpu 4k temporary mappings
     vrange_4k: RWLock<VirtualRange>,
     /// Address allocator for per-cpu 2m temporary mappings
@@ -473,7 +473,7 @@ impl PerCpu {
             isst: RWLock::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
             reset_ip: AtomicU64::new(0xffff_fff0),
-            vm_range: Vmr::new(),
+            vm_range: VMR::new(),
 
             vrange_4k: RWLock::new(VirtualRange::new()),
             vrange_2m: RWLock::new(VirtualRange::new()),
@@ -1191,15 +1191,15 @@ impl PerCpu {
     ///
     /// # Returns
     ///
-    /// On success, a new [`VmrMapping`] that provides a virtual memory address for
-    /// the mapping which remains valid until the [`VmrMapping`] is dropped.
+    /// On success, a new [`VMRMapping`] that provides a virtual memory address for
+    /// the mapping which remains valid until the [`VMRMapping`] is dropped.
     ///
     /// On error, an ['SvsmError'].
     pub fn new_mapping(
         &self,
         mapping: Mapping,
-    ) -> Result<VmrMapping<PerCpuVm, &Vmr<PerCpuVm>>, SvsmError> {
-        VmrMapping::new(&self.vm_range, mapping)
+    ) -> Result<VMRMapping<PerCpuVm, &VMR<PerCpuVm>>, SvsmError> {
+        VMRMapping::new(&self.vm_range, mapping)
     }
 
     /// Add the PerCpu virtual range into the provided pagetable

@@ -4,18 +4,12 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::address::{PhysAddr, VirtAddr};
+use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::types::{PAGE_SHIFT, PageSize};
-
-use intrusive_collections::rbtree::AtomicLink;
-use intrusive_collections::{KeyAdapter, intrusive_adapter};
-
-use core::ops::Range;
+use crate::types::PageSize;
 
 extern crate alloc;
-use alloc::boxed::Box;
 use alloc::sync::Arc;
 
 /// Information required to resolve a page fault within a virtual mapping
@@ -130,79 +124,3 @@ pub trait VirtualMapping: core::fmt::Debug + Send + Sync {
 }
 
 pub type Mapping = Arc<dyn VirtualMapping>;
-
-/// A single mapping of virtual memory in a virtual memory range
-#[derive(Debug)]
-pub struct VMM {
-    /// Link for storing this instance in an RBTree
-    link: AtomicLink,
-
-    /// The virtual memory range covered by this mapping
-    range: Range<usize>,
-
-    /// Pointer to the actual mapping
-    mapping: Mapping,
-}
-
-intrusive_adapter!(pub VMMAdapter = Box<VMM>: VMM { link => AtomicLink });
-
-impl<'a> KeyAdapter<'a> for VMMAdapter {
-    type Key = usize;
-    fn get_key(&self, node: &'a VMM) -> Self::Key {
-        node.range.start
-    }
-}
-
-impl VMM {
-    /// Create a new VMM instance with at a given address and backing struct
-    ///
-    /// # Arguments
-    ///
-    /// * `start_pfn` - Virtual start pfn to store in the mapping
-    /// * `mapping` - `Arc<Mapping>` pointer to the backing struct
-    ///
-    /// # Returns
-    ///
-    /// New instance of VMM
-    pub fn new(start_pfn: usize, mapping: Mapping) -> Self {
-        let size = mapping.mapping_size() >> PAGE_SHIFT;
-        VMM {
-            link: AtomicLink::new(),
-            range: Range {
-                start: start_pfn,
-                end: start_pfn + size,
-            },
-            mapping,
-        }
-    }
-
-    /// Request the mapped range as page frame numbers
-    ///
-    /// # Returns
-    ///
-    /// The start and end (non-inclusive) virtual address for this virtual
-    /// mapping, right-shifted by `PAGE_SHIFT`.
-    pub fn range_pfn(&self) -> (usize, usize) {
-        (self.range.start, self.range.end)
-    }
-
-    /// Request the mapped range
-    ///
-    /// # Returns
-    ///
-    /// The start and end virtual address for this virtual mapping.
-    pub fn range(&self) -> (VirtAddr, VirtAddr) {
-        (
-            VirtAddr::from(self.range.start << PAGE_SHIFT),
-            VirtAddr::from(self.range.end << PAGE_SHIFT),
-        )
-    }
-
-    pub fn get_mapping(&self) -> &Mapping {
-        &self.mapping
-    }
-
-    pub fn get_mapping_clone(&self) -> Mapping {
-        self.mapping.clone()
-    }
-}
