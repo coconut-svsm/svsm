@@ -1554,6 +1554,7 @@ name = "libtcgtpm"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "libcrt",
 ]
 
 [[package]]
