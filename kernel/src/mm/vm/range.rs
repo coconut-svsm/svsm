@@ -802,31 +802,15 @@ impl<V: VmRange> Vmr<V> {
 
     /// Allocate all [`PageTablePart`]s of this region eagerly.
     ///
-    /// # Safety
-    /// Callers must ensure that the bounds of the address range are
-    /// appropriately aligned to prevent the possibility that adjacent address
-    /// ranges may attempt to share top-level paging entries.  If any overlap
-    /// is attempted, page tables may be corrupted.
-    ///
-    /// # Returns
-    ///
     /// `Ok(())` on success, `Err(SvsmError::Mem)` on allocation error
-    pub unsafe fn initialize(&self) -> Result<(), SvsmError> {
+    pub fn initialize(&self) -> Result<(), SvsmError> {
         self.alloc_page_tables(false)
     }
 
     /// Allocate the [`PageTablePart`]s of this region lazily.
     ///
-    /// # Safety
-    /// Callers must ensure that the bounds of the address range are
-    /// appropriately aligned to prevent the possibility that adjacent address
-    /// ranges may attempt to share top-level paging entries.  If any overlap
-    /// is attempted, page tables may be corrupted.
-    ///
-    /// # Returns
-    ///
     /// `Ok(())` on success, `Err(SvsmError::Mem)` on allocation error
-    pub unsafe fn initialize_lazy(&self) -> Result<(), SvsmError> {
+    pub fn initialize_lazy(&self) -> Result<(), SvsmError> {
         self.alloc_page_tables(true)
     }
 
