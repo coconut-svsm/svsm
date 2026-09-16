@@ -15,3 +15,4 @@ pub use mapping::{
 pub use range::{
     PrivateVmAllocator, VMR, VMR_GRANULE, VMRMapping, VmAllocator, VmRange, Vmr, VmrMapping,
 };
+pub use shared::TaskVmAllocator;
