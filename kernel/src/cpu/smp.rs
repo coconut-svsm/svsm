@@ -8,7 +8,9 @@ use super::idt::load_static_idt;
 use crate::acpi::tables::ACPICPUInfo;
 use crate::address::PhysAddr;
 use crate::address::{Address, VirtAddr};
-use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu, this_cpu_shared};
+use crate::cpu::percpu::{
+    PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu, this_cpu_shared, with_pgtable,
+};
 use crate::cpu::shadow_stack::{MODE_64BIT, S_CET, SCetFlags, is_cet_ss_enabled};
 use crate::cpu::sse::sse_init;
 use crate::cpu::tlb::set_tlb_flush_smp;
@@ -52,7 +54,7 @@ fn start_cpu(
 ) -> Result<(), SvsmError> {
     let start_rip: u64 = (start_ap as *const u8) as u64;
     let percpu = PerCpu::alloc(percpu_shared)?;
-    let pgtable = this_cpu().get_pgtable().clone_shared()?;
+    let pgtable = with_pgtable(|pg| pg.clone_shared())?;
     percpu.setup(platform, pgtable)?;
 
     platform.start_cpu(percpu, start_rip, ap_start_context_ref)?;

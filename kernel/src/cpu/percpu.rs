@@ -17,7 +17,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::IrqState;
 use crate::cpu::LocalApic;
 use crate::cpu::ShadowStackInit;
-use crate::cpu::control_regs::{read_cr0, read_cr4};
+use crate::cpu::control_regs::{read_cr0, read_cr3, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
@@ -739,7 +739,22 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn get_pgtable(&self) -> &'static mut PageTable {
+    /// Run callback `f` with the currently active page table. This method is
+    /// private so that users outside this module cannot call it on a remote
+    /// `PerCpu` instance (e.g. the BSP when setting up an AP's `PerCpu`.)
+    fn with_pgtable<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut PageTable) -> R,
+    {
+        if read_cr3().bits() == self.cr3.load(Ordering::Relaxed) {
+            f(self.get_pgtable())
+        } else {
+            let task = self.runqueue().current_task();
+            f(&mut task.page_table.lock())
+        }
+    }
+
+    fn get_pgtable(&self) -> &'static mut PageTable {
         // SAFETY: `self.pgtbl` is a write-once variable that holds the
         // physical address of this processor's paging root.  It is stored as
         // an `AtomicUsize` so it can be read from contexts that cannot
@@ -1200,8 +1215,7 @@ impl PerCpu {
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        let pgtable = self.get_pgtable();
-        self.vm_range.handle_page_fault(pgtable, vaddr, write)
+        self.with_pgtable(|pg| self.vm_range.handle_page_fault(pg, vaddr, write))
     }
 
     pub fn schedule_init(&self) -> TaskPointer {
@@ -1482,6 +1496,14 @@ impl PerCpuVmsas {
 
 pub fn current_task() -> TaskPointer {
     this_cpu().runqueue().current_task()
+}
+
+/// Run callback `f` with the currently active page table.
+pub fn with_pgtable<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut PageTable) -> R,
+{
+    this_cpu().with_pgtable(f)
 }
 
 pub fn cpu_idle_loop(cpu_index: usize) {

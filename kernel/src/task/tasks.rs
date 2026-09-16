@@ -26,8 +26,8 @@ use crate::cpu::idt::svsm::{default_return, thread_entry_asm};
 use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::irqs_enable;
 use crate::cpu::irqs_enabled;
-use crate::cpu::percpu::this_cpu;
 use crate::cpu::percpu::{PerCpu, current_task};
+use crate::cpu::percpu::{this_cpu, with_pgtable};
 use crate::cpu::shadow_stack::init_shadow_stack;
 use crate::cpu::sse::sse_restore_context;
 use crate::cpu::sse::xsave_area_size;
@@ -464,7 +464,7 @@ struct CreateTaskArguments {
 impl Task {
     fn create_common(args: CreateTaskArguments) -> Result<TaskPointer, SvsmError> {
         let cpu = this_cpu();
-        let mut pgtable = cpu.get_pgtable().clone_shared()?;
+        let mut pgtable = with_pgtable(|pg| pg.clone_shared())?;
 
         cpu.populate_page_table(&mut pgtable);
 

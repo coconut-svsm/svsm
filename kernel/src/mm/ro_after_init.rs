@@ -6,7 +6,7 @@
 
 use crate::{
     address::VirtAddr,
-    cpu::{flush_tlb_global_sync_range, percpu::this_cpu},
+    cpu::{flush_tlb_global_sync_range, percpu::with_pgtable},
     error::SvsmError,
     types::PageSize,
     utils::MemoryRegion,
@@ -31,7 +31,7 @@ unsafe extern "C" {
 pub unsafe fn make_ro(region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
     // SAFETY: delegated to the caller.
     unsafe {
-        this_cpu().get_pgtable().make_region_ro_4k(region)?;
+        with_pgtable(|pg| pg.make_region_ro_4k(region))?;
     }
 
     flush_tlb_global_sync_range(region, PageSize::Regular);
