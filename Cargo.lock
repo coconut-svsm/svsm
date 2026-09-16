@@ -481,8 +481,7 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-crypto"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3df5637dcf02eb5defb21bb108c0f3796bda0db2c7c7e3804759447b10e781c"
+source = "git+https://github.com/osteffenrh/cocoon-tpm.git?rev=e03a743ff9ed#e03a743ff9edc82b77eeb245fde45e8946af6d43"
 dependencies = [
  "aes 0.8.4",
  "camellia",
@@ -507,8 +506,7 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-storage"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4557cee7aa93353f56d63bcacb0673c6b0ef296668b436d8d2e7b9f690ef9b0"
+source = "git+https://github.com/osteffenrh/cocoon-tpm.git?rev=e03a743ff9ed#e03a743ff9edc82b77eeb245fde45e8946af6d43"
 dependencies = [
  "cocoon-tpm-crypto",
  "cocoon-tpm-tpm2-interface",
@@ -520,14 +518,12 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-tpm2-interface"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f524208dcc8aa8c63f8d0a1a64f458beeb6eff7d7d64deec515be639a57811ea"
+source = "git+https://github.com/osteffenrh/cocoon-tpm.git?rev=e03a743ff9ed#e03a743ff9edc82b77eeb245fde45e8946af6d43"
 
 [[package]]
 name = "cocoon-tpm-utils-async"
 version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff56a8746df3ead93d408761fed1e39974e4395fcab63084272fd7b8b33d8391"
+source = "git+https://github.com/osteffenrh/cocoon-tpm.git?rev=e03a743ff9ed#e03a743ff9edc82b77eeb245fde45e8946af6d43"
 dependencies = [
  "cocoon-tpm-utils-common",
 ]
@@ -535,8 +531,7 @@ dependencies = [
 [[package]]
 name = "cocoon-tpm-utils-common"
 version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ba97316b8f3f4ab72ee646c222285a8c2480130e30ba3a7e38596ef36812598"
+source = "git+https://github.com/osteffenrh/cocoon-tpm.git?rev=e03a743ff9ed#e03a743ff9edc82b77eeb245fde45e8946af6d43"
 dependencies = [
  "cmpa",
  "zeroize",
@@ -3114,3 +3109,8 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[patch.unused]]
+name = "cocoon-tpm-ossl-bare-sys"
+version = "0.1.1"
+source = "git+https://github.com/osteffenrh/cocoon-tpm.git?rev=e03a743ff9ed#e03a743ff9edc82b77eeb245fde45e8946af6d43"
