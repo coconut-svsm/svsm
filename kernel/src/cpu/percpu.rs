@@ -71,6 +71,7 @@ use core::ops::Deref;
 use core::ptr::{self, NonNull};
 use core::slice::Iter;
 use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::AtomicUsize;
@@ -417,7 +418,7 @@ where
     /// PerCpu IRQ state tracking
     irq_state: IrqState,
 
-    pgtbl: AtomicUsize,
+    pgtbl: AtomicPtr<PageTable>,
     cr3: AtomicUsize,
     tss: X86Tss,
     isst: RWLock<Isst>,
@@ -453,7 +454,7 @@ impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
     fn new(shared: &'static PerCpuShared) -> Result<Self, SvsmError> {
         Ok(Self {
-            pgtbl: AtomicUsize::new(0),
+            pgtbl: AtomicPtr::new(ptr::null_mut()),
             cr3: AtomicUsize::new(0),
             apic: X86Apic::default(),
             irq_state: IrqState::new(),
@@ -677,7 +678,12 @@ impl PerCpu {
     pub fn set_pgtable(&self, pgtable: &'static mut PageTable) {
         let vaddr = VirtAddr::from(ptr::from_ref(pgtable) as usize);
         self.pgtbl
-            .compare_exchange(0, vaddr.into(), Ordering::Relaxed, Ordering::Relaxed)
+            .compare_exchange(
+                ptr::null_mut(),
+                pgtable,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            )
             .unwrap();
         // Capture the physical address as well for use in task switch.
         let paddr = virt_to_phys(vaddr);
@@ -749,10 +755,7 @@ impl PerCpu {
         // physical address of this processor's paging root.  It is stored as
         // an `AtomicUsize` so it can be read from contexts that cannot
         // acquire locks.
-        unsafe {
-            let mut p = NonNull::new(self.pgtbl.load(Ordering::Relaxed) as *mut PageTable).unwrap();
-            p.as_mut()
-        }
+        unsafe { self.pgtbl.load(Ordering::Relaxed).as_mut().unwrap() }
     }
 
     /// Registers an already set up GHCB page for this CPU.
