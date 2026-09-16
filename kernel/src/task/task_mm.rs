@@ -14,7 +14,8 @@ use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::vm::{VMR, VMReserved};
+use crate::mm::vm::{PrivateVmAllocator, VMR, VMReserved, VmRange, Vmr};
+use crate::mm::{AddrSpaceDescriptor, USER_MEM};
 use crate::mm::{SVSM_PERTASK, alloc::AllocError};
 use crate::utils::MemoryRegion;
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
@@ -52,6 +53,16 @@ impl Drop for TaskVirtualRegionGuard {
     }
 }
 
+/// The per-task user-mode virtual memory range.
+#[derive(Debug)]
+pub struct UserVm;
+
+impl VmRange for UserVm {
+    const DESCRIPTOR: AddrSpaceDescriptor = USER_MEM;
+    const PT_FLAGS: PTEntryFlags = PTEntryFlags::USER;
+    type Allocator = PrivateVmAllocator<Self>;
+}
+
 #[derive(Debug)]
 pub struct TaskMM {
     /// Virtual address region that has been allocated for this task.
@@ -63,7 +74,7 @@ pub struct TaskMM {
     vm_kernel_range: VMR,
 
     /// Task virtual memory range for use at CPL 3 - None for kernel tasks
-    vm_user_range: Option<VMR>,
+    vm_user_range: Option<Vmr<UserVm>>,
 }
 
 impl TaskMM {
@@ -71,12 +82,12 @@ impl TaskMM {
     ///
     /// # Arguments
     ///
-    /// * `user_vmr` - Optional `[VMR]` for the user-mode portion of the tasks address space.
+    /// * `user_vmr` - Optional `[Vmr]` for the user-mode portion of the tasks address space.
     ///
     /// # Returns
     ///
     /// `Ok(TaskMM)` on success, `Err(SvsmError)` on failure.
-    pub fn create(user_vmr: Option<VMR>) -> Result<Self, SvsmError> {
+    pub fn create(user_vmr: Option<Vmr<UserVm>>) -> Result<Self, SvsmError> {
         let ktask_region = TaskVirtualRegionGuard::alloc()?;
         let kvregion = ktask_region.vaddr_region();
 
@@ -122,12 +133,12 @@ impl TaskMM {
         &self.vm_kernel_range
     }
 
-    /// Return an otional reference to the `[VMR]` for the per-task user region.
+    /// Return an otional reference to the `[Vmr]` for the per-task user region.
     ///
     /// # Returns
     ///
-    /// `Some(&VMR)` referencing the user-mode `[VMR]` for a user-task, `None` otherwise.
-    pub fn user_range(&self) -> Option<&VMR> {
+    /// `Some(&VMR)` referencing the user-mode `[Vmr]` for a user-task, `None` otherwise.
+    pub fn user_range(&self) -> Option<&Vmr<UserVm>> {
         self.vm_user_range.as_ref()
     }
 }
