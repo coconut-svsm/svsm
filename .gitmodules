@@ -1,6 +1,3 @@
-[submodule "libtcgtpm/deps/openssl"]
-	path = libtcgtpm/deps/openssl
-	url = https://github.com/openssl/openssl.git
 [submodule "libtcgtpm/deps/tpm-20-ref"]
 	path = libtcgtpm/deps/tpm-20-ref
 	url = https://github.com/TrustedComputingGroup/TPM.git
