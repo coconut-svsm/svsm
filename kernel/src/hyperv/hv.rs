@@ -15,10 +15,9 @@ use crate::error::SvsmError::HyperV;
 use crate::hyperv;
 use crate::hyperv::{HvInitialVpContext, HyperVMsr};
 use crate::locking::WriteLockGuard;
-use crate::mm::alloc::allocate_pages;
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::{SVSM_HYPERCALL_CODE_PAGE, virt_to_page_frame};
+use crate::mm::{GlobalRangeGuard, PageBox, map_global_range_4k_private, virt_to_page_frame};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -280,29 +279,51 @@ pub const HV_STATUS_SUCCESS: u16 = 0;
 pub const HV_STATUS_OPERATION_FAILED: u16 = 0x71;
 pub const HV_STATUS_TIMEOUT: u16 = 0x78;
 
-static HYPERV_HYPERCALL_CODE_PAGE: ImmutAfterInitCell<VirtAddr> = ImmutAfterInitCell::uninit();
+static HYPERV_HYPERCALL_CODE_PAGE: ImmutAfterInitCell<HypercallCodePage> =
+    ImmutAfterInitCell::uninit();
 static CURRENT_VTL: ImmutAfterInitCell<u8> = ImmutAfterInitCell::uninit();
 
-pub fn setup_hypercall_page() -> Result<(), SvsmError> {
-    // Allocate a page to use as the hypercall code page.
-    let page = allocate_pages(1)?;
+#[derive(Debug)]
+struct HypercallCodePage {
+    /// A mapping of a physical page in the global range with exec permissions.
+    guard: GlobalRangeGuard,
+    /// The address of the physical page.
+    paddr: PhysAddr,
+    /// The backing allocated page.
+    ///
+    /// Keep `_page` declared below `guard` in order to ensure a safe
+    /// drop behavior: the exec mapping should be torn down before the
+    /// physical page is returned to the page allocator.
+    _page: PageBox<MaybeUninit<[u8; PAGE_SIZE]>>,
+}
 
-    // Map the page as executable at a known address.
-    let hypercall_va = SVSM_HYPERCALL_CODE_PAGE;
-    this_cpu().get_pgtable().map_4k(
-        hypercall_va,
-        virt_to_page_frame(page),
-        PTEntryFlags::exec(),
-        false,
-    )?;
+impl HypercallCodePage {
+    fn new() -> Result<Self, SvsmError> {
+        let page = PageBox::<[u8; PAGE_SIZE]>::try_new_uninit()?;
+        let paddr = virt_to_page_frame(page.vaddr());
+        let guard = map_global_range_4k_private(paddr, PAGE_SIZE, PTEntryFlags::exec())?;
+        Ok(Self {
+            paddr,
+            guard,
+            _page: page,
+        })
+    }
+
+    fn vaddr(&self) -> VirtAddr {
+        self.guard.addr()
+    }
+}
+
+pub fn setup_hypercall_page() -> Result<(), SvsmError> {
+    let page = HypercallCodePage::new()?;
+    let pa = page.paddr;
 
     HYPERV_HYPERCALL_CODE_PAGE
-        .init(hypercall_va)
+        .init(page)
         .expect("Hypercall code page already allocated");
 
     // Set the hypercall code page address to the physical address of the
     // allocated page, and mark it enabled.
-    let pa = virt_to_page_frame(page);
     // SAFETY: we trust the page allocator to allocate a valid page to which pa
     // points.
     unsafe { write_msr(HyperVMsr::Hypercall.into(), u64::from(pa) | 1) };
@@ -353,7 +374,7 @@ pub unsafe fn execute_hypercall(
     input_control: HvHypercallInput,
     hypercall_pages: &HypercallPagesGuard<'_>,
 ) -> HvHypercallOutput {
-    let hypercall_va = u64::from(*HYPERV_HYPERCALL_CODE_PAGE);
+    let hypercall_va = u64::from(HYPERV_HYPERCALL_CODE_PAGE.vaddr());
     let mut output: u64;
     // SAFETY: inline assembly is required to invoke the hypercall.
     unsafe {
