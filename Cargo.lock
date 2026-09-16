@@ -1581,6 +1581,7 @@ name = "libtcgtpm"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "cocoon-tpm-ossl-bare-sys",
  "libcrt",
  "prettyplease",
 ]
