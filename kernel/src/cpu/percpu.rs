@@ -664,18 +664,7 @@ impl PerCpu {
         self.shared().apic_id()
     }
 
-    pub fn init_page_table(&self, pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
-        // SAFETY: The per-CPU address range is fully aligned to top-level
-        // paging boundaries.
-        unsafe {
-            self.vm_range.initialize()?;
-        }
-        self.set_pgtable(PageBox::leak(pgtable));
-
-        Ok(())
-    }
-
-    pub fn set_pgtable(&self, pgtable: &'static mut PageTable) {
+    fn set_pgtable(&self, pgtable: &'static mut PageTable) {
         let vaddr = VirtAddr::from(ptr::from_ref(pgtable) as usize);
         self.pgtbl
             .compare_exchange(
@@ -819,9 +808,9 @@ impl PerCpu {
         Ok(())
     }
 
-    fn finish_page_table(&self) {
-        let pgtable = self.get_pgtable();
-        self.vm_range.populate(pgtable);
+    fn install_pagetable(&self, mut pgtable: PageBox<PageTable>) {
+        self.vm_range.populate(&mut pgtable);
+        self.set_pgtable(PageBox::leak(pgtable));
     }
 
     pub fn dump_vm_ranges(&self) {
@@ -833,7 +822,11 @@ impl PerCpu {
         platform: &dyn SvsmPlatform,
         pgtable: PageBox<PageTable>,
     ) -> Result<(), SvsmError> {
-        self.init_page_table(pgtable)?;
+        // SAFETY: The per-CPU address range is fully aligned to top-level
+        // paging boundaries.
+        unsafe {
+            self.vm_range.initialize()?;
+        }
 
         // Map PerCpu data in own page-table
         self.map_self()?;
@@ -866,7 +859,7 @@ impl PerCpu {
             self.setup_isst();
         }
 
-        self.finish_page_table();
+        self.install_pagetable(pgtable);
 
         // Complete platform-specific initialization.
         platform.setup_percpu(self)?;
