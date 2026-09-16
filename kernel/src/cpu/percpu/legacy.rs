@@ -31,7 +31,7 @@ use crate::locking::{
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::{init_vrange_2m, init_vrange_4k};
 use crate::mm::vm::{
-    Mapping, PrivateVmAllocator, VMKernelStack, VMPhysMem, VMReserved, VmRange, Vmr, VmrMapping,
+    Mapping, PrivateVmAllocator, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved, VmRange,
 };
 use crate::mm::{
     AddrSpaceDescriptor, PERCPU_TEMP_2M, PERCPU_TEMP_4K, PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK,
@@ -427,7 +427,8 @@ where
     pgtbl: AtomicPtr<PageTable>,
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     /// PerCpu Virtual Memory Range
-    vm_range: Vmr<PerCpuVm>,
+    vm_range: VMR<PerCpuVm>,
+
     init_shadow_stack: ImmutAfterInitCell<VirtAddr>,
     /// Stages the context-switch stack address until the target CPU can
     /// initialize its linker-backed per-CPU key.
@@ -444,7 +445,7 @@ impl PerCpu {
             percpu_area: PerCpuArea::new()?,
             pgtbl: AtomicPtr::new(ptr::null_mut()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
-            vm_range: Vmr::new(),
+            vm_range: VMR::new(),
 
             shared,
             init_shadow_stack: ImmutAfterInitCell::uninit(),
@@ -895,15 +896,15 @@ impl PerCpu {
     ///
     /// # Returns
     ///
-    /// On success, a new [`VmrMapping`] that provides a virtual memory address for
-    /// the mapping which remains valid until the [`VmrMapping`] is dropped.
+    /// On success, a new [`VMRMapping`] that provides a virtual memory address for
+    /// the mapping which remains valid until the [`VMRMapping`] is dropped.
     ///
     /// On error, an ['SvsmError'].
     pub fn new_mapping(
         &self,
         mapping: Mapping,
-    ) -> Result<VmrMapping<PerCpuVm, &Vmr<PerCpuVm>>, SvsmError> {
-        VmrMapping::new(&self.vm_range, mapping)
+    ) -> Result<VMRMapping<PerCpuVm, &VMR<PerCpuVm>>, SvsmError> {
+        VMRMapping::new(&self.vm_range, mapping)
     }
 
     /// Add the PerCpu virtual range into the provided pagetable

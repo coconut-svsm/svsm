@@ -12,7 +12,7 @@ use alloc::sync::Arc;
 
 use crate::error::SvsmError;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::vm::{PrivateVmAllocator, TaskVmAllocator, VmRange, Vmr};
+use crate::mm::vm::{PrivateVmAllocator, TaskVmAllocator, VMR, VmRange};
 use crate::mm::{AddrSpaceDescriptor, SVSM_PERTASK, USER_MEM};
 
 /// The per-task kernel-mode virtual memory range.
@@ -38,10 +38,10 @@ impl VmRange for UserVm {
 #[derive(Debug)]
 pub struct TaskMM {
     /// Task virtual memory range for use at CPL 0
-    vm_kernel_range: Vmr<TaskVm>,
+    vm_kernel_range: VMR<TaskVm>,
 
     /// Task virtual memory range for use at CPL 3 - None for kernel tasks
-    vm_user_range: Option<Vmr<UserVm>>,
+    vm_user_range: Option<VMR<UserVm>>,
 }
 
 impl TaskMM {
@@ -54,8 +54,8 @@ impl TaskMM {
     /// # Returns
     ///
     /// `Ok(TaskMM)` on success, `Err(SvsmError)` on failure.
-    pub fn create(user_vmr: Option<Vmr<UserVm>>) -> Result<Self, SvsmError> {
-        let vm_kernel_range = Vmr::new();
+    pub fn create(user_vmr: Option<VMR<UserVm>>) -> Result<Self, SvsmError> {
+        let vm_kernel_range = VMR::new();
         vm_kernel_range.initialize()?;
 
         Ok(TaskMM {
@@ -69,7 +69,7 @@ impl TaskMM {
     /// # Returns
     ///
     /// Reference to the kernel region `[Vmr]`.
-    pub fn kernel_range(&self) -> &Vmr<TaskVm> {
+    pub fn kernel_range(&self) -> &VMR<TaskVm> {
         &self.vm_kernel_range
     }
 
@@ -78,13 +78,13 @@ impl TaskMM {
     /// # Returns
     ///
     /// `Some(&VMR)` referencing the user-mode `[Vmr]` for a user-task, `None` otherwise.
-    pub fn user_range(&self) -> Option<&Vmr<UserVm>> {
+    pub fn user_range(&self) -> Option<&VMR<UserVm>> {
         self.vm_user_range.as_ref()
     }
 }
 
-impl Borrow<Vmr<TaskVm>> for Arc<TaskMM> {
-    fn borrow(&self) -> &Vmr<TaskVm> {
+impl Borrow<VMR<TaskVm>> for Arc<TaskMM> {
+    fn borrow(&self) -> &VMR<TaskVm> {
         self.kernel_range()
     }
 }
