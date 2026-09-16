@@ -11,7 +11,8 @@
 use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::locking::{RWLock, SpinLock};
-use crate::mm::vm::{Mapping, VmRange};
+use crate::mm::vm::{Mapping, VmAllocator, VmRange};
+use crate::task::TaskVm;
 use crate::utils::unique_va_allocator::UniqueVaAllocator;
 
 use core::cell::Cell;
@@ -50,7 +51,6 @@ struct GlobalVmAllocator<V: VmRange> {
     _phantom: PhantomData<V>,
 }
 
-#[expect(dead_code)]
 impl<V: VmRange> GlobalVmAllocator<V> {
     const fn new() -> Self {
         Self {
@@ -134,7 +134,6 @@ struct SharedVmAllocator<V: VmRange + 'static> {
     local: RWLock<UniqueVaAllocator<Mapping>>,
 }
 
-#[expect(dead_code)]
 impl<V: VmRange + 'static> SharedVmAllocator<V> {
     fn new(shared: &'static GlobalVmAllocator<V>) -> Self {
         Self {
@@ -250,5 +249,57 @@ impl<V: VmRange + 'static> Drop for SharedVmAllocator<V> {
         for (start, _, _) in local.iter() {
             self.shared.free(VirtAddr::from(start));
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct TaskVmAllocator {
+    inner: SharedVmAllocator<TaskVm>,
+}
+
+impl TaskVmAllocator {
+    pub fn alloc_shared(&self, mapping: Mapping) -> Result<VirtAddr, SvsmError> {
+        self.inner.alloc_shared(mapping)
+    }
+
+    pub fn map_shared(&self, addr: VirtAddr) -> Result<Mapping, SvsmError> {
+        self.inner.map_shared(addr)
+    }
+}
+
+impl VmAllocator<TaskVm> for TaskVmAllocator {
+    fn new() -> Self {
+        /// Static singleton to ensure global address uniqueness
+        static TASK_VM_ALLOCATOR: GlobalVmAllocator<TaskVm> = GlobalVmAllocator::new();
+
+        Self {
+            inner: SharedVmAllocator::new(&TASK_VM_ALLOCATOR),
+        }
+    }
+
+    fn alloc(
+        &self,
+        hint: VirtAddr,
+        size: usize,
+        align: usize,
+        mapping: Mapping,
+    ) -> Result<VirtAddr, SvsmError> {
+        self.inner.alloc(hint, size, align, mapping)
+    }
+
+    fn alloc_at(&self, at: VirtAddr, size: usize, mapping: Mapping) -> Result<VirtAddr, SvsmError> {
+        self.inner.alloc_at(at, size, mapping)
+    }
+
+    fn free<F: FnOnce(&Mapping)>(&self, base: VirtAddr, teardown: F) -> Option<Mapping> {
+        self.inner.free(base, teardown)
+    }
+
+    fn query(&self, addr: VirtAddr) -> Option<(VirtAddr, Mapping)> {
+        self.inner.query(addr)
+    }
+
+    fn for_each<F: FnMut(VirtAddr, &Mapping)>(&self, f: F) {
+        self.inner.for_each(f);
     }
 }
