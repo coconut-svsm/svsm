@@ -38,7 +38,7 @@ use crate::locking::RWLock;
 use crate::locking::SpinLock;
 use crate::locking::SpinLockIrqSafe;
 use crate::mm::pagetable::PageTable;
-use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR, VMRMapping};
+use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack};
 use crate::mm::vm::{VmRange, Vmr, VmrMapping};
 use crate::mm::{
     PageBox, SVSM_PERTASK, USER_MEM, mappings::create_anon_mapping, mappings::create_file_mapping,
@@ -883,27 +883,6 @@ impl Task {
             VmrMapping::new_at(vmr, addr, mapping)
         } else {
             VmrMapping::new_hint(vmr, addr, mapping)
-        }
-    }
-
-    pub fn mmap_common<'a>(
-        vmr: &'a VMR,
-        addr: VirtAddr,
-        file: Option<&FileHandle>,
-        offset: usize,
-        size: usize,
-        flags: VMFileMappingFlags,
-    ) -> Result<VMRMapping<&'a VMR>, SvsmError> {
-        let mapping = if let Some(f) = file {
-            create_file_mapping(f, offset, size, flags)?
-        } else {
-            create_anon_mapping(size, flags)?
-        };
-
-        if flags.contains(VMFileMappingFlags::Fixed) {
-            VMRMapping::new_at(vmr, addr, mapping)
-        } else {
-            VMRMapping::new_hint(vmr, addr, mapping)
         }
     }
 
