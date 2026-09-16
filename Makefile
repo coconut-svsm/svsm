@@ -5,6 +5,9 @@ XBUILD_ARGS += -f ${FEATURES}
 endif
 
 FEATURES_TEST ?= vtpm,virtio-drivers,block,vsock,uefivars,secureboot,enable-console-log,attest
+# Doc tests link against the host libc, so exclude features that bring in
+# bare-metal C libraries (vtpm → openssl → cocoon-tpm-ossl-bare-sys).
+FEATURES_DOC_TEST ?= virtio-drivers,block,vsock,uefivars,secureboot,enable-console-log,attest
 SVSM_ARGS_TEST += --no-default-features
 ifneq ($(FEATURES_TEST),)
 SVSM_ARGS_TEST += --features ${FEATURES_TEST}
@@ -118,12 +121,15 @@ bin/coconut-test-vanadium.igvm:
 	cargo xbuild $(XBUILD_ARGS_TEST) ./configs/test/vanadium-test-target.json
 
 test:
-	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --package svsm
+	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --package svsm --lib
+	cargo test ${CARGO_ARGS} --no-default-features --features ${FEATURES_DOC_TEST} --package svsm --doc
 	cargo test ${CARGO_ARGS} --workspace --exclude svsm
 
 miri:
 	MIRIFLAGS=-Zmiri-permissive-provenance \
-		cargo +nightly miri test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --package svsm
+		cargo +nightly miri test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --package svsm --lib
+	MIRIFLAGS=-Zmiri-permissive-provenance \
+		cargo +nightly miri test ${CARGO_ARGS} --no-default-features --features ${FEATURES_DOC_TEST} --package svsm --doc
 	MIRIFLAGS=-Zmiri-permissive-provenance \
 		cargo +nightly miri test ${CARGO_ARGS} --workspace --exclude svsm
 
