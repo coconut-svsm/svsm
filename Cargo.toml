@@ -17,6 +17,8 @@ members = [
     "fuzz",
     # ELF loader
     "elf",
+    # Minimal C runtime for freestanding environments
+    "libcrt",
     # TPM 2.0 Reference Implementation library
     "libtcgtpm",
     # syscall interface definitions
@@ -60,6 +62,7 @@ svsm = { path = "kernel" }
 elf = { path = "elf" }
 verus_stub = { path = "verification/verus_stub" }
 verus_macro_stub = { path = "verification/verus_macro_stub" }
+libcrt = { path = "libcrt" }
 libtcgtpm = { path = "libtcgtpm" }
 libaproxy = { path = "libaproxy" }
 syscall = { path = "syscall" }
