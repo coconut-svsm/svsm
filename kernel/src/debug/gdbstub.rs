@@ -14,7 +14,7 @@ pub mod svsm_gdbstub {
     use crate::address::{Address, VirtAddr};
     use crate::cpu::control_regs::read_cr3;
     use crate::cpu::idt::common::{BP_VECTOR, DB_VECTOR, VC_VECTOR, X86ExceptionContext};
-    use crate::cpu::percpu::this_cpu;
+    use crate::cpu::percpu::{this_cpu, with_pgtable};
     use crate::error::SvsmError;
     use crate::locking::{LockGuard, SpinLock};
     use crate::mm::PerCPUPageMappingGuard;
@@ -396,7 +396,7 @@ pub mod svsm_gdbstub {
             // can get the physical address for this VA then create a temporary
             // mapping
 
-            let Ok(phys) = this_cpu().get_pgtable().phys_addr(addr) else {
+            let Ok(phys) = with_pgtable(|pg| pg.phys_addr(addr)) else {
                 // The virtual address is not one that SVSM has mapped.
                 // Try safely writing it to the original virtual address
                 // SAFETY: it is up to the user to ensure that the address we
