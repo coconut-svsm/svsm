@@ -16,6 +16,10 @@ endif
 # Allow user to not link in libcrt
 USE_LIBCRT ?= 1
 
+# libcrt is built externally (by the libcrt crate).
+# The following must be provided by the caller:
+#   LIBCRT_INCLUDE_DIR
+
 ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 DEPS_DIR := $(ROOT_DIR)/deps
 OUT_DIR ?= $(ROOT_DIR)
@@ -33,19 +37,12 @@ NUM_JOBS ?= $(shell nproc)
 MAKEFLAGS += -j$(NUM_JOBS)
 endif
 
-LIBCRT_SRC_DIR = $(DEPS_DIR)/libcrt
 OPENSSL_SRC_DIR = $(DEPS_DIR)/openssl
 TCGTPM_SRC_DIR = $(DEPS_DIR)/tpm-20-ref/TPMCmd
 
-LIBCRT_BUILD_DIR = $(OUT_DIR)/libcrt-build
 OPENSSL_BUILD_DIR = $(OUT_DIR)/openssl-build
 TCGTPM_BUILD_DIR = $(OUT_DIR)/tcgtpm-build
 
-ifeq ($(USE_LIBCRT),1)
-LIBCRT = $(LIBCRT_BUILD_DIR)/libcrt.a
-else
-LIBCRT =
-endif
 LIBCRYPTO = $(OPENSSL_BUILD_DIR)/libcrypto.a
 
 LIBTPM_TARGET = Tpm_CoreLib
@@ -64,14 +61,15 @@ OPENSSL_MAKEFILE = $(OPENSSL_BUILD_DIR)/Makefile
 TCGTPM_MAKEFILE = $(TCGTPM_BUILD_DIR)/Makefile
 
 ifeq ($(USE_LIBCRT),1)
-LIBCRT_INCLUDE = -I$(LIBCRT_SRC_DIR)/include
-LIBCRT_LINK = -Wl,rpath=$(LIBCRT_BUILD_DIR) -lcrt
 TCGTPM_CFLAGS += -static -nostdinc -fno-stack-protector -mno-sse -mno-red-zone
+TCGTPM_CFLAGS += -I$(LIBCRT_INCLUDE_DIR)
 OPENSSL_CFLAGS = -static -nostdinc -nostdlib -fno-stack-protector -mno-red-zone
+LIBCRT_INCLUDE = -I$(LIBCRT_INCLUDE_DIR)
+LIBCRT_LINK = -Wl,rpath=$(LIBCRT_LIB_DIR) -lcrt
 else
+OPENSSL_CFLAGS =
 LIBCRT_INCLUDE =
 LIBCRT_LINK =
-OPENSSL_CFLAGS =
 endif
 
 # Avoid running jobs of this Makefile in parallel to avoid possible conflicts
@@ -79,17 +77,10 @@ endif
 # Parallel builds are still used inside the sub-targets (-j flag)
 .NOTPARALLEL:
 
-all: $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
-
-.PHONY: $(LIBCRT)
-
-# libcrt
-$(LIBCRT):
-	mkdir -p $(LIBCRT_BUILD_DIR)
-	$(MAKE) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR) CC=$(CC)
+all: $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
 
 # openssl
-$(LIBCRYPTO): $(OPENSSL_MAKEFILE) $(LIBCRT)
+$(LIBCRYPTO): $(OPENSSL_MAKEFILE)
 	$(MAKE) -C $(OPENSSL_BUILD_DIR)
 
 $(OPENSSL_MAKEFILE):
@@ -215,11 +206,10 @@ $(LIBPLATFORM): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
 
 TCGTPM_CFLAGS += -fPIE
 TCGTPM_CFLAGS += -DFILE_BACKED_NV=YES -DVTPM=YES
-TCGTPM_CFLAGS += $(LIBCRT_INCLUDE)
 TCGTPM_CFLAGS += -I$(OPENSSL_BUILD_DIR)/include
 TCGTPM_CFLAGS += -I$(OPENSSL_SRC_DIR)/include
 
-$(TCGTPM_MAKEFILE): $(LIBCRYPTO) $(LIBCRT)
+$(TCGTPM_MAKEFILE): $(LIBCRYPTO)
 	mkdir -p $(TCGTPM_BUILD_DIR)
 	(cd $(TCGTPM_BUILD_DIR) && \
 		cmake \
@@ -233,19 +223,14 @@ $(TCGTPM_MAKEFILE): $(LIBCRYPTO) $(LIBCRT)
 			$(TCGTPM_SRC_DIR))
 
 clean:
-	$(MAKE) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR) clean
 	[ ! -f $(OPENSSL_MAKEFILE) ] || $(MAKE) -C $(OPENSSL_BUILD_DIR) clean
 	[ ! -f $(TCGTPM_MAKEFILE) ] || $(MAKE) -C $(TCGTPM_BUILD_DIR) clean
 
 distclean: clean
-	rm -rf $(LIBCRT_BUILD_DIR)
 	rm -rf $(OPENSSL_BUILD_DIR)
 	rm -rf $(TCGTPM_BUILD_DIR)
 
-.PHONY: all clean distclean
-
-.PHONY: libcrt configure_openssl configure_tcgtpm libcrypto
-libcrt: $(LIBCRT)
+.PHONY: all clean distclean configure_openssl configure_tcgtpm libcrypto
 configure_openssl: $(OPENSSL_MAKEFILE)
 libcrypto: $(LIBCRYPTO)
 configure_tcgtpm: $(TCGTPM_MAKEFILE)
