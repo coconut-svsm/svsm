@@ -1,0 +1,9 @@
+[package]
+name = "libcrt"
+version = "0.1.0"
+edition.workspace = true
+
+links = "crt"
+
+[lints]
+workspace = true
