@@ -881,6 +881,7 @@ impl LocalApic {
 mod tests {
     use super::*;
     use crate::platform::guest_cpu::GuestCpuState;
+    use zerocopy::FromZeros;
 
     struct TestGuestCpu {
         tpr: u8,
@@ -1015,5 +1016,77 @@ mod tests {
         fn hv_doorbell(&self) -> Option<&HVDoorbell> {
             Some(&self.doorbell)
         }
+    }
+
+    /// Test that PPR is correctly computed from in-service interrupts and
+    /// the TPR.
+    #[test]
+    fn test_apic_ppr() {
+        let mut apic = LocalApic::new();
+        let guest = TestGuestCpu::new(0x20);
+
+        // No in-service interrupts, PPR should equal TPR
+        assert_eq!(apic.get_ppr(&guest), 0x20);
+
+        // Simulate delivery of interrupt vector 0x54 (class=5, subclass=4)
+        apic.isr_stack[0] = 0x54;
+        apic.isr_stack_index = 1;
+
+        // ISRV class (5) > TPR class (2), so PPR class should be equal.
+        // ISR determines PPR, so subclass should be 0.
+        assert_eq!(apic.get_ppr(&guest), 0x50);
+
+        // Simulate delivery of interrupt vector 0x54 (class=1, subclass=8)
+        apic.isr_stack[0] = 0x18;
+        apic.isr_stack_index = 1;
+
+        // ISRV class (1) < TPR class (2). PPR should equal TPR
+        assert_eq!(apic.get_ppr(&guest), guest.tpr);
+    }
+
+    /// Test that IRQs are delivered according to priority
+    #[test]
+    fn test_apic_irq_priority() {
+        let mut apic = LocalApic::new();
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut guest = TestGuestCpu::new(0x20);
+
+        // 0x30 > 0x20 (TPR): delivered and pushed to ISR stack
+        apic.post_interrupt(0x30, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x30);
+
+        // 0x50 > 0x30 (previous IRQ): delivered to ISR stack, depth
+        // must grow.
+        apic.post_interrupt(0x50, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+        assert_eq!(apic.isr_stack_index, 2);
+        assert_eq!(apic.isr_stack[1], 0x50);
+
+        // 0x40 < 0x50 (previous IRQ): IRQ stays in IRR while previous
+        // IRQ is in service
+        apic.post_interrupt(0x40, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+        assert_eq!(apic.isr_stack_index, 2);
+        assert!(LocalApic::test_vector_register(&apic.irr, 0x40));
+    }
+
+    /// Test that an interrupt with lower priority than the TPR is queued
+    /// for later delivery rather than injected immediately.
+    #[test]
+    fn test_apic_irq_masking() {
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut guest = TestGuestCpu::new(0x40);
+        let mut apic = LocalApic::new();
+
+        // 0x30 class (3) < TPR class (4): IRQ is queued but not delivered
+        apic.post_interrupt(0x30, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+        assert_eq!(guest.queued_irq, Some(0x30));
+        assert_eq!(guest.delivered_irq, None);
+        assert!(apic.interrupt_queued);
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x30);
     }
 }
