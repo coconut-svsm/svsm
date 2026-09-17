@@ -11,6 +11,7 @@
     - [Backend](#backend)
     - [Host Proxy Diagram](#host-proxy-diagram)
   - [Transport Methods](#transport-methods)
+  - [Error Handling](#error-handling)
   - [Known Limitations](#known-limitations)
   - [Try for yourself](#try-for-yourself)
 <!--toc:end-->
@@ -255,6 +256,17 @@ SVSM communicates with the attestation proxy using one of two transport methods:
   SVSM falls back to the COM3 serial port if the vsock connection fails. This
   is intended for testing purposes only.
 
+## Error Handling
+
+Attestation is best-effort: no failure along the attestation path is fatal.
+When attestation does not complete, SVSM logs the failure and continues
+booting without a secret, which also means persistence initialization is
+skipped.
+
+Note that a vsock failure does not necessarily skip attestation: when
+`attest-serial` is enabled, it triggers the serial port fallback described
+above, and only a failure of that fallback is reported.
+
 ## Known Limitations
 
 The attestation services in SVSM are **experimental** at present and have the
@@ -383,18 +395,11 @@ SEV-SNP machine with an SVSM-enabled kernel.
     [SVSM] attestation successful
     ```
 
-    If unsuccessful, you should see a failure message within the SVSM boot logs:
+    If unsuccessful, you should see a failure message within the SVSM boot logs,
+    after which the boot carries on:
 
     ```text
-    [SVSM] ERROR: Panic on CPU[0]! COCONUT-SVSM Version: e48a1c14
-    [SVSM] ERROR: Info: panicked at kernel/src/svsm.rs:349:36:
-    called `Result::unwrap()` on an `Err` value: TeeAttestation(Failed)
-    [SVSM] ---BACKTRACE---:
-    [SVSM]   [ffffff80001c7976]
-    [SVSM]   [ffffff800000497e]
-    [SVSM]   [ffffff80000c3ad6]
-    [SVSM]   [ffffff80000c3ae0]
-    [SVSM] ---END---
+    [SVSM] ERROR: attestation failed: TeeAttestation(Failed)
     ```
 
     This likely is a result of the expected launch measurement not matching the

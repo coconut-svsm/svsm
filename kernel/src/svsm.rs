@@ -28,11 +28,13 @@ use svsm::cpu::shadow_stack::{
 use svsm::cpu::smp::ApStartContextRef;
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::cpu::sse::sse_init;
+#[cfg(all(feature = "attest", not(test_in_svsm)))]
+use svsm::crypto::SecretSlice;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::debug::symbols::init_symbols;
 use svsm::enable_shadow_stacks;
-#[cfg(feature = "virtio-drivers")]
+#[cfg(any(feature = "virtio-drivers", all(feature = "attest", not(test_in_svsm))))]
 use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, initialize_log_buffer, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
@@ -466,6 +468,18 @@ fn free_init_bsp_stack() {
     free_multiple_pages(stack_base, stack_pages);
 }
 
+#[cfg(all(feature = "attest", not(test_in_svsm)))]
+fn run_attestation() -> Result<SecretSlice, SvsmError> {
+    use kbs_types::Tee;
+    use svsm::attest::AttestationDriver;
+
+    let mut proxy = AttestationDriver::try_from(Tee::Snp)?;
+    let secret = proxy.attest()?;
+    log::info!("attestation successful");
+
+    Ok(secret)
+}
+
 fn svsm_init(launch_info: &KernelLaunchInfo) {
     // If required, the GDB stub can be started earlier, just after the console
     // is initialised in svsm_start() above.
@@ -548,23 +562,23 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
 
     #[cfg(all(feature = "attest", not(test_in_svsm)))]
     {
-        use kbs_types::Tee;
-        use svsm::attest::AttestationDriver;
-
         // Obtain the persistence metadata first. It's not the case yet,
         // but it likely will be needed as input to the attestation.
         #[cfg(feature = "persistence")]
         let persistence_bootstrap_info = persistence_discover().unwrap();
 
-        let mut proxy = AttestationDriver::try_from(Tee::Snp).unwrap();
-        let secret = proxy.attest().unwrap();
-        log::info!("attestation successful");
-
-        #[cfg(not(feature = "persistence"))]
-        let _ = secret;
-        #[cfg(feature = "persistence")]
-        if let Some(persistence_bootstrap_info) = persistence_bootstrap_info {
-            persistence_init(persistence_bootstrap_info, &secret).unwrap();
+        match run_attestation() {
+            Ok(secret) => {
+                #[cfg(not(feature = "persistence"))]
+                let _ = secret;
+                #[cfg(feature = "persistence")]
+                if let Some(persistence_bootstrap_info) = persistence_bootstrap_info {
+                    persistence_init(persistence_bootstrap_info, &secret).unwrap();
+                }
+            }
+            Err(e) => {
+                log::error!("attestation failed: {e:?}");
+            }
         }
     }
 
