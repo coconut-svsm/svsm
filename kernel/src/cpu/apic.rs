@@ -893,7 +893,6 @@ mod tests {
         can_deliver_immediately: bool,
     }
 
-    #[expect(dead_code)]
     impl TestGuestCpu {
         const fn new(tpr: u8) -> Self {
             Self {
@@ -1088,5 +1087,91 @@ mod tests {
         assert!(apic.interrupt_queued);
         assert_eq!(apic.isr_stack_index, 1);
         assert_eq!(apic.isr_stack[0], 0x30);
+    }
+
+    /// Test that an interrupt is queued rather than delivered immediately
+    /// when the guest CPU has interrupts disabled.
+    #[test]
+    fn test_deliver_interrupt_interrupts_disabled() {
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut apic = LocalApic::new();
+        let mut guest = TestGuestCpu::new(0x20);
+        guest.interrupts_enabled = false;
+
+        // 0x50 priority (5) > TPR (2), but interrupts are disabled
+        apic.post_interrupt(0x50, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+
+        assert_eq!(guest.queued_irq, Some(0x50));
+        assert_eq!(guest.delivered_irq, None);
+        assert!(apic.interrupt_queued);
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x50);
+    }
+
+    /// Test that an interrupt is queued rather than delivered immediately
+    /// when the guest CPU is in an interrupt shadow.
+    #[test]
+    fn test_deliver_interrupt_shadow() {
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut apic = LocalApic::new();
+        let mut guest = TestGuestCpu::new(0x20);
+        guest.in_intr_shadow = true;
+
+        // 0x50 priority (5) > TPR (2), but CPU is in interrupt shadow
+        apic.post_interrupt(0x50, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+
+        assert_eq!(guest.queued_irq, Some(0x50));
+        assert_eq!(guest.delivered_irq, None);
+        assert!(apic.interrupt_queued);
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x50);
+    }
+
+    /// Test that an interrupt is queued when try_deliver_interrupt_immediately
+    /// returns false (e.g. because the platform cannot inject right now).
+    #[test]
+    fn test_deliver_interrupt_immediately_fails() {
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut apic = LocalApic::new();
+        let mut guest = TestGuestCpu::new(0x20);
+        guest.can_deliver_immediately = false;
+
+        // 0x50 priority (5) > TPR (2), and interrupts are enabled, but
+        // the platform reports it cannot deliver immediately
+        apic.post_interrupt(0x50, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+
+        assert_eq!(guest.queued_irq, Some(0x50));
+        assert_eq!(guest.delivered_irq, None);
+        assert!(apic.interrupt_queued);
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x50);
+    }
+
+    /// Test that IPI vectors are merged into the local IRR and that NMI is
+    /// delivered to the guest.
+    #[test]
+    fn test_ipi_delivery() {
+        let mut apic = LocalApic::new();
+        let mut cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut guest = TestGuestCpu::new(0x20);
+
+        cpu.ipi_pending = true;
+        // Vectors 0x61 and 0x67 (bits 1 and 3 of group 3)
+        cpu.ipi_irr[3] = (1 << 1) | (1 << 3);
+        cpu.nmi_pending = true;
+
+        apic.present_interrupts(&cpu, &mut guest, None);
+
+        // NMI must reach the guest CPU state
+        assert!(guest.nmi_requested);
+        // Highest IPI vector must be delivered immediately
+        assert_eq!(guest.delivered_irq, Some(0x63));
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x63);
+        // Lower IPI vector must remain in IRR pending next delivery
+        assert!(LocalApic::test_vector_register(&apic.irr, 0x61));
     }
 }
