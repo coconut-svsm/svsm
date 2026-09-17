@@ -876,3 +876,144 @@ impl LocalApic {
             .expect("Failed to disable alterate injection");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::guest_cpu::GuestCpuState;
+
+    struct TestGuestCpu {
+        tpr: u8,
+        nmi_requested: bool,
+        delivered_irq: Option<u8>,
+        queued_irq: Option<u8>,
+        interrupts_enabled: bool,
+        in_intr_shadow: bool,
+        can_deliver_immediately: bool,
+    }
+
+    #[expect(dead_code)]
+    impl TestGuestCpu {
+        const fn new(tpr: u8) -> Self {
+            Self {
+                tpr,
+                nmi_requested: false,
+                delivered_irq: None,
+                queued_irq: None,
+                interrupts_enabled: true,
+                in_intr_shadow: false,
+                can_deliver_immediately: true,
+            }
+        }
+    }
+
+    impl GuestCpuState for TestGuestCpu {
+        fn get_tpr(&self) -> u8 {
+            self.tpr
+        }
+
+        fn set_tpr(&mut self, tpr: u8) {
+            self.tpr = tpr;
+        }
+
+        fn request_nmi(&mut self) {
+            self.nmi_requested = true;
+        }
+
+        fn queue_interrupt(&mut self, irq: u8) {
+            self.queued_irq = Some(irq);
+        }
+
+        fn try_deliver_interrupt_immediately(&mut self, irq: u8) -> bool {
+            if self.can_deliver_immediately {
+                self.delivered_irq = Some(irq);
+                true
+            } else {
+                false
+            }
+        }
+
+        fn in_intr_shadow(&self) -> bool {
+            self.in_intr_shadow
+        }
+
+        fn interrupts_enabled(&self) -> bool {
+            self.interrupts_enabled
+        }
+
+        fn check_and_clear_pending_nmi(&mut self) -> bool {
+            false
+        }
+
+        fn check_and_clear_pending_interrupt_event(&mut self) -> u8 {
+            0
+        }
+
+        fn check_and_clear_pending_virtual_interrupt(&mut self) -> u8 {
+            0
+        }
+
+        fn disable_alternate_injection(&mut self) {}
+    }
+
+    struct TestCpu {
+        apic_id: u32,
+        ipi_pending: bool,
+        ipi_irr: [u32; 8],
+        nmi_pending: bool,
+        doorbell: HVDoorbell,
+    }
+
+    #[expect(dead_code)]
+    impl TestCpu {
+        const fn new(doorbell: HVDoorbell) -> Self {
+            Self {
+                apic_id: 1,
+                ipi_pending: false,
+                ipi_irr: [0; 8],
+                nmi_pending: false,
+                doorbell,
+            }
+        }
+
+        fn set_status(&self, status: HVExtIntStatus) {
+            self.doorbell
+                .per_vmpl_events
+                .store(1 << (GUEST_VMPL - 1), Ordering::Relaxed);
+            self.doorbell.per_vmpl[GUEST_VMPL - 1]
+                .status
+                .store(status.into(), Ordering::Relaxed);
+        }
+
+        fn guest_event_pending(&self) -> bool {
+            let events = self.doorbell.per_vmpl_events.load(Ordering::Relaxed);
+            events & (1 << (GUEST_VMPL - 1)) != 0
+        }
+
+        fn get_status(&self) -> HVExtIntStatus {
+            HVExtIntStatus::from(
+                self.doorbell.per_vmpl[GUEST_VMPL - 1]
+                    .status
+                    .load(Ordering::Relaxed),
+            )
+        }
+    }
+
+    impl ApicCpuState for TestCpu {
+        fn apic_id(&self) -> u32 {
+            self.apic_id
+        }
+        fn ipi_pending(&self) -> bool {
+            self.ipi_pending
+        }
+        fn ipi_irr_vector(&self, index: usize) -> u32 {
+            self.ipi_irr[index]
+        }
+        fn nmi_pending(&self) -> bool {
+            self.nmi_pending
+        }
+        fn hv_doorbell(&self) -> Option<&HVDoorbell> {
+            Some(&self.doorbell)
+        }
+    }
+}
