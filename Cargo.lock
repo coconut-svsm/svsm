@@ -244,17 +244,6 @@ dependencies = [
 
 [[package]]
 name = "bitfield-struct"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8769c4854c5ada2852ddf6fd09d15cf43d4c2aaeccb4de6432f5402f08a6003b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "bitfield-struct"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ca6739863c590881f038d033a146c51ddae239186a4327014839fd864f44ed5"
@@ -2530,9 +2519,9 @@ dependencies = [
 
 [[package]]
 name = "uefi"
-version = "0.36.1"
+version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71fe9058b73ee2b6559524af9e33199c13b2485ddbf3ad1181b68051cdc50c17"
+checksum = "a58ad7512f7c38b58aa536c3839dbb1d5a122d14a7e2245b06ded49edcb7585a"
 dependencies = [
  "bitflags 2.13.0",
  "cfg-if",
@@ -2557,9 +2546,9 @@ dependencies = [
 
 [[package]]
 name = "uefi-raw"
-version = "0.13.0"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f64fe59e11af447d12fd60a403c74106eb104309f34b4c6dbce6e927d97da9d"
+checksum = "1a36f49db0b04a8dfd246a26ddf8d2526a2ffd8cf946ae7fe603fd0c5fbd2786"
 dependencies = [
  "bitflags 2.13.0",
  "uguid",
@@ -2736,11 +2725,11 @@ dependencies = [
 
 [[package]]
 name = "virtfw-libefi"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bfe5a2adf2b20c1cdb1f24614c3f07a94398995ab6c2c2562f97d1b2f0d9fb7"
+checksum = "2f69a9745fa54a9f4964dc7b5188d83e4f649eeaf65ad91a3bbb511bcfcba1eb"
 dependencies = [
- "bitfield-struct 0.12.1",
+ "bitfield-struct 0.13.0",
  "byteorder",
  "der",
  "log",
@@ -2751,9 +2740,9 @@ dependencies = [
 
 [[package]]
 name = "virtfw-varstore"
-version = "0.6.1"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e006f827ff617f08e9cb01ab51e87e261153970359cd3365f5a39702812aaf6c"
+checksum = "7a5aa5821da708950acb96ecd2ca6736410a389e5876c5e1bbdbaaecf7f98dae"
 dependencies = [
  "der",
  "hex",
