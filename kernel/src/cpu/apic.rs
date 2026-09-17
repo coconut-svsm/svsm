@@ -1174,4 +1174,66 @@ mod tests {
         // Lower IPI vector must remain in IRR pending next delivery
         assert!(LocalApic::test_vector_register(&apic.irr, 0x61));
     }
+
+    /// Test that a level-sensitive EOI clears TMR and sets
+    /// `update_required`
+    #[test]
+    fn test_apic_eoi() {
+        let mut apic = LocalApic::new();
+
+        // EOI on empty ISR stack must be a no-op
+        apic.perform_eoi();
+        assert_eq!(apic.isr_stack_index, 0);
+        assert!(!apic.update_required);
+
+        // Level-sensitive EOI must clear the TMR bit and schedule
+        // reevaluation
+        apic.post_interrupt(0x50, true);
+        apic.isr_stack[0] = 0x50;
+        apic.isr_stack_index = 1;
+        apic.update_required = false;
+        apic.perform_eoi();
+        assert_eq!(apic.isr_stack_index, 0);
+        assert!(!LocalApic::test_vector_register(&apic.tmr, 0x50));
+        assert!(apic.update_required);
+    }
+
+    /// Verify that no_eoi_required is:
+    /// * Set on a single edge-triggered interrupt
+    /// * Not set when another interrupt is still pending.
+    /// * Not set when the IRQ is level-sensitive.
+    #[test]
+    fn test_lazy_eoi() {
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut guest = TestGuestCpu::new(0);
+        let mut caa = SvsmCaa::zeroed();
+        let caa_ptr = NonNull::from(&mut caa);
+
+        // Single edge-triggered interrupt with no others pending: lazy
+        // EOI should be set
+        let mut apic = LocalApic::new();
+        apic.configure_vector(0x30, true);
+        cpu.set_status(HVExtIntStatus::new().with_pending_vector(0x30));
+        apic.present_interrupts(&cpu, &mut guest, Some(caa_ptr));
+        assert_eq!(caa.no_eoi_required, 1);
+
+        // Second interrupt still in IRR after delivery: lazy EOI must
+        // not be set
+        let mut apic = LocalApic::new();
+        guest.delivered_irq = None;
+        caa.no_eoi_required = 0;
+        apic.post_interrupt(0x30, false);
+        apic.post_interrupt(0x40, false);
+        apic.present_interrupts(&cpu, &mut guest, Some(caa_ptr));
+        assert_eq!(caa.no_eoi_required, 0);
+
+        // Level-sensitive interrupt: lazy EOI must NOT be set even if no
+        // others pending
+        let mut apic = LocalApic::new();
+        guest.delivered_irq = None;
+        caa.no_eoi_required = 0;
+        apic.post_interrupt(0x30, true);
+        apic.present_interrupts(&cpu, &mut guest, Some(caa_ptr));
+        assert_eq!(caa.no_eoi_required, 0);
+    }
 }
