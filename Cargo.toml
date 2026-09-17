@@ -141,7 +141,7 @@ nonstandard_style = { level = "deny", priority = 126 }
 rust_2018_idioms = { level = "deny", priority = 1 }
 missing_debug_implementations = { level = "deny", priority = 50 }
 single_use_lifetimes = { level = "warn", priority = 125 }
-trivial-numeric-casts = { level = "deny", priority = 10 }
+trivial_numeric_casts = { level = "deny", priority = 10 }
 unsafe_op_in_unsafe_fn = { level = "deny", priority = 2 }
 
 [workspace.lints.clippy]
