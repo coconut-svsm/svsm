@@ -91,18 +91,6 @@ This is a multi-step approach which requires a rewrite of the page allocator
 and the way heap allocation works. Allocation and usage of shared memory will
 also fundamentally change.
 
-### Move Stage2 Functionality into IGVM builder/loader
-
-Most of the setup done by the COCONUT stage2 loader can be done at build time
-with the IGVM format. Modify the build process and resulting IGVM file to match
-this goal and remove functionality from stage2.
-
-### IGVM Memory Map
-
-The COCONUT kernel consumes the system memory map via IGVM parameters, but the
-UEFI bios based on EDK2 loads it via QEMU FWCFG. Modify the boot flow so that
-COCONUT forwards an updated IGVM memory map to EDK2.
-
 ### Dynamic Memory Sizing
 
 With the ability to forward a modified IGVM memory map to the subsequent boot
@@ -247,10 +235,6 @@ Implement a virtual bus for the Linux kernel which abstracts SVSM services as
 devices. Device drivers can then attach to the services and provide them to
 Linux user-mode.
 
-### Provide UEFI Variable Store Service
-
-Implement a service to store UEFI variables in the SVSM.
-
 ## Paravisor Support
 
 Besides enlightened guest operating systems COCONUT-SVSM should support
@@ -276,13 +260,6 @@ The COCONUT kernel needs to support a small number of devices for use of its
 own. Examples are block devices for persistence or devices for communicating
 with the host.
 
-### Device Tree Support
-
-QEMU needs to be enhanced to create a device tree blob describing the devices
-owned by COCONUT-SVSM. Those devices need to be excluded from the ACPI tables
-used by the guest OS. The device tree is part of the IGVM parameters on guest
-launch and the SVSM needs to parse it to set up its device infrastructure.
-
 ### Device Abstractions
 
 The COCONUT kernel needs an abstraction for devices, similar to `struct device`
@@ -301,24 +278,6 @@ The SVSM needs communication channels with the host for various purposes
 (console, debugging, attestation, ...). These channels are hypervisor specific
 and require a generic interface in the COCONUT kernel which allows the users to
 work transparently with underlying transport mechanism.
-
-## Persistence
-
-One of the main use-cases for the SVSM is to emulate devices containing
-security sensitive state in a trusted environment. In order for the security
-sensitive state to be persistent across restarts of the CVM instance, a
-persistence layer is needed.
-
-### File System for Persistent Data
-
-A simple file-system driver is needed to support persistence for multiple
-services and device emulations. Design is TBD, but there is likely no need to
-support directories.
-
-### Block Device Security
-
-Encryption and integrity protection of the storage will be implemented on the
-block layer.
 
 ### Permission Model for File System Data
 
@@ -389,22 +348,6 @@ trusted time source.
 Support the SecureAVIC feature in COCONUT-SVSM for use at all VMPL levels.
 
 ## Observability
-
-### Design Observability Interface
-
-Specify a protocol to allow to observe the state of COCONUT-SVSM from the guest
-OS. This includes information like log-files, memory usage information, and
-more.
-
-### Bring LogBuffer Code Upstream
-
-The COCONUT kernel needs to put its log messages into a log buffer which is not
-printed to the console by default. Anything printed to the serial console is
-visible to the untrusted hypervisor and might reveal information to attack the
-SVSM.
-
-There is a pending PR to implement a log buffer. Review that PR and bring it
-upstream.
 
 ### Implement COCONUT Service Handler
 
