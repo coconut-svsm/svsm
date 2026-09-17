@@ -5,14 +5,14 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use crate::cpu::idt::common::INT_INJ_VECTOR;
-use crate::cpu::percpu::{PERCPU_AREAS, PerCpuShared, current_ghcb, this_cpu};
+use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, current_ghcb, this_cpu};
 use crate::cpu::x86::apic_post_irq;
 use crate::error::ApicError::{Emulation, InvalidRegister};
 use crate::error::SvsmError;
 use crate::mm::TryPtr;
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::requests::SvsmCaa;
-use crate::sev::hv_doorbell::HVExtIntStatus;
+use crate::sev::hv_doorbell::{HVDoorbell, HVExtIntStatus};
 use crate::types::GUEST_VMPL;
 
 use core::ptr::NonNull;
@@ -33,6 +33,36 @@ use cpuarch::x86apic::APIC_REGISTER_TPR;
 use cpuarch::x86apic::ApicIcr;
 use cpuarch::x86apic::IcrDestFmt;
 use cpuarch::x86apic::IcrMessageType;
+
+pub trait ApicCpuState {
+    fn apic_id(&self) -> u32;
+    fn ipi_pending(&self) -> bool;
+    fn ipi_irr_vector(&self, index: usize) -> u32;
+    fn nmi_pending(&self) -> bool;
+    fn hv_doorbell(&self) -> Option<&HVDoorbell>;
+}
+
+impl ApicCpuState for PerCpu {
+    fn apic_id(&self) -> u32 {
+        self.get_apic_id()
+    }
+
+    fn ipi_pending(&self) -> bool {
+        self.shared().ipi_pending()
+    }
+
+    fn ipi_irr_vector(&self, index: usize) -> u32 {
+        self.shared().ipi_irr_vector(index)
+    }
+
+    fn nmi_pending(&self) -> bool {
+        self.shared().nmi_pending()
+    }
+
+    fn hv_doorbell(&self) -> Option<&HVDoorbell> {
+        self.hv_doorbell()
+    }
+}
 
 // This structure must never be copied because a silent copy will cause APIC
 // state to be lost.
@@ -208,31 +238,31 @@ impl LocalApic {
         }
     }
 
-    fn consume_pending_ipis(&mut self, cpu_shared: &PerCpuShared) {
+    fn consume_pending_ipis<C: ApicCpuState>(&mut self, cpu: &C) {
         // Scan the IPI IRR vector and transfer any pending IPIs into the local
         // IRR vector.
         for (i, irr) in self.irr.iter_mut().enumerate() {
-            *irr |= cpu_shared.ipi_irr_vector(i);
+            *irr |= cpu.ipi_irr_vector(i);
         }
-        if cpu_shared.nmi_pending() {
+        if cpu.nmi_pending() {
             self.nmi_pending = true;
         }
         self.update_required = true;
     }
 
-    pub fn present_interrupts<T: GuestCpuState>(
+    pub fn present_interrupts<T: GuestCpuState, C: ApicCpuState>(
         &mut self,
-        cpu_shared: &PerCpuShared,
+        cpu: &C,
         cpu_state: &mut T,
         caa: Option<NonNull<SvsmCaa>>,
     ) {
         // Make sure any interrupts being presented by the host have been
         // consumed.
-        self.consume_host_interrupts();
+        self.consume_host_interrupts(cpu);
 
         // Consume any pending IPIs.
-        if cpu_shared.ipi_pending() {
-            self.consume_pending_ipis(cpu_shared);
+        if cpu.ipi_pending() {
+            self.consume_pending_ipis(cpu);
         }
 
         if self.update_required {
@@ -521,9 +551,9 @@ impl LocalApic {
 
     /// Reads an APIC register, returning its value, or an error if an invalid
     /// register is requested.
-    pub fn read_register<T: GuestCpuState>(
+    pub fn read_register<T: GuestCpuState, C: ApicCpuState>(
         &mut self,
-        cpu_shared: &PerCpuShared,
+        cpu: &C,
         cpu_state: &mut T,
         caa: Option<NonNull<SvsmCaa>>,
         register: u64,
@@ -534,7 +564,7 @@ impl LocalApic {
 
         match register {
             APIC_REGISTER_ICR => Ok(self.handle_icr_read()),
-            APIC_REGISTER_APIC_ID => Ok(u64::from(cpu_shared.apic_id())),
+            APIC_REGISTER_APIC_ID => Ok(u64::from(cpu.apic_id())),
             APIC_REGISTER_LDR => Ok(self.handle_ldr_read()),
             APIC_REGISTER_IRR_0..=APIC_REGISTER_IRR_7 => {
                 let offset = register - APIC_REGISTER_IRR_0;
@@ -677,8 +707,8 @@ impl LocalApic {
         }
     }
 
-    fn consume_host_interrupts(&mut self) {
-        let hv_doorbell = this_cpu().hv_doorbell().unwrap();
+    fn consume_host_interrupts<C: ApicCpuState>(&mut self, cpu: &C) {
+        let hv_doorbell = cpu.hv_doorbell().unwrap();
         let vmpl_event_mask = hv_doorbell.per_vmpl_events.swap(0, Ordering::Relaxed);
         // Ignore events other than for the guest VMPL.
         if vmpl_event_mask & (1 << (GUEST_VMPL - 1)) == 0 {
@@ -760,8 +790,8 @@ impl LocalApic {
         }
     }
 
-    fn handoff_to_host(&mut self) {
-        let hv_doorbell = this_cpu().hv_doorbell().unwrap();
+    fn handoff_to_host<C: ApicCpuState>(&mut self, cpu: &C) {
+        let hv_doorbell = cpu.hv_doorbell().unwrap();
         let descriptor = &hv_doorbell.per_vmpl[GUEST_VMPL - 1];
         // Establish the IRR as holding multiple vectors regardless of the
         // number of active vectors, as this makes transferring IRR state
@@ -813,8 +843,9 @@ impl LocalApic {
         }
     }
 
-    pub fn disable_apic_emulation<T: GuestCpuState>(
+    pub fn disable_apic_emulation<T: GuestCpuState, C: ApicCpuState>(
         &mut self,
+        cpu: &C,
         cpu_state: &mut T,
         caa: Option<NonNull<SvsmCaa>>,
     ) {
@@ -827,7 +858,7 @@ impl LocalApic {
         }
 
         // Hand the current APIC state off to the host.
-        self.handoff_to_host();
+        self.handoff_to_host(cpu);
 
         let _ = Self::clear_guest_eoi_pending(caa);
 
