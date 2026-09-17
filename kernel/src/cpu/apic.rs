@@ -964,7 +964,6 @@ mod tests {
         doorbell: HVDoorbell,
     }
 
-    #[expect(dead_code)]
     impl TestCpu {
         const fn new(doorbell: HVDoorbell) -> Self {
             Self {
@@ -1235,5 +1234,125 @@ mod tests {
         apic.post_interrupt(0x30, true);
         apic.present_interrupts(&cpu, &mut guest, Some(caa_ptr));
         assert_eq!(caa.no_eoi_required, 0);
+    }
+
+    /// Test that a disabled vector is not delivered.
+    #[test]
+    fn test_hv_doorbell_disabled_vector() {
+        let mut apic = LocalApic::new();
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+
+        cpu.set_status(HVExtIntStatus::new().with_pending_vector(0x70));
+        apic.consume_host_interrupts(&cpu);
+        assert!(!LocalApic::test_vector_register(&apic.irr, 0x70));
+    }
+
+    /// Test the basic delivery of an IRQ through the HV doorbell
+    #[test]
+    fn test_hv_doorbell_irq_delivery() {
+        let mut apic = LocalApic::new();
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut guest = TestGuestCpu::new(0x20);
+
+        // Enable vector 0x60 and deliver through HV doorbell
+        apic.configure_vector(0x60, true);
+        cpu.set_status(HVExtIntStatus::new().with_pending_vector(0x60));
+        apic.present_interrupts(&cpu, &mut guest, None);
+
+        // Vector should be consumed from HV doorbell page
+        assert!(!cpu.guest_event_pending());
+        assert_eq!(cpu.get_status().pending_vector(), 0);
+
+        // Vector should be delivered and in service
+        assert_eq!(guest.delivered_irq, Some(0x60));
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x60);
+    }
+
+    /// Verify that level sensitive IRQs are consumed from the doorbell
+    /// page, updates IRR, and sets TMR and host_tmr.
+    #[test]
+    fn test_hv_doorbell_level_sensitive() {
+        let mut apic = LocalApic::new();
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+
+        // Enable vector 0x50 and deliver through HV doorbell
+        apic.configure_vector(0x50, true);
+        cpu.set_status(
+            HVExtIntStatus::new()
+                .with_pending_vector(0x50)
+                .with_level_sensitive(true),
+        );
+        apic.consume_host_interrupts(&cpu);
+
+        // Check that registers have been updated correctly
+        assert!(LocalApic::test_vector_register(&apic.irr, 0x50));
+        assert!(LocalApic::test_vector_register(&apic.tmr, 0x50));
+        assert!(LocalApic::test_vector_register(&apic.host_tmr, 0x50));
+
+        // Check that vector has been consumed from doorbell page
+        assert!(!cpu.guest_event_pending());
+        let status = cpu.get_status();
+        assert_eq!(status.pending_vector(), 0);
+        assert!(!status.level_sensitive());
+    }
+
+    /// Test the behavior or delivering multiple vectors through
+    /// the HV doorbell.
+    #[test]
+    fn test_doorbell_multiple_vectors() {
+        let mut apic = LocalApic::new();
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+
+        // Allow only 0x42; vector 31 is not allowed
+        apic.configure_vector(0x42, true);
+
+        // Deliver vector 31
+        cpu.set_status(
+            HVExtIntStatus::new()
+                .with_multiple_vectors(true)
+                .with_vector_31(true),
+        );
+
+        // 0x42 is group 2, bit 2 -> irr[i-1] where i=2, so irr[1]
+        cpu.doorbell.per_vmpl[GUEST_VMPL - 1].irr[1].store(1 << 2, Ordering::Relaxed);
+
+        apic.consume_host_interrupts(&cpu);
+
+        // Disallowed vector 31 must be dropped
+        assert!(!LocalApic::test_vector_register(&apic.irr, 31));
+        // Allowed 0x42 must appear in IRR
+        assert!(LocalApic::test_vector_register(&apic.irr, 0x42));
+        // IRR array must be consumed
+        assert_eq!(
+            cpu.doorbell.per_vmpl[GUEST_VMPL - 1].irr[1].load(Ordering::Relaxed),
+            0
+        );
+        // multiple_vectors flag must be cleared before the scan
+        assert!(!cpu.get_status().multiple_vectors());
+    }
+
+    /// Test that per_vmpl_events and per_vmpl are checked consistently
+    /// in the HV doorbell page.
+    #[test]
+    fn test_hv_doorbell_wrong_vmpl() {
+        let mut apic = LocalApic::new();
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+
+        // Enable vector 0x60, deliver it, but setting the wrong event bit
+        apic.configure_vector(0x60, true);
+        cpu.set_status(HVExtIntStatus::new().with_pending_vector(0x60));
+        cpu.doorbell
+            .per_vmpl_events
+            .store(1 << GUEST_VMPL, Ordering::Relaxed);
+        apic.consume_host_interrupts(&cpu);
+
+        // IRQ should not have been delivered, and per_vmpl should not
+        // be updated
+        assert!(!LocalApic::test_vector_register(&apic.irr, 0x60));
+        assert_eq!(
+            cpu.get_status().into_bits(),
+            HVExtIntStatus::new().with_pending_vector(0x60).into_bits()
+        );
     }
 }
