@@ -5,14 +5,14 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use crate::cpu::idt::common::INT_INJ_VECTOR;
-use crate::cpu::percpu::{PERCPU_AREAS, PerCpuShared, current_ghcb, this_cpu};
+use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, current_ghcb, this_cpu};
 use crate::cpu::x86::apic_post_irq;
 use crate::error::ApicError::{Emulation, InvalidRegister};
 use crate::error::SvsmError;
 use crate::mm::TryPtr;
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::requests::SvsmCaa;
-use crate::sev::hv_doorbell::HVExtIntStatus;
+use crate::sev::hv_doorbell::{HVDoorbell, HVExtIntStatus};
 use crate::types::GUEST_VMPL;
 
 use core::ptr::NonNull;
@@ -33,6 +33,36 @@ use cpuarch::x86apic::APIC_REGISTER_TPR;
 use cpuarch::x86apic::ApicIcr;
 use cpuarch::x86apic::IcrDestFmt;
 use cpuarch::x86apic::IcrMessageType;
+
+pub trait ApicCpuState {
+    fn apic_id(&self) -> u32;
+    fn ipi_pending(&self) -> bool;
+    fn ipi_irr_vector(&self, index: usize) -> u32;
+    fn nmi_pending(&self) -> bool;
+    fn hv_doorbell(&self) -> Option<&HVDoorbell>;
+}
+
+impl ApicCpuState for PerCpu {
+    fn apic_id(&self) -> u32 {
+        self.get_apic_id()
+    }
+
+    fn ipi_pending(&self) -> bool {
+        self.shared().ipi_pending()
+    }
+
+    fn ipi_irr_vector(&self, index: usize) -> u32 {
+        self.shared().ipi_irr_vector(index)
+    }
+
+    fn nmi_pending(&self) -> bool {
+        self.shared().nmi_pending()
+    }
+
+    fn hv_doorbell(&self) -> Option<&HVDoorbell> {
+        self.hv_doorbell()
+    }
+}
 
 // This structure must never be copied because a silent copy will cause APIC
 // state to be lost.
@@ -154,15 +184,20 @@ impl LocalApic {
 
     fn get_ppr_with_tpr(&self, tpr: u8) -> u8 {
         // Determine the priority of the current in-service interrupt, if any.
-        let ppr = if let Some(idx) = self.isr_stack_index.checked_sub(1) {
+        let isrv = if let Some(idx) = self.isr_stack_index.checked_sub(1) {
             self.isr_stack[idx]
         } else {
             0
         };
 
         // The PPR is the higher of the in-service interrupt priority and the
-        // task priority.
-        if (ppr >> 4) > (tpr >> 4) { ppr } else { tpr }
+        // task priority. PPR[3:0] (priority subclass) is only set if the TPR
+        // determines the PPR, so mask it out otherwise.
+        if (isrv >> 4) > (tpr >> 4) {
+            isrv & 0xF0
+        } else {
+            tpr
+        }
     }
 
     fn get_ppr<T: GuestCpuState>(&self, cpu_state: &T) -> u8 {
@@ -203,31 +238,31 @@ impl LocalApic {
         }
     }
 
-    fn consume_pending_ipis(&mut self, cpu_shared: &PerCpuShared) {
+    fn consume_pending_ipis<C: ApicCpuState>(&mut self, cpu: &C) {
         // Scan the IPI IRR vector and transfer any pending IPIs into the local
         // IRR vector.
         for (i, irr) in self.irr.iter_mut().enumerate() {
-            *irr |= cpu_shared.ipi_irr_vector(i);
+            *irr |= cpu.ipi_irr_vector(i);
         }
-        if cpu_shared.nmi_pending() {
+        if cpu.nmi_pending() {
             self.nmi_pending = true;
         }
         self.update_required = true;
     }
 
-    pub fn present_interrupts<T: GuestCpuState>(
+    pub fn present_interrupts<T: GuestCpuState, C: ApicCpuState>(
         &mut self,
-        cpu_shared: &PerCpuShared,
+        cpu: &C,
         cpu_state: &mut T,
         caa: Option<NonNull<SvsmCaa>>,
     ) {
         // Make sure any interrupts being presented by the host have been
         // consumed.
-        self.consume_host_interrupts();
+        self.consume_host_interrupts(cpu);
 
         // Consume any pending IPIs.
-        if cpu_shared.ipi_pending() {
-            self.consume_pending_ipis(cpu_shared);
+        if cpu.ipi_pending() {
+            self.consume_pending_ipis(cpu);
         }
 
         if self.update_required {
@@ -516,9 +551,9 @@ impl LocalApic {
 
     /// Reads an APIC register, returning its value, or an error if an invalid
     /// register is requested.
-    pub fn read_register<T: GuestCpuState>(
+    pub fn read_register<T: GuestCpuState, C: ApicCpuState>(
         &mut self,
-        cpu_shared: &PerCpuShared,
+        cpu: &C,
         cpu_state: &mut T,
         caa: Option<NonNull<SvsmCaa>>,
         register: u64,
@@ -529,7 +564,7 @@ impl LocalApic {
 
         match register {
             APIC_REGISTER_ICR => Ok(self.handle_icr_read()),
-            APIC_REGISTER_APIC_ID => Ok(u64::from(cpu_shared.apic_id())),
+            APIC_REGISTER_APIC_ID => Ok(u64::from(cpu.apic_id())),
             APIC_REGISTER_LDR => Ok(self.handle_ldr_read()),
             APIC_REGISTER_IRR_0..=APIC_REGISTER_IRR_7 => {
                 let offset = register - APIC_REGISTER_IRR_0;
@@ -672,8 +707,8 @@ impl LocalApic {
         }
     }
 
-    fn consume_host_interrupts(&mut self) {
-        let hv_doorbell = this_cpu().hv_doorbell().unwrap();
+    fn consume_host_interrupts<C: ApicCpuState>(&mut self, cpu: &C) {
+        let hv_doorbell = cpu.hv_doorbell().unwrap();
         let vmpl_event_mask = hv_doorbell.per_vmpl_events.swap(0, Ordering::Relaxed);
         // Ignore events other than for the guest VMPL.
         if vmpl_event_mask & (1 << (GUEST_VMPL - 1)) == 0 {
@@ -755,8 +790,8 @@ impl LocalApic {
         }
     }
 
-    fn handoff_to_host(&mut self) {
-        let hv_doorbell = this_cpu().hv_doorbell().unwrap();
+    fn handoff_to_host<C: ApicCpuState>(&mut self, cpu: &C) {
+        let hv_doorbell = cpu.hv_doorbell().unwrap();
         let descriptor = &hv_doorbell.per_vmpl[GUEST_VMPL - 1];
         // Establish the IRR as holding multiple vectors regardless of the
         // number of active vectors, as this makes transferring IRR state
@@ -808,8 +843,9 @@ impl LocalApic {
         }
     }
 
-    pub fn disable_apic_emulation<T: GuestCpuState>(
+    pub fn disable_apic_emulation<T: GuestCpuState, C: ApicCpuState>(
         &mut self,
+        cpu: &C,
         cpu_state: &mut T,
         caa: Option<NonNull<SvsmCaa>>,
     ) {
@@ -822,7 +858,7 @@ impl LocalApic {
         }
 
         // Hand the current APIC state off to the host.
-        self.handoff_to_host();
+        self.handoff_to_host(cpu);
 
         let _ = Self::clear_guest_eoi_pending(caa);
 
@@ -838,5 +874,485 @@ impl LocalApic {
                 cpu_state.interrupts_enabled(),
             )
             .expect("Failed to disable alterate injection");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::guest_cpu::GuestCpuState;
+    use zerocopy::FromZeros;
+
+    struct TestGuestCpu {
+        tpr: u8,
+        nmi_requested: bool,
+        delivered_irq: Option<u8>,
+        queued_irq: Option<u8>,
+        interrupts_enabled: bool,
+        in_intr_shadow: bool,
+        can_deliver_immediately: bool,
+    }
+
+    impl TestGuestCpu {
+        const fn new(tpr: u8) -> Self {
+            Self {
+                tpr,
+                nmi_requested: false,
+                delivered_irq: None,
+                queued_irq: None,
+                interrupts_enabled: true,
+                in_intr_shadow: false,
+                can_deliver_immediately: true,
+            }
+        }
+    }
+
+    impl GuestCpuState for TestGuestCpu {
+        fn get_tpr(&self) -> u8 {
+            self.tpr
+        }
+
+        fn set_tpr(&mut self, tpr: u8) {
+            self.tpr = tpr;
+        }
+
+        fn request_nmi(&mut self) {
+            self.nmi_requested = true;
+        }
+
+        fn queue_interrupt(&mut self, irq: u8) {
+            self.queued_irq = Some(irq);
+        }
+
+        fn try_deliver_interrupt_immediately(&mut self, irq: u8) -> bool {
+            if self.can_deliver_immediately {
+                self.delivered_irq = Some(irq);
+                true
+            } else {
+                false
+            }
+        }
+
+        fn in_intr_shadow(&self) -> bool {
+            self.in_intr_shadow
+        }
+
+        fn interrupts_enabled(&self) -> bool {
+            self.interrupts_enabled
+        }
+
+        fn check_and_clear_pending_nmi(&mut self) -> bool {
+            false
+        }
+
+        fn check_and_clear_pending_interrupt_event(&mut self) -> u8 {
+            0
+        }
+
+        fn check_and_clear_pending_virtual_interrupt(&mut self) -> u8 {
+            0
+        }
+
+        fn disable_alternate_injection(&mut self) {}
+    }
+
+    struct TestCpu {
+        apic_id: u32,
+        ipi_pending: bool,
+        ipi_irr: [u32; 8],
+        nmi_pending: bool,
+        doorbell: HVDoorbell,
+    }
+
+    impl TestCpu {
+        const fn new(doorbell: HVDoorbell) -> Self {
+            Self {
+                apic_id: 1,
+                ipi_pending: false,
+                ipi_irr: [0; 8],
+                nmi_pending: false,
+                doorbell,
+            }
+        }
+
+        fn set_status(&self, status: HVExtIntStatus) {
+            self.doorbell
+                .per_vmpl_events
+                .store(1 << (GUEST_VMPL - 1), Ordering::Relaxed);
+            self.doorbell.per_vmpl[GUEST_VMPL - 1]
+                .status
+                .store(status.into(), Ordering::Relaxed);
+        }
+
+        fn guest_event_pending(&self) -> bool {
+            let events = self.doorbell.per_vmpl_events.load(Ordering::Relaxed);
+            events & (1 << (GUEST_VMPL - 1)) != 0
+        }
+
+        fn get_status(&self) -> HVExtIntStatus {
+            HVExtIntStatus::from(
+                self.doorbell.per_vmpl[GUEST_VMPL - 1]
+                    .status
+                    .load(Ordering::Relaxed),
+            )
+        }
+    }
+
+    impl ApicCpuState for TestCpu {
+        fn apic_id(&self) -> u32 {
+            self.apic_id
+        }
+        fn ipi_pending(&self) -> bool {
+            self.ipi_pending
+        }
+        fn ipi_irr_vector(&self, index: usize) -> u32 {
+            self.ipi_irr[index]
+        }
+        fn nmi_pending(&self) -> bool {
+            self.nmi_pending
+        }
+        fn hv_doorbell(&self) -> Option<&HVDoorbell> {
+            Some(&self.doorbell)
+        }
+    }
+
+    /// Test that PPR is correctly computed from in-service interrupts and
+    /// the TPR.
+    #[test]
+    fn test_apic_ppr() {
+        let mut apic = LocalApic::new();
+        let guest = TestGuestCpu::new(0x20);
+
+        // No in-service interrupts, PPR should equal TPR
+        assert_eq!(apic.get_ppr(&guest), 0x20);
+
+        // Simulate delivery of interrupt vector 0x54 (class=5, subclass=4)
+        apic.isr_stack[0] = 0x54;
+        apic.isr_stack_index = 1;
+
+        // ISRV class (5) > TPR class (2), so PPR class should be equal.
+        // ISR determines PPR, so subclass should be 0.
+        assert_eq!(apic.get_ppr(&guest), 0x50);
+
+        // Simulate delivery of interrupt vector 0x54 (class=1, subclass=8)
+        apic.isr_stack[0] = 0x18;
+        apic.isr_stack_index = 1;
+
+        // ISRV class (1) < TPR class (2). PPR should equal TPR
+        assert_eq!(apic.get_ppr(&guest), guest.tpr);
+    }
+
+    /// Test that IRQs are delivered according to priority
+    #[test]
+    fn test_apic_irq_priority() {
+        let mut apic = LocalApic::new();
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut guest = TestGuestCpu::new(0x20);
+
+        // 0x30 > 0x20 (TPR): delivered and pushed to ISR stack
+        apic.post_interrupt(0x30, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x30);
+
+        // 0x50 > 0x30 (previous IRQ): delivered to ISR stack, depth
+        // must grow.
+        apic.post_interrupt(0x50, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+        assert_eq!(apic.isr_stack_index, 2);
+        assert_eq!(apic.isr_stack[1], 0x50);
+
+        // 0x40 < 0x50 (previous IRQ): IRQ stays in IRR while previous
+        // IRQ is in service
+        apic.post_interrupt(0x40, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+        assert_eq!(apic.isr_stack_index, 2);
+        assert!(LocalApic::test_vector_register(&apic.irr, 0x40));
+    }
+
+    /// Test that an interrupt with lower priority than the TPR is queued
+    /// for later delivery rather than injected immediately.
+    #[test]
+    fn test_apic_irq_masking() {
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut guest = TestGuestCpu::new(0x40);
+        let mut apic = LocalApic::new();
+
+        // 0x30 class (3) < TPR class (4): IRQ is queued but not delivered
+        apic.post_interrupt(0x30, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+        assert_eq!(guest.queued_irq, Some(0x30));
+        assert_eq!(guest.delivered_irq, None);
+        assert!(apic.interrupt_queued);
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x30);
+    }
+
+    /// Test that an interrupt is queued rather than delivered immediately
+    /// when the guest CPU has interrupts disabled.
+    #[test]
+    fn test_deliver_interrupt_interrupts_disabled() {
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut apic = LocalApic::new();
+        let mut guest = TestGuestCpu::new(0x20);
+        guest.interrupts_enabled = false;
+
+        // 0x50 priority (5) > TPR (2), but interrupts are disabled
+        apic.post_interrupt(0x50, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+
+        assert_eq!(guest.queued_irq, Some(0x50));
+        assert_eq!(guest.delivered_irq, None);
+        assert!(apic.interrupt_queued);
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x50);
+    }
+
+    /// Test that an interrupt is queued rather than delivered immediately
+    /// when the guest CPU is in an interrupt shadow.
+    #[test]
+    fn test_deliver_interrupt_shadow() {
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut apic = LocalApic::new();
+        let mut guest = TestGuestCpu::new(0x20);
+        guest.in_intr_shadow = true;
+
+        // 0x50 priority (5) > TPR (2), but CPU is in interrupt shadow
+        apic.post_interrupt(0x50, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+
+        assert_eq!(guest.queued_irq, Some(0x50));
+        assert_eq!(guest.delivered_irq, None);
+        assert!(apic.interrupt_queued);
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x50);
+    }
+
+    /// Test that an interrupt is queued when try_deliver_interrupt_immediately
+    /// returns false (e.g. because the platform cannot inject right now).
+    #[test]
+    fn test_deliver_interrupt_immediately_fails() {
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut apic = LocalApic::new();
+        let mut guest = TestGuestCpu::new(0x20);
+        guest.can_deliver_immediately = false;
+
+        // 0x50 priority (5) > TPR (2), and interrupts are enabled, but
+        // the platform reports it cannot deliver immediately
+        apic.post_interrupt(0x50, false);
+        apic.present_interrupts(&cpu, &mut guest, None);
+
+        assert_eq!(guest.queued_irq, Some(0x50));
+        assert_eq!(guest.delivered_irq, None);
+        assert!(apic.interrupt_queued);
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x50);
+    }
+
+    /// Test that IPI vectors are merged into the local IRR and that NMI is
+    /// delivered to the guest.
+    #[test]
+    fn test_ipi_delivery() {
+        let mut apic = LocalApic::new();
+        let mut cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut guest = TestGuestCpu::new(0x20);
+
+        cpu.ipi_pending = true;
+        // Vectors 0x61 and 0x67 (bits 1 and 3 of group 3)
+        cpu.ipi_irr[3] = (1 << 1) | (1 << 3);
+        cpu.nmi_pending = true;
+
+        apic.present_interrupts(&cpu, &mut guest, None);
+
+        // NMI must reach the guest CPU state
+        assert!(guest.nmi_requested);
+        // Highest IPI vector must be delivered immediately
+        assert_eq!(guest.delivered_irq, Some(0x63));
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x63);
+        // Lower IPI vector must remain in IRR pending next delivery
+        assert!(LocalApic::test_vector_register(&apic.irr, 0x61));
+    }
+
+    /// Test that a level-sensitive EOI clears TMR and sets
+    /// `update_required`
+    #[test]
+    fn test_apic_eoi() {
+        let mut apic = LocalApic::new();
+
+        // EOI on empty ISR stack must be a no-op
+        apic.perform_eoi();
+        assert_eq!(apic.isr_stack_index, 0);
+        assert!(!apic.update_required);
+
+        // Level-sensitive EOI must clear the TMR bit and schedule
+        // reevaluation
+        apic.post_interrupt(0x50, true);
+        apic.isr_stack[0] = 0x50;
+        apic.isr_stack_index = 1;
+        apic.update_required = false;
+        apic.perform_eoi();
+        assert_eq!(apic.isr_stack_index, 0);
+        assert!(!LocalApic::test_vector_register(&apic.tmr, 0x50));
+        assert!(apic.update_required);
+    }
+
+    /// Verify that no_eoi_required is:
+    /// * Set on a single edge-triggered interrupt
+    /// * Not set when another interrupt is still pending.
+    /// * Not set when the IRQ is level-sensitive.
+    #[test]
+    fn test_lazy_eoi() {
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut guest = TestGuestCpu::new(0);
+        let mut caa = SvsmCaa::zeroed();
+        let caa_ptr = NonNull::from(&mut caa);
+
+        // Single edge-triggered interrupt with no others pending: lazy
+        // EOI should be set
+        let mut apic = LocalApic::new();
+        apic.configure_vector(0x30, true);
+        cpu.set_status(HVExtIntStatus::new().with_pending_vector(0x30));
+        apic.present_interrupts(&cpu, &mut guest, Some(caa_ptr));
+        assert_eq!(caa.no_eoi_required, 1);
+
+        // Second interrupt still in IRR after delivery: lazy EOI must
+        // not be set
+        let mut apic = LocalApic::new();
+        guest.delivered_irq = None;
+        caa.no_eoi_required = 0;
+        apic.post_interrupt(0x30, false);
+        apic.post_interrupt(0x40, false);
+        apic.present_interrupts(&cpu, &mut guest, Some(caa_ptr));
+        assert_eq!(caa.no_eoi_required, 0);
+
+        // Level-sensitive interrupt: lazy EOI must NOT be set even if no
+        // others pending
+        let mut apic = LocalApic::new();
+        guest.delivered_irq = None;
+        caa.no_eoi_required = 0;
+        apic.post_interrupt(0x30, true);
+        apic.present_interrupts(&cpu, &mut guest, Some(caa_ptr));
+        assert_eq!(caa.no_eoi_required, 0);
+    }
+
+    /// Test that a disabled vector is not delivered.
+    #[test]
+    fn test_hv_doorbell_disabled_vector() {
+        let mut apic = LocalApic::new();
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+
+        cpu.set_status(HVExtIntStatus::new().with_pending_vector(0x70));
+        apic.consume_host_interrupts(&cpu);
+        assert!(!LocalApic::test_vector_register(&apic.irr, 0x70));
+    }
+
+    /// Test the basic delivery of an IRQ through the HV doorbell
+    #[test]
+    fn test_hv_doorbell_irq_delivery() {
+        let mut apic = LocalApic::new();
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+        let mut guest = TestGuestCpu::new(0x20);
+
+        // Enable vector 0x60 and deliver through HV doorbell
+        apic.configure_vector(0x60, true);
+        cpu.set_status(HVExtIntStatus::new().with_pending_vector(0x60));
+        apic.present_interrupts(&cpu, &mut guest, None);
+
+        // Vector should be consumed from HV doorbell page
+        assert!(!cpu.guest_event_pending());
+        assert_eq!(cpu.get_status().pending_vector(), 0);
+
+        // Vector should be delivered and in service
+        assert_eq!(guest.delivered_irq, Some(0x60));
+        assert_eq!(apic.isr_stack_index, 1);
+        assert_eq!(apic.isr_stack[0], 0x60);
+    }
+
+    /// Verify that level sensitive IRQs are consumed from the doorbell
+    /// page, updates IRR, and sets TMR and host_tmr.
+    #[test]
+    fn test_hv_doorbell_level_sensitive() {
+        let mut apic = LocalApic::new();
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+
+        // Enable vector 0x50 and deliver through HV doorbell
+        apic.configure_vector(0x50, true);
+        cpu.set_status(
+            HVExtIntStatus::new()
+                .with_pending_vector(0x50)
+                .with_level_sensitive(true),
+        );
+        apic.consume_host_interrupts(&cpu);
+
+        // Check that registers have been updated correctly
+        assert!(LocalApic::test_vector_register(&apic.irr, 0x50));
+        assert!(LocalApic::test_vector_register(&apic.tmr, 0x50));
+        assert!(LocalApic::test_vector_register(&apic.host_tmr, 0x50));
+
+        // Check that vector has been consumed from doorbell page
+        assert!(!cpu.guest_event_pending());
+        let status = cpu.get_status();
+        assert_eq!(status.pending_vector(), 0);
+        assert!(!status.level_sensitive());
+    }
+
+    /// Test the behavior or delivering multiple vectors through
+    /// the HV doorbell.
+    #[test]
+    fn test_doorbell_multiple_vectors() {
+        let mut apic = LocalApic::new();
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+
+        // Allow only 0x42; vector 31 is not allowed
+        apic.configure_vector(0x42, true);
+
+        // Deliver vector 31
+        cpu.set_status(
+            HVExtIntStatus::new()
+                .with_multiple_vectors(true)
+                .with_vector_31(true),
+        );
+
+        // 0x42 is group 2, bit 2 -> irr[i-1] where i=2, so irr[1]
+        cpu.doorbell.per_vmpl[GUEST_VMPL - 1].irr[1].store(1 << 2, Ordering::Relaxed);
+
+        apic.consume_host_interrupts(&cpu);
+
+        // Disallowed vector 31 must be dropped
+        assert!(!LocalApic::test_vector_register(&apic.irr, 31));
+        // Allowed 0x42 must appear in IRR
+        assert!(LocalApic::test_vector_register(&apic.irr, 0x42));
+        // IRR array must be consumed
+        assert_eq!(
+            cpu.doorbell.per_vmpl[GUEST_VMPL - 1].irr[1].load(Ordering::Relaxed),
+            0
+        );
+        // multiple_vectors flag must be cleared before the scan
+        assert!(!cpu.get_status().multiple_vectors());
+    }
+
+    /// Test that per_vmpl_events and per_vmpl are checked consistently
+    /// in the HV doorbell page.
+    #[test]
+    fn test_hv_doorbell_wrong_vmpl() {
+        let mut apic = LocalApic::new();
+        let cpu = TestCpu::new(HVDoorbell::new_zeroed());
+
+        // Enable vector 0x60, deliver it, but setting the wrong event bit
+        apic.configure_vector(0x60, true);
+        cpu.set_status(HVExtIntStatus::new().with_pending_vector(0x60));
+        cpu.doorbell
+            .per_vmpl_events
+            .store(1 << GUEST_VMPL, Ordering::Relaxed);
+        apic.consume_host_interrupts(&cpu);
+
+        // IRQ should not have been delivered, and per_vmpl should not
+        // be updated
+        assert!(!LocalApic::test_vector_register(&apic.irr, 0x60));
+        assert_eq!(
+            cpu.get_status().into_bits(),
+            HVExtIntStatus::new().with_pending_vector(0x60).into_bits()
+        );
     }
 }
