@@ -134,6 +134,10 @@ impl SecretsPage {
     pub fn clear_vmpck(&mut self, idx: usize) {
         self.vmpck[idx].iter_mut().for_each(|e| *e = 0);
     }
+
+    pub fn tsc_factor(&self) -> u32 {
+        self.tsc_factor
+    }
 }
 
 static SECRETS_PAGE: ImmutAfterInitCell<RWLock<&'static mut SecretsPage>> =

@@ -37,6 +37,8 @@ pub enum SnpGuestRequestMsgType {
     Invalid = 0,
     ReportRequest = 5,
     ReportResponse = 6,
+    TscInfoRequest = 17,
+    TscInfoResponse = 18,
 }
 
 impl TryFrom<u8> for SnpGuestRequestMsgType {
@@ -47,6 +49,8 @@ impl TryFrom<u8> for SnpGuestRequestMsgType {
             x if x == Self::Invalid as u8 => Ok(Self::Invalid),
             x if x == Self::ReportRequest as u8 => Ok(Self::ReportRequest),
             x if x == Self::ReportResponse as u8 => Ok(Self::ReportResponse),
+            x if x == Self::TscInfoRequest as u8 => Ok(Self::TscInfoRequest),
+            x if x == Self::TscInfoResponse as u8 => Ok(Self::TscInfoResponse),
             _ => Err(SvsmError::InvalidParameter),
         }
     }
