@@ -22,6 +22,14 @@ use crate::protocols::uefivars::{UEFI_MM_PROTOCOL_VERSION_MAX, UEFI_MM_PROTOCOL_
 use crate::protocols::{
     RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
 };
+#[cfg(feature = "observability")]
+use crate::protocols::{
+    SVSM_OBSERVABILITY_CONFIGURATION_PROTOCOL,
+    ocp::{
+        OBSERVABILITY_CONFIGURATION_PROTOCOL_VERSION_MAX,
+        OBSERVABILITY_CONFIGURATION_PROTOCOL_VERSION_MIN,
+    },
+};
 #[cfg(feature = "vtpm")]
 use crate::protocols::{
     SVSM_VTPM_PROTOCOL,
@@ -276,6 +284,12 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
             version,
             UEFI_MM_PROTOCOL_VERSION_MIN,
             UEFI_MM_PROTOCOL_VERSION_MAX,
+        ),
+        #[cfg(feature = "observability")]
+        SVSM_OBSERVABILITY_CONFIGURATION_PROTOCOL => protocol_supported(
+            version,
+            OBSERVABILITY_CONFIGURATION_PROTOCOL_VERSION_MIN,
+            OBSERVABILITY_CONFIGURATION_PROTOCOL_VERSION_MAX,
         ),
         _ => 0,
     };
