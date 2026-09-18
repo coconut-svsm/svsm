@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["GHCB_APIC_ACCESSOR"],"struct":["GHCBApicAccessor"]};

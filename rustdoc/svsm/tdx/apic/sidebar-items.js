@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["TDX_APIC_ACCESSOR"],"struct":["TdxApicAccessor"]};
