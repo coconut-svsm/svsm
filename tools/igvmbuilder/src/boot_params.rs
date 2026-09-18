@@ -12,6 +12,7 @@ pub enum BootParamType {
     MemoryMap,
     Madt,
     DeviceTree,
+    CommandLine,
     GuestContext,
 }
 
@@ -22,6 +23,7 @@ pub struct BootParamLayout {
     madt_offset: u32,
     device_tree_offset: u32,
     device_tree_size: u32,
+    command_line_offset: u32,
     guest_context_offset: u32,
     guest_context_size: u32,
     total_size: u32,
@@ -41,6 +43,7 @@ impl BootParamLayout {
         let madt_offset = general_param_offset + page_size;
         let memory_map_offset = madt_offset + page_size;
         let device_tree_offset = memory_map_offset + page_size;
+        let command_line_offset = madt_offset + page_size;
         let total_size = device_tree_offset + page_size;
         Self {
             general_param_offset,
@@ -48,6 +51,7 @@ impl BootParamLayout {
             madt_offset,
             device_tree_offset,
             device_tree_size: page_size,
+            command_line_offset,
             guest_context_offset,
             guest_context_size,
             total_size,
@@ -65,6 +69,7 @@ impl BootParamLayout {
             BootParamType::Madt => self.madt_offset,
             BootParamType::DeviceTree => self.device_tree_offset,
             BootParamType::GuestContext => self.guest_context_offset,
+            BootParamType::CommandLine => self.command_line_offset,
         }
     }
 

@@ -125,12 +125,13 @@ pub struct BootParamBlock {
     /// of the memory map (which is in IGVM format).
     pub memory_map_offset: u32,
 
+    /// The offset, in bytes, of the command line, or zero if no command line
+    /// is present.
+    pub command_line_offset: u32,
+
     /// The offset, in bytes, of the guest context, or zero if no guest
     /// context is present.
     pub guest_context_offset: u32,
-
-    /// The port number of the serial port to use for debugging.
-    pub debug_serial_port: u16,
 
     /// Indicates whether the guest can support alternate injection.
     pub use_alternate_injection: u8,
@@ -144,8 +145,6 @@ pub struct BootParamBlock {
     /// Indicates whether the VMSA is placed at the top of the kernel GPA
     /// range.
     pub vmsa_in_kernel_range: u8,
-
-    pub _reserved: [u8; 2],
 
     /// Metadata containing information about the firmware image embedded in the
     /// IGVM file.
