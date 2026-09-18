@@ -372,6 +372,41 @@ mod tests {
         }
     }
 
+    /// Run a full attestation against the host attestation proxy.
+    ///
+    /// Requires `aproxy` and an attestation server on the host, see
+    /// Documentation/docs/developer/TESTING.md.
+    ///
+    /// The test is skipped when the proxy cannot be reached, as there is then
+    /// nothing to attest against. Once the transport is up, every failure is
+    /// fatal on purpose: the boot path in `svsm_init()` only logs an error and
+    /// carries on when attestation fails, so a regression anywhere between the
+    /// negotiation request and the decryption of the returned secret would
+    /// otherwise go unnoticed.
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg(test_in_svsm)]
+    fn test_attestation() {
+        use crate::testutils::has_test_iorequests;
+
+        if !has_test_iorequests() {
+            return;
+        }
+
+        let mut driver = match AttestationDriver::try_from(Tee::Snp) {
+            Ok(driver) => driver,
+            // Only a transport failure is tolerated here. Anything else, such
+            // as key generation failing, is a genuine bug.
+            Err(SvsmError::Vsock(e)) => {
+                log::info!("no attestation proxy to talk to ({e:?}), skipping");
+                return;
+            }
+            Err(e) => panic!("failed to set up the attestation driver: {e:?}"),
+        };
+
+        let _ = driver.attest().expect("attestation failed");
+    }
+
     mod negotiation_hash {
         use super::*;
 
