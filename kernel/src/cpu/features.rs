@@ -59,24 +59,24 @@ struct CpuFeat {
     val: ImmutAfterInitCell<u32>,
     /// Location of the feature within a CPUID leaf
     feature: CpuidFeature,
-    /// Expected value after shift + mask
-    expected: u32,
+    /// Function to detect if feature is present, after shift + mask
+    present: fn(u32) -> bool,
 }
 
 impl CpuFeat {
-    /// Create a new feature, indicated by a single bit (expected value 1).
-    const fn new_bit(feature: CpuidFeature) -> Self {
-        Self::new(feature, 1)
-    }
-
-    /// Create a new CPU feature from a cpufeature descriptor, comparing the
-    /// extracted field against the given expected value.
-    const fn new(feature: CpuidFeature, expected: u32) -> Self {
+    /// Create a new feature, considered to be present if its value is non-zero.
+    const fn new(feature: CpuidFeature) -> Self {
         Self {
             val: ImmutAfterInitCell::uninit(),
             feature,
-            expected,
+            present: |v| v != 0,
         }
+    }
+
+    /// Set the function to use to determine if a feature is present.
+    const fn with_present(mut self, present: fn(u32) -> bool) -> Self {
+        self.present = present;
+        self
     }
 
     fn get_or_init(&self) -> u32 {
@@ -103,7 +103,7 @@ impl CpuFeat {
     /// its expected value, lazily querying CPUID if the value is not
     /// cached from a previous query
     fn enabled(&self) -> bool {
-        self.get() == self.expected
+        (self.present)(self.get())
     }
 }
 
@@ -144,20 +144,20 @@ pub fn cpu_get_feat(feat: Feature) -> u32 {
 }
 
 define_cpu_feats! {
-    X2Apic => CpuFeat::new_bit(X86_FEATURE_X2APIC),
-    Xsave => CpuFeat::new_bit(X86_FEATURE_XSAVE),
-    Pge => CpuFeat::new_bit(X86_FEATURE_PGE),
-    Sse1 => CpuFeat::new_bit(X86_FEATURE_XMM),
-    Smep => CpuFeat::new_bit(X86_FEATURE_SMEP),
-    Smap => CpuFeat::new_bit(X86_FEATURE_SMAP),
-    Umip => CpuFeat::new_bit(X86_FEATURE_UMIP),
-    CetSS => CpuFeat::new_bit(CET_SS),
-    Xcr0X87 => CpuFeat::new_bit(XCR0_X87),
-    Xcr0Sse => CpuFeat::new_bit(XCR0_SSE),
-    Xcr0Avx => CpuFeat::new_bit(XCR0_AVX),
-    XsaveOpt => CpuFeat::new_bit(X86_FEATURE_XSAVEOPT),
-    HyperV => CpuFeat::new(HYPERV_INTERFACE, HYPERV_INTERFACE_SIGNATURE),
-    PhysAddrSizes => CpuFeat::new(PHYS_ADDR_SIZES, 0),
-    InvlpgbMax => CpuFeat::new(INVLPGB_MAX_PAGES, 0),
-    Cbit => CpuFeat::new(PTE_CBIT_POS, 0),
+    X2Apic => CpuFeat::new(X86_FEATURE_X2APIC),
+    Xsave => CpuFeat::new(X86_FEATURE_XSAVE),
+    Pge => CpuFeat::new(X86_FEATURE_PGE),
+    Sse1 => CpuFeat::new(X86_FEATURE_XMM),
+    Smep => CpuFeat::new(X86_FEATURE_SMEP),
+    Smap => CpuFeat::new(X86_FEATURE_SMAP),
+    Umip => CpuFeat::new(X86_FEATURE_UMIP),
+    CetSS => CpuFeat::new(CET_SS),
+    Xcr0X87 => CpuFeat::new(XCR0_X87),
+    Xcr0Sse => CpuFeat::new(XCR0_SSE),
+    Xcr0Avx => CpuFeat::new(XCR0_AVX),
+    XsaveOpt => CpuFeat::new(X86_FEATURE_XSAVEOPT),
+    HyperV => CpuFeat::new(HYPERV_INTERFACE).with_present(|v| v == HYPERV_INTERFACE_SIGNATURE),
+    PhysAddrSizes => CpuFeat::new(PHYS_ADDR_SIZES),
+    InvlpgbMax => CpuFeat::new(INVLPGB_MAX_PAGES).with_present(|_| true),
+    Cbit => CpuFeat::new(PTE_CBIT_POS),
 }
