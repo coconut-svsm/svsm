@@ -38,6 +38,8 @@ use bootdefs::kernel_launch::BLDR_BASE;
 use core::arch::asm;
 use core::mem::MaybeUninit;
 use cpufeature::backend::CpuidBackend;
+#[cfg(all(test, test_in_svsm, feature = "attest"))]
+use libaproxy::AttestationEvidence;
 use syscall::GlobalFeatureFlags;
 
 #[cfg(debug_assertions)]
@@ -125,6 +127,36 @@ impl SvsmPlatform for NativePlatform {
     fn capabilities(&self) -> Caps {
         let features = GlobalFeatureFlags::PLATFORM_TYPE_NATIVE;
         Caps::new(0, features)
+    }
+
+    /// Build synthetic SEV-SNP evidence for the in-SVSM tests.
+    ///
+    /// There is no PSP to ask for a real attestation report when running under
+    /// `--nocc`. Assemble a report that is zeroed except for the two fields an
+    /// attestation server looks at: the negotiation parameter hash in
+    /// `report_data`, and the launch measurement supplied by the test harness.
+    /// The signature is left zeroed, so this only attests successfully against
+    /// a test server that does not verify it.
+    ///
+    /// The host must implement the test I/O requests, see
+    /// [`has_test_iorequests()`](crate::testutils::has_test_iorequests).
+    #[cfg(all(test, test_in_svsm, feature = "attest"))]
+    fn attestation_evidence(&self, hash: &[u8]) -> Result<AttestationEvidence, SvsmError> {
+        use crate::attest::AttestationError;
+        use crate::greq::pld_report::AttestationReport;
+        use crate::testing::launch_measurement;
+        use crate::utils::vec::try_to_vec;
+        use zerocopy::IntoBytes;
+
+        let mut report_data = [0u8; 64];
+        report_data.copy_from_slice(hash);
+
+        let report = AttestationReport::new_unsigned(report_data, launch_measurement());
+
+        Ok(AttestationEvidence::Snp {
+            report: try_to_vec(report.as_bytes()).or(Err(AttestationError::VecAlloc))?,
+            certs_buf: None,
+        })
     }
 
     fn setup_hyperv_hypercalls(&self) -> Result<(), SvsmError> {
