@@ -27,6 +27,26 @@ pub struct RawAllocMapping {
 }
 
 impl RawAllocMapping {
+    /// Clones the page references covering `range`, propagating allocation
+    /// failure.
+    ///
+    /// # Returns
+    ///
+    /// The cloned page references, `Err(SvsmError::Mem)` if they could not be
+    /// allocated.
+    fn clone_pages<R>(&self, range: R) -> Result<Vec<Option<PageRef>>, SvsmError>
+    where
+        R: core::slice::SliceIndex<[Option<PageRef>], Output = [Option<PageRef>]>,
+    {
+        let src = &self.pages[range];
+        let mut pages = Vec::new();
+        pages
+            .try_reserve_exact(src.len())
+            .map_err(|_| SvsmError::Mem)?;
+        pages.extend_from_slice(src);
+        Ok(pages)
+    }
+
     /// Creates a new instance of RawAllocMapping
     ///
     /// # Arguments
@@ -40,6 +60,51 @@ impl RawAllocMapping {
         let count = align_up(size, PAGE_SIZE) >> PAGE_SHIFT;
         let pages: Vec<Option<PageRef>> = iter::repeat_n(None, count).collect();
         RawAllocMapping { pages, count }
+    }
+
+    /// Splits the mapping in two at `offset`, returning the allocations
+    /// covering `[0, offset)` and `[offset, mapping_size())`.
+    ///
+    /// The backing pages are shared with the new allocations.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset` - Offset in bytes to split at. Must be page-aligned and
+    ///   strictly inside the mapping.
+    ///
+    /// # Returns
+    ///
+    /// The two new allocations on success, `Err(SvsmError::Mem)` if the offset
+    /// is invalid or memory could not be allocated.
+    pub fn split_at(&self, offset: usize) -> Result<(Self, Self), SvsmError> {
+        let index = offset >> PAGE_SHIFT;
+        if offset % PAGE_SIZE != 0 || index == 0 || index >= self.count {
+            return Err(SvsmError::Mem);
+        }
+
+        Ok((
+            Self {
+                pages: self.clone_pages(..index)?,
+                count: index,
+            },
+            Self {
+                pages: self.clone_pages(index..)?,
+                count: self.count - index,
+            },
+        ))
+    }
+
+    /// Returns a copy of this allocation, sharing its backing pages.
+    ///
+    /// # Returns
+    ///
+    /// The copy on success, `Err(SvsmError::Mem)` if memory could not be
+    /// allocated.
+    pub fn try_clone(&self) -> Result<Self, SvsmError> {
+        Ok(Self {
+            pages: self.clone_pages(..)?,
+            count: self.count,
+        })
     }
 
     /// Allocates a single backing page of type PageFile if the page has not already
