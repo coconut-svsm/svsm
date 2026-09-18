@@ -362,17 +362,15 @@ int toupper(int c);
 int printf(const char *, ...);
 int sscanf(const char *, const char *, ...);
 
-// Functions exported by the SVSM
-extern FILE *fopen(const char *, const char *);
-extern int fclose(FILE *);
-extern size_t fread(void *, size_t, size_t, FILE *);
-extern size_t fwrite(const void *buffer, size_t size, size_t count, FILE *stream);
-extern int fseek(FILE *stream, long offset, int whence);
-extern long ftell(FILE *stream);
-extern int fflush(FILE *stream);
-
+FILE *fopen(const char *, const char *);
+int fclose(FILE *);
+size_t fread(void *, size_t, size_t, FILE *);
+size_t fwrite(const void *buffer, size_t size, size_t count, FILE *stream);
 int fprintf(FILE *, const char *, ...);
 int fputc(int c, FILE *f);
+int fseek(FILE *stream, long offset, int whence);
+long ftell(FILE *stream);
+int fflush(FILE *stream);
 
 int ferror(FILE *stream);
 int clearerr(FILE *stream);
@@ -406,5 +404,9 @@ typedef unsigned long fd_mask;
 typedef struct {
 	unsigned long fds_bits[FD_SETSIZE / 8 / sizeof(long)];
 } fd_set;
+
+#if defined(__pie__)
+#pragma GCC visibility pop
+#endif
 
 #endif
