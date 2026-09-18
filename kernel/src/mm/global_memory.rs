@@ -6,7 +6,7 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync_range;
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::percpu::with_pgtable;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
@@ -116,21 +116,17 @@ impl GlobalRangeGuard {
 
     fn map(&self, paddr: PhysAddr, flags: PTEntryFlags) -> Result<(), SvsmError> {
         if self.huge {
-            this_cpu()
-                .get_pgtable()
-                .map_region_2m(self.region(), paddr, flags, self.shared)
+            with_pgtable(|pg| pg.map_region_2m(self.region(), paddr, flags, self.shared))
         } else {
-            this_cpu()
-                .get_pgtable()
-                .map_region_4k(self.region(), paddr, flags, self.shared)
+            with_pgtable(|pg| pg.map_region_4k(self.region(), paddr, flags, self.shared))
         }
     }
 
     fn unmap(&self) {
         if self.huge {
-            this_cpu().get_pgtable().unmap_region_2m(self.region());
+            with_pgtable(|pg| pg.unmap_region_2m(self.region()));
         } else {
-            this_cpu().get_pgtable().unmap_region_4k(self.region());
+            with_pgtable(|pg| pg.unmap_region_4k(self.region()));
         }
     }
 

@@ -53,7 +53,7 @@ use crate::cpu::percpu::PERCPU_PAGING_ROOT_OFFSET;
 use crate::cpu::percpu::PERCPU_SHARED_INDEX_OFFSET;
 use crate::cpu::percpu::PERCPU_SHARED_OFFSET;
 use crate::cpu::percpu::irq_nesting_count;
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::percpu::{current_task, this_cpu};
 use crate::cpu::shadow_stack::{IS_CET_ENABLED, PL0_SSP, is_cet_ss_enabled};
 use crate::cpu::sse::{sse_restore_context, sse_save_context};
 use crate::cpu::x86::apic_post_irq;
@@ -315,12 +315,11 @@ pub fn start_kernel_task<S: Into<Arc<str>>>(
     start_info: KernelThreadStartInfo,
     name: S,
 ) -> Result<TaskPointer, SvsmError> {
-    let cpu = this_cpu();
-    let task = Task::create(cpu, start_info, name.into())?;
+    let task = Task::create(start_info, name.into())?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue_mut().prepare_run_task(task.clone());
+    this_cpu().runqueue_mut().prepare_run_task(task.clone());
 
     schedule();
 
@@ -341,9 +340,7 @@ pub fn start_kernel_task<S: Into<Arc<str>>>(
 /// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
 pub fn start_kernel_thread(start_info: KernelThreadStartInfo) -> Result<TaskPointer, SvsmError> {
     let current_task = current_task();
-    let cpu = this_cpu();
     let task = Task::create_thread(
-        cpu,
         start_info,
         current_task.get_task_name().clone(),
         current_task,
@@ -351,7 +348,7 @@ pub fn start_kernel_thread(start_info: KernelThreadStartInfo) -> Result<TaskPoin
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue_mut().prepare_run_task(task.clone());
+    this_cpu().runqueue_mut().prepare_run_task(task.clone());
 
     schedule();
 
@@ -374,8 +371,7 @@ pub fn create_user_task<S: Into<Arc<str>>>(
     root: Arc<dyn Directory>,
     name: S,
 ) -> Result<TaskPointer, SvsmError> {
-    let cpu = this_cpu();
-    Task::create_user(cpu, info, root, name.into())
+    Task::create_user(info, root, name.into())
 }
 
 /// Finished user-space task creation by putting the task on the global
@@ -390,10 +386,6 @@ pub fn finish_user_task(task: TaskPointer) {
 
     // Put task on the runqueue of this CPU
     this_cpu().runqueue_mut().prepare_run_task(task);
-}
-
-pub fn current_task() -> TaskPointer {
-    this_cpu().current_task()
 }
 
 /// Check to see if the task scheduled on the current processor has the given id
@@ -472,7 +464,7 @@ pub fn go_idle() {
     // Mark this task as blocked and indicate that it is waiting for wake after
     // idle.  Only one task on each CPU can be in the wake-from-idle state at
     // one time.
-    let task = this_cpu().current_task();
+    let task = current_task();
     task.set_task_blocked();
     let mut runqueue = this_cpu().runqueue_mut();
     assert!(runqueue.wake_from_idle.is_none());
@@ -492,7 +484,7 @@ pub fn set_affinity(cpu_index: usize) {
     // Affinity signaling is only required if the target CPU is not the current
     // CPU.
     if cpu_index != this_cpu().get_cpu_index() {
-        let task = this_cpu().current_task();
+        let task = current_task();
         let target_cpu = PERCPU_AREAS.get_by_cpu_index(cpu_index);
 
         // Disable interrupts to prevent delays in scheduling once the task

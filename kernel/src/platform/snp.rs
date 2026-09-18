@@ -24,7 +24,7 @@ use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::cpuid::init_cpuid_table;
 use crate::cpu::features::{Feature, cpu_get_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
-use crate::cpu::percpu::{PerCpu, current_ghcb, this_cpu};
+use crate::cpu::percpu::{PerCpu, current_ghcb, this_cpu, with_pgtable};
 use crate::cpu::smp::ApStartContextRef;
 use crate::cpu::tlb::TlbFlushScope;
 use crate::cpu::x86::{apic_enable, apic_initialize, apic_sw_enable};
@@ -426,7 +426,7 @@ impl SvsmPlatform for SnpPlatform {
     /// Caller must ensure that `vaddr` points to a properly aligned memory location and the
     /// memory accessed is part of a valid MMIO range.
     unsafe fn mmio_write(&self, vaddr: VirtAddr, data: &[u8]) -> Result<(), SvsmError> {
-        let paddr = this_cpu().get_pgtable().phys_addr(vaddr)?;
+        let paddr = with_pgtable(|pg| pg.phys_addr(vaddr))?;
 
         // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
         unsafe { crate::cpu::percpu::current_ghcb().mmio_write(paddr, data) }
@@ -443,7 +443,7 @@ impl SvsmPlatform for SnpPlatform {
         vaddr: VirtAddr,
         data: &mut [MaybeUninit<u8>],
     ) -> Result<(), SvsmError> {
-        let paddr = this_cpu().get_pgtable().phys_addr(vaddr)?;
+        let paddr = with_pgtable(|pg| pg.phys_addr(vaddr))?;
         // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
         unsafe { crate::cpu::percpu::current_ghcb().mmio_read(paddr, data) }
     }

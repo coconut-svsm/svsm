@@ -26,8 +26,8 @@ use crate::cpu::idt::svsm::{default_return, thread_entry_asm};
 use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::irqs_enable;
 use crate::cpu::irqs_enabled;
-use crate::cpu::percpu::PerCpu;
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::percpu::{PerCpu, current_task};
+use crate::cpu::percpu::{this_cpu, with_pgtable};
 use crate::cpu::shadow_stack::init_shadow_stack;
 use crate::cpu::sse::sse_restore_context;
 use crate::cpu::sse::xsave_area_size;
@@ -462,8 +462,9 @@ struct CreateTaskArguments {
 }
 
 impl Task {
-    fn create_common(cpu: &PerCpu, args: CreateTaskArguments) -> Result<TaskPointer, SvsmError> {
-        let mut pgtable = cpu.get_pgtable().clone_shared()?;
+    fn create_common(args: CreateTaskArguments) -> Result<TaskPointer, SvsmError> {
+        let cpu = this_cpu();
+        let mut pgtable = with_pgtable(|pg| pg.clone_shared())?;
 
         cpu.populate_page_table(&mut pgtable);
 
@@ -577,7 +578,6 @@ impl Task {
     }
 
     pub fn create(
-        cpu: &PerCpu,
         start_info: KernelThreadStartInfo,
         name: Arc<str>,
     ) -> Result<TaskPointer, SvsmError> {
@@ -588,11 +588,10 @@ impl Task {
             rootdir: opendir("/")?,
             thread_of: None,
         };
-        Self::create_common(cpu, create_args)
+        Self::create_common(create_args)
     }
 
     pub fn create_user(
-        cpu: &PerCpu,
         info: Box<UserExecInfo>,
         root: Arc<dyn Directory>,
         name: Arc<str>,
@@ -614,7 +613,7 @@ impl Task {
             rootdir: root,
             thread_of: None,
         };
-        Self::create_common(cpu, create_args).inspect_err(|_| {
+        Self::create_common(create_args).inspect_err(|_| {
             // In error case, make sure info gets freed
             // SAFETY: info_ptr was created above from a Box and not
             // dropped in the create_common call-path.
@@ -626,7 +625,6 @@ impl Task {
     ///
     /// # Arguments
     ///
-    /// * `cpu` - Reference to the `[PerCpu]` structure of the local CPU.
     /// * `entry` - Pointer the function to run in the thread.
     /// * `start_parameter` - `usize` to pass as parameter when calling `entry`.
     /// * `name` - User-visible name of the thread.
@@ -637,7 +635,6 @@ impl Task {
     ///
     /// `Some(TaskPointer)` with the new thread on success, `Err(SvsmError)` on failure.
     pub fn create_thread(
-        cpu: &PerCpu,
         start_info: KernelThreadStartInfo,
         name: Arc<str>,
         thread: TaskPointer,
@@ -649,7 +646,7 @@ impl Task {
             rootdir: opendir("/")?,
             thread_of: Some(thread),
         };
-        Self::create_common(cpu, create_args)
+        Self::create_common(create_args)
     }
 
     pub fn stack_bounds(&self) -> MemoryRegion<VirtAddr> {
@@ -840,7 +837,7 @@ impl Task {
     }
 
     pub fn wait_for_exit(&self) -> Option<IrqGuard> {
-        let current_task = this_cpu().current_task();
+        let current_task = current_task();
 
         // Lock the wait queue before examining the current state.  This must
         // be done with interrupts disabled, since once the current task has

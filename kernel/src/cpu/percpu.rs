@@ -17,7 +17,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::IrqState;
 use crate::cpu::LocalApic;
 use crate::cpu::ShadowStackInit;
-use crate::cpu::control_regs::{read_cr0, read_cr4};
+use crate::cpu::control_regs::{read_cr0, read_cr3, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
@@ -71,6 +71,7 @@ use core::ops::Deref;
 use core::ptr::{self, NonNull};
 use core::slice::Iter;
 use core::sync::atomic::AtomicBool;
+use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::AtomicU64;
 use core::sync::atomic::AtomicUsize;
@@ -417,7 +418,7 @@ where
     /// PerCpu IRQ state tracking
     irq_state: IrqState,
 
-    pgtbl: AtomicUsize,
+    pgtbl: AtomicPtr<PageTable>,
     cr3: AtomicUsize,
     tss: X86Tss,
     isst: RWLock<Isst>,
@@ -453,7 +454,7 @@ impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
     fn new(shared: &'static PerCpuShared) -> Result<Self, SvsmError> {
         Ok(Self {
-            pgtbl: AtomicUsize::new(0),
+            pgtbl: AtomicPtr::new(ptr::null_mut()),
             cr3: AtomicUsize::new(0),
             apic: X86Apic::default(),
             irq_state: IrqState::new(),
@@ -663,21 +664,15 @@ impl PerCpu {
         self.shared().apic_id()
     }
 
-    pub fn init_page_table(&self, pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
-        // SAFETY: The per-CPU address range is fully aligned to top-level
-        // paging boundaries.
-        unsafe {
-            self.vm_range.initialize()?;
-        }
-        self.set_pgtable(PageBox::leak(pgtable));
-
-        Ok(())
-    }
-
-    pub fn set_pgtable(&self, pgtable: &'static mut PageTable) {
+    fn set_pgtable(&self, pgtable: &'static mut PageTable) {
         let vaddr = VirtAddr::from(ptr::from_ref(pgtable) as usize);
         self.pgtbl
-            .compare_exchange(0, vaddr.into(), Ordering::Relaxed, Ordering::Relaxed)
+            .compare_exchange(
+                ptr::null_mut(),
+                pgtable,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            )
             .unwrap();
         // Capture the physical address as well for use in task switch.
         let paddr = virt_to_phys(vaddr);
@@ -744,15 +739,27 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn get_pgtable(&self) -> &'static mut PageTable {
+    /// Run callback `f` with the currently active page table. This method is
+    /// private so that users outside this module cannot call it on a remote
+    /// `PerCpu` instance (e.g. the BSP when setting up an AP's `PerCpu`.)
+    fn with_pgtable<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut PageTable) -> R,
+    {
+        if read_cr3().bits() == self.cr3.load(Ordering::Relaxed) {
+            f(self.get_pgtable())
+        } else {
+            let task = self.runqueue().current_task();
+            f(&mut task.page_table.lock())
+        }
+    }
+
+    fn get_pgtable(&self) -> &'static mut PageTable {
         // SAFETY: `self.pgtbl` is a write-once variable that holds the
         // physical address of this processor's paging root.  It is stored as
         // an `AtomicUsize` so it can be read from contexts that cannot
         // acquire locks.
-        unsafe {
-            let mut p = NonNull::new(self.pgtbl.load(Ordering::Relaxed) as *mut PageTable).unwrap();
-            p.as_mut()
-        }
+        unsafe { self.pgtbl.load(Ordering::Relaxed).as_mut().unwrap() }
     }
 
     /// Registers an already set up GHCB page for this CPU.
@@ -816,9 +823,9 @@ impl PerCpu {
         Ok(())
     }
 
-    fn finish_page_table(&self) {
-        let pgtable = self.get_pgtable();
-        self.vm_range.populate(pgtable);
+    fn install_pagetable(&self, mut pgtable: PageBox<PageTable>) {
+        self.vm_range.populate(&mut pgtable);
+        self.set_pgtable(PageBox::leak(pgtable));
     }
 
     pub fn dump_vm_ranges(&self) {
@@ -830,7 +837,11 @@ impl PerCpu {
         platform: &dyn SvsmPlatform,
         pgtable: PageBox<PageTable>,
     ) -> Result<(), SvsmError> {
-        self.init_page_table(pgtable)?;
+        // SAFETY: The per-CPU address range is fully aligned to top-level
+        // paging boundaries.
+        unsafe {
+            self.vm_range.initialize()?;
+        }
 
         // Map PerCpu data in own page-table
         self.map_self()?;
@@ -863,7 +874,7 @@ impl PerCpu {
             self.setup_isst();
         }
 
-        self.finish_page_table();
+        self.install_pagetable(pgtable);
 
         // Complete platform-specific initialization.
         platform.setup_percpu(self)?;
@@ -885,7 +896,7 @@ impl PerCpu {
     }
 
     fn setup_idle_task_internal(&self, start_info: KernelThreadStartInfo) -> Result<(), SvsmError> {
-        let idle_task = Task::create(self, start_info, Arc::from("idle"))?;
+        let idle_task = Task::create(start_info, Arc::from("idle"))?;
         self.runqueue_mut().set_idle_task(idle_task);
         Ok(())
     }
@@ -1204,8 +1215,7 @@ impl PerCpu {
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        let pgtable = self.get_pgtable();
-        self.vm_range.handle_page_fault(pgtable, vaddr, write)
+        self.with_pgtable(|pg| self.vm_range.handle_page_fault(pg, vaddr, write))
     }
 
     pub fn schedule_init(&self) -> TaskPointer {
@@ -1225,10 +1235,6 @@ impl PerCpu {
 
     pub fn runqueue_mut(&self) -> WriteLockGuardIrqSafe<'_, RunQueue> {
         self.shared.runqueue_mut()
-    }
-
-    pub fn current_task(&self) -> TaskPointer {
-        self.runqueue().current_task()
     }
 
     pub fn vrange_4k(&self) -> ReadLockGuard<'_, VirtualRange> {
@@ -1490,6 +1496,14 @@ impl PerCpuVmsas {
 
 pub fn current_task() -> TaskPointer {
     this_cpu().runqueue().current_task()
+}
+
+/// Run callback `f` with the currently active page table.
+pub fn with_pgtable<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut PageTable) -> R,
+{
+    this_cpu().with_pgtable(f)
 }
 
 pub fn cpu_idle_loop(cpu_index: usize) {
