@@ -42,7 +42,7 @@ fn main() {
         .clang_arg("-Wno-incompatible-library-redeclaration")
         .clang_arg("-nostdinc")
         .clang_arg("-isystemdeps/libcrt/include/")
-        .clang_arg("-fno-pie") // libcrt.h hides symbols if pie is enabled
+        .clang_arg("-fno-pie")
         .clang_arg("-Ideps/tpm-20-ref/TPMCmd/tpm/include")
         .clang_arg("-Ideps/TpmConfiguration")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))

@@ -3,14 +3,6 @@
 #ifndef __LIBCRT_H__
 #define __LIBCRT_H__
 
-// The SVSM guids are expected to be the last bytes of the svsm.bin file. When
-// we set the external dependencies symbols to be hidden, we prevent them from
-// being preempted. Otherwise, the SVSM guids will not be the last bytes of the
-// svsm.bin.
-#if defined(__pie__)
-#pragma GCC visibility push (hidden)
-#endif
-
 // features.h
 
 #define _Noreturn __attribute__((__noreturn__))
