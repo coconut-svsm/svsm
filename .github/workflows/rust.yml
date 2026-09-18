@@ -77,7 +77,12 @@ jobs:
           RUSTDOCFLAGS: -D warnings
 
       - name: Check that Cargo.lock is up to date
-        run: cargo update --workspace --locked
+        # Previous cargo invocations (clippy, doc, ...) silently regenerate
+        # Cargo.lock when it is out of date, which would hide a stale lock
+        # file. Restore the committed version before checking it.
+        run: |
+          git restore Cargo.lock
+          cargo update --workspace --locked
 
   build-test-debug:
     name: Build & test (debug)
