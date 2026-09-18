@@ -39,6 +39,8 @@ use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 use bootdefs::platform::SvsmPlatformType;
+#[cfg(feature = "attest")]
+use libaproxy::AttestationEvidence;
 
 #[unsafe(link_section = crate::ro_after_init_section!())]
 static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
@@ -166,6 +168,16 @@ pub trait SvsmPlatform: Sync {
 
     /// Get the features and the capabilities of the platform.
     fn capabilities(&self) -> Caps;
+
+    /// Fetch TEE attestation evidence for this platform, binding `hash` into
+    /// the evidence as user data (e.g. SEV-SNP's `REPORT_DATA`).
+    ///
+    /// Platforms with no attestation hardware return
+    /// [`SvsmError::NotSupported`].
+    #[cfg(feature = "attest")]
+    fn attestation_evidence(&self, _hash: &[u8]) -> Result<AttestationEvidence, SvsmError> {
+        Err(SvsmError::NotSupported)
+    }
 
     /// Enable platform-specific Hyper-V hypercall operations.
     fn setup_hyperv_hypercalls(&self) -> Result<(), SvsmError> {
