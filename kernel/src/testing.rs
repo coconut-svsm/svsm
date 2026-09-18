@@ -11,7 +11,7 @@ use crate::task::{TaskExitStatus, exec_user, wait_for_termination};
 use crate::{
     locking::{LockGuard, SpinLock},
     platform::SVSM_PLATFORM,
-    serial::SerialPort,
+    serial::{SerialPort, Terminal},
     testutils::has_qemu_testdev,
 };
 use alloc::format;
@@ -65,6 +65,29 @@ pub fn svsm_test_io() -> LockGuard<'static, Option<SerialPort<'static>>> {
     }
 
     sp
+}
+
+/// Size of a SEV-SNP launch measurement, in bytes.
+pub const LAUNCH_MEASUREMENT_SIZE: usize = 48;
+
+/// Ask the host for the pre-calculated launch measurement of the IGVM image
+/// under test.
+///
+/// The host computes it with `igvmmeasure`, see [`IORequest::GetLaunchMeasurement`]
+/// and `test_io()` in scripts/test-in-svsm.sh. Callers must make sure the host
+/// implements the test I/O requests, see
+/// [`has_test_iorequests()`](crate::testutils::has_test_iorequests).
+pub fn launch_measurement() -> [u8; LAUNCH_MEASUREMENT_SIZE] {
+    let sp = svsm_test_io().unwrap();
+
+    sp.put_byte(IORequest::GetLaunchMeasurement as u8);
+
+    let mut measurement = [0u8; LAUNCH_MEASUREMENT_SIZE];
+    for byte in &mut measurement {
+        *byte = sp.get_byte();
+    }
+
+    measurement
 }
 
 pub fn svsm_kernel_test_runner(test_cases: &[&test::TestDescAndFn]) {
