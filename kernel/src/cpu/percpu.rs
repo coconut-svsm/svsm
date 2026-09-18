@@ -34,11 +34,12 @@ use crate::locking::{
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
+use crate::mm::vm::{
+    Mapping, PrivateVmAllocator, VMKernelStack, VMPhysMem, VMReserved, VmRange, Vmr, VmrMapping,
+};
 use crate::mm::{
-    PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU_BASE,
-    SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END, SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K,
-    SVSM_PERCPU_TEMP_SIZE_2M, SVSM_PERCPU_TEMP_SIZE_4K, SVSM_PERCPU_VMSA_BASE,
+    AddrSpaceDescriptor, PERCPU_TEMP_2M, PERCPU_TEMP_4K, PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK,
+    SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU, SVSM_PERCPU_CAA, SVSM_PERCPU_VMSA_BASE,
     SVSM_SHADOW_STACK_ISST_DF_BASE, SVSM_SHADOW_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
     virt_to_phys,
 };
@@ -254,8 +255,8 @@ impl GuestVmsaRef {
     pub fn caa(&self) -> Option<NonNull<SvsmCaa>> {
         let caa_phys = self.caa_phys()?;
         let offset = caa_phys.page_offset();
-        let ptr = (SVSM_PERCPU_CAA_BASE + offset).as_mut_ptr();
-        // SAFETY: `SVSM_PERCPU_CAA_BASE` is defined at compile time to
+        let ptr = (SVSM_PERCPU_CAA.base() + offset).as_mut_ptr();
+        // SAFETY: `SVSM_PERCPU_CAA.base()` is defined at compile time to
         // page-aligned and non-zero. Adding a page offset to a page-aligned
         // address can never overflow.
         unsafe { Some(NonNull::new_unchecked(ptr)) }
@@ -388,6 +389,17 @@ pub const PERCPU_SHARED_INDEX_OFFSET: usize = offset_of!(PerCpuShared, cpu_index
 
 const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
 
+/// The per-CPU virtual memory range.
+#[derive(Debug)]
+pub struct PerCpuVm;
+
+impl VmRange for PerCpuVm {
+    const DESCRIPTOR: AddrSpaceDescriptor = SVSM_PERCPU;
+    const PT_FLAGS: PTEntryFlags = PTEntryFlags::GLOBAL;
+    const PER_CPU: bool = true;
+    type Allocator = PrivateVmAllocator<Self>;
+}
+
 /// CPU-local data.
 ///
 /// While the contents of this struct are never accessed outside the local CPU
@@ -424,7 +436,7 @@ where
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     reset_ip: AtomicU64,
     /// PerCpu Virtual Memory Range
-    vm_range: VMR,
+    vm_range: Vmr<PerCpuVm>,
     /// Address allocator for per-cpu 4k temporary mappings
     vrange_4k: RWLock<VirtualRange>,
     /// Address allocator for per-cpu 2m temporary mappings
@@ -461,11 +473,7 @@ impl PerCpu {
             isst: RWLock::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
             reset_ip: AtomicU64::new(0xffff_fff0),
-            vm_range: {
-                let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL)?;
-                vmr.set_per_cpu(true);
-                vmr
-            },
+            vm_range: Vmr::new(),
 
             vrange_4k: RWLock::new(VirtualRange::new()),
             vrange_2m: RWLock::new(VirtualRange::new()),
@@ -664,11 +672,7 @@ impl PerCpu {
     }
 
     pub fn init_page_table(&self, pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
-        // SAFETY: The per-CPU address range is fully aligned to top-level
-        // paging boundaries.
-        unsafe {
-            self.vm_range.initialize()?;
-        }
+        self.vm_range.initialize()?;
         self.set_pgtable(PageBox::leak(pgtable));
 
         Ok(())
@@ -790,28 +794,28 @@ impl PerCpu {
         let vaddr = VirtAddr::from(ptr::from_ref(self));
         let paddr = virt_to_phys(vaddr);
         let self_mapping = VMPhysMem::new_mapping(paddr, PAGE_SIZE, true);
-        self.vm_range.insert_at(SVSM_PERCPU_BASE, self_mapping)?;
+        self.vm_range.insert_at(SVSM_PERCPU.base(), self_mapping)?;
         Ok(())
     }
 
     fn initialize_vm_ranges(&self) -> Result<(), SvsmError> {
-        const PAGE_COUNT_4K: usize = SVSM_PERCPU_TEMP_SIZE_4K / PAGE_SIZE;
+        const PAGE_COUNT_4K: usize = PERCPU_TEMP_4K.size() / PAGE_SIZE;
         const { assert!(PAGE_COUNT_4K < VirtualRange::CAPACITY) };
 
-        let temp_mapping_4k = VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_4K);
+        let temp_mapping_4k = VMReserved::new_mapping(PERCPU_TEMP_4K.size());
         self.vm_range
-            .insert_at(SVSM_PERCPU_TEMP_BASE_4K, temp_mapping_4k)?;
+            .insert_at(PERCPU_TEMP_4K.base(), temp_mapping_4k)?;
         self.vrange_4k_mut()
-            .init(SVSM_PERCPU_TEMP_BASE_4K, PAGE_COUNT_4K, PAGE_SHIFT);
+            .init(PERCPU_TEMP_4K.base(), PAGE_COUNT_4K, PAGE_SHIFT);
 
-        const PAGE_COUNT_2M: usize = SVSM_PERCPU_TEMP_SIZE_2M / PAGE_SIZE_2M;
+        const PAGE_COUNT_2M: usize = PERCPU_TEMP_2M.size() / PAGE_SIZE_2M;
         const { assert!(PAGE_COUNT_2M < VirtualRange::CAPACITY) };
 
-        let temp_mapping_2m = VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_2M);
+        let temp_mapping_2m = VMReserved::new_mapping(PERCPU_TEMP_2M.size());
         self.vm_range
-            .insert_at(SVSM_PERCPU_TEMP_BASE_2M, temp_mapping_2m)?;
+            .insert_at(PERCPU_TEMP_2M.base(), temp_mapping_2m)?;
         self.vrange_2m_mut()
-            .init(SVSM_PERCPU_TEMP_BASE_2M, PAGE_COUNT_2M, PAGE_SHIFT_2M);
+            .init(PERCPU_TEMP_2M.base(), PAGE_COUNT_2M, PAGE_SHIFT_2M);
 
         Ok(())
     }
@@ -1046,14 +1050,15 @@ impl PerCpu {
 
     fn unmap_caa(&self) {
         // Ignore errors - the mapping might or might not be there
-        let _ = self.vm_range.remove(SVSM_PERCPU_CAA_BASE);
+        let _ = self.vm_range.remove(SVSM_PERCPU_CAA.base());
     }
 
     fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.unmap_caa();
 
         let caa_mapping = VMPhysMem::new_mapping(paddr, PAGE_SIZE, true);
-        self.vm_range.insert_at(SVSM_PERCPU_CAA_BASE, caa_mapping)?;
+        self.vm_range
+            .insert_at(SVSM_PERCPU_CAA.base(), caa_mapping)?;
 
         Ok(())
     }
@@ -1186,12 +1191,15 @@ impl PerCpu {
     ///
     /// # Returns
     ///
-    /// On success, a new ['VMRMapping'} that provides a virtual memory address for
-    /// the mapping which remains valid until the ['VRMapping'] is dropped.
+    /// On success, a new [`VmrMapping`] that provides a virtual memory address for
+    /// the mapping which remains valid until the [`VmrMapping`] is dropped.
     ///
     /// On error, an ['SvsmError'].
-    pub fn new_mapping(&self, mapping: Mapping) -> Result<VMRMapping<&VMR>, SvsmError> {
-        VMRMapping::new(&self.vm_range, mapping)
+    pub fn new_mapping(
+        &self,
+        mapping: Mapping,
+    ) -> Result<VmrMapping<PerCpuVm, &Vmr<PerCpuVm>>, SvsmError> {
+        VmrMapping::new(&self.vm_range, mapping)
     }
 
     /// Add the PerCpu virtual range into the provided pagetable
@@ -1263,7 +1271,7 @@ pub fn this_cpu() -> &'static PerCpu {
     // SAFETY: The PerCPU area is always mapped at the same virtual address, so
     // dereferencing a pointer to that address is safe. The PerCPU area is also
     // never freed, so using a static lifetime is safe as well.
-    unsafe { &*SVSM_PERCPU_BASE.as_ptr::<PerCpu>() }
+    unsafe { &*SVSM_PERCPU.base().as_ptr::<PerCpu>() }
 }
 
 pub fn try_this_cpu() -> Option<&'static PerCpu> {
@@ -1282,7 +1290,7 @@ pub fn try_this_cpu() -> Option<&'static PerCpu> {
              ".quad (1b)",
              ".quad (2b)",
              ".popsection",
-                in(reg) SVSM_PERCPU_BASE.bits(),
+                in(reg) SVSM_PERCPU.base().bits(),
                 out(reg) _,
                 out("rcx") rcx,
                 options(att_syntax, nostack));
