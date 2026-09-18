@@ -405,4 +405,8 @@ typedef struct {
 	unsigned long fds_bits[FD_SETSIZE / 8 / sizeof(long)];
 } fd_set;
 
+#if defined(__pie__)
+#pragma GCC visibility pop
+#endif
+
 #endif
