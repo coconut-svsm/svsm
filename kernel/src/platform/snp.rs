@@ -18,6 +18,8 @@ use super::snp_fw::prepare_fw_launch;
 use super::snp_fw::print_fw_meta;
 use super::snp_fw::validate_fw_memory;
 use crate::address::{Address, PhysAddr, VirtAddr};
+#[cfg(feature = "attest")]
+use crate::attest::AttestationError;
 use crate::boot_params::BootParams;
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::cpuid_table;
@@ -31,6 +33,11 @@ use crate::cpu::x86::{apic_enable, apic_initialize, apic_sw_enable};
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
+#[cfg(feature = "attest")]
+use crate::greq::{
+    pld_report::{SnpReportRequest, SnpReportResponse},
+    services::get_regular_report,
+};
 use crate::hyperv;
 use crate::io::IOPort;
 use crate::mm::PAGE_SIZE;
@@ -52,6 +59,8 @@ use crate::sev::{
 };
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
+#[cfg(feature = "attest")]
+use crate::utils::vec::{try_to_vec, vec_sized};
 #[cfg(test)]
 use bootdefs::platform::SvsmPlatformType;
 use core::arch::x86_64::CpuidResult;
@@ -60,7 +69,11 @@ use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
 use cpufeature::CpuidFeature;
 use cpufeature::backend::CpuidBackend;
+#[cfg(feature = "attest")]
+use libaproxy::AttestationEvidence;
 use syscall::GlobalFeatureFlags;
+#[cfg(feature = "attest")]
+use zerocopy::{FromBytes, IntoBytes};
 
 static GHCB_IO_DRIVER: GHCBIOPort = GHCBIOPort::new();
 
@@ -276,6 +289,43 @@ impl SvsmPlatform for SnpPlatform {
         let vm_bitmap: u64 = 0xE;
         let features = GlobalFeatureFlags::PLATFORM_TYPE_SNP;
         Caps::new(vm_bitmap, features)
+    }
+
+    #[cfg(feature = "attest")]
+    fn attestation_evidence(&self, hash: &[u8]) -> Result<AttestationEvidence, SvsmError> {
+        extern crate alloc;
+        use alloc::vec::Vec;
+
+        let mut user_data = [0u8; 64];
+        user_data.copy_from_slice(hash);
+
+        let request = SnpReportRequest::new(user_data, 0, 1);
+
+        let data = try_to_vec(request.as_bytes()).or(Err(AttestationError::VecAlloc))?;
+        // The buffer currently contains the the SnpReportRequest structure. However, SVSM
+        // will fill this buffer in with the SnpReportResponse when fetching the report.
+        // Ensure the array is large enough to contain the response (which is much larger
+        // than the request, as it contains the attestation report).
+        let mut buf: Vec<u8> = vec_sized(2048).or(Err(AttestationError::VecAlloc))?;
+
+        buf[..data.len()].copy_from_slice(&data);
+
+        let len = get_regular_report(&mut buf).or(Err(AttestationError::SnpGetReport))?;
+
+        // We have the length of the response. The rest of the response is unused.
+        // Parse the SnpReportResponse from the slice of the buf containing the
+        // response (that is, &buf[0..len]).
+        let resp = SnpReportResponse::ref_from_bytes(&buf[..len])
+            .or(Err(AttestationError::SnpGetReport))?;
+
+        // Get the attestation report as bytes for serialization in the
+        // AttestationRequest.
+        let report = try_to_vec(resp.report().as_bytes()).or(Err(AttestationError::VecAlloc))?;
+
+        Ok(AttestationEvidence::Snp {
+            report,
+            certs_buf: None,
+        })
     }
 
     /// # Safety
