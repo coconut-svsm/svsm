@@ -372,6 +372,32 @@ mod tests {
         }
     }
 
+    /// Run a full attestation against the host attestation proxy.
+    ///
+    /// Requires `aproxy` and an attestation server on the host, see
+    /// Documentation/docs/developer/TESTING.md.
+    ///
+    /// Skipped unless the host reports that it started them. Once it has,
+    /// every failure is fatal on purpose, including failing to reach the
+    /// proxy: `svsm_init()` only logs an error when attestation fails, so a
+    /// regression here would otherwise go unnoticed.
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg(test_in_svsm)]
+    fn test_attestation() {
+        use crate::testing::attestation_enabled;
+        use crate::testutils::has_test_iorequests;
+
+        if !has_test_iorequests() || !attestation_enabled() {
+            return;
+        }
+
+        let mut driver =
+            AttestationDriver::try_from(Tee::Snp).expect("failed to set up the attestation driver");
+
+        let _ = driver.attest().expect("attestation failed");
+    }
+
     mod negotiation_hash {
         use super::*;
 
