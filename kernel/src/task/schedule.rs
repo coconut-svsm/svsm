@@ -315,12 +315,11 @@ pub fn start_kernel_task<S: Into<Arc<str>>>(
     start_info: KernelThreadStartInfo,
     name: S,
 ) -> Result<TaskPointer, SvsmError> {
-    let cpu = this_cpu();
-    let task = Task::create(cpu, start_info, name.into())?;
+    let task = Task::create(start_info, name.into())?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue_mut().prepare_run_task(task.clone());
+    this_cpu().runqueue_mut().prepare_run_task(task.clone());
 
     schedule();
 
@@ -341,9 +340,7 @@ pub fn start_kernel_task<S: Into<Arc<str>>>(
 /// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
 pub fn start_kernel_thread(start_info: KernelThreadStartInfo) -> Result<TaskPointer, SvsmError> {
     let current_task = current_task();
-    let cpu = this_cpu();
     let task = Task::create_thread(
-        cpu,
         start_info,
         current_task.get_task_name().clone(),
         current_task,
@@ -351,7 +348,7 @@ pub fn start_kernel_thread(start_info: KernelThreadStartInfo) -> Result<TaskPoin
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue_mut().prepare_run_task(task.clone());
+    this_cpu().runqueue_mut().prepare_run_task(task.clone());
 
     schedule();
 
@@ -374,8 +371,7 @@ pub fn create_user_task<S: Into<Arc<str>>>(
     root: Arc<dyn Directory>,
     name: S,
 ) -> Result<TaskPointer, SvsmError> {
-    let cpu = this_cpu();
-    Task::create_user(cpu, info, root, name.into())
+    Task::create_user(info, root, name.into())
 }
 
 /// Finished user-space task creation by putting the task on the global

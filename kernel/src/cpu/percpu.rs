@@ -881,7 +881,7 @@ impl PerCpu {
     }
 
     fn setup_idle_task_internal(&self, start_info: KernelThreadStartInfo) -> Result<(), SvsmError> {
-        let idle_task = Task::create(self, start_info, Arc::from("idle"))?;
+        let idle_task = Task::create(start_info, Arc::from("idle"))?;
         self.runqueue_mut().set_idle_task(idle_task);
         Ok(())
     }
