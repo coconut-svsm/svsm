@@ -95,10 +95,11 @@ sudo apt build-dep qemu-system-x86
 
 Support for IGVM within QEMU depends on the IGVM library. This needs to be
 built and installed prior to building QEMU. Newer versions of the IGVM library
-require `cargo-c` to build, install it with:
+require `cargo-c` and `cbindgen` to build (the C header is generated from the
+Rust sources), install them with:
 
 ```shell
-cargo install cargo-c
+cargo install cargo-c cbindgen
 ```
 
 When `cargo-c` is installed, a local IGVM library and header can be built:
@@ -208,8 +209,12 @@ by recent edk2 versions.  Distributions released in the second half of
 You can copy the firmware file to a known location after the build is complete:
 
 ```shell
-cp Build/OvmfX64/DEBUG_GCC5/FV/OVMF.fd /path/to/firmware/
+cp Build/OvmfX64/DEBUG_GCC/FV/OVMF.fd /path/to/firmware/
 ```
+
+The output directory follows the toolchain tag given to `-t`, so it is
+`DEBUG_GCC` for the command above. Older edk2 trees used `GCC5` and put the
+file under `DEBUG_GCC5` instead.
 
 Preparing the guest image
 -------------------------
@@ -329,6 +334,13 @@ sudo $HOME/bin/qemu-svsm/bin/qemu-system-x86_64 \
 Note: With QEMU 10.1 (which includes IGVM support), guests may fail to boot
 during VGA initialization. The `-vga none` option is added temporarily to
 disable VGA init until this issue is resolved.
+
+Note: on the very first boot of a fresh distribution cloud image the guest
+may stop after the UEFI fallback boot loader (`fbx64.efi`) registers the boot
+entry and requests a cold reset. An SEV-SNP guest cannot be reset in place,
+so with `-no-reboot` QEMU simply exits at that point. The boot entry has
+already been written to the disk image, so starting QEMU a second time with
+the same command boots through to the guest. This happens once per image.
 
 If everything works, initialization messages of the SVSM should appear
 in the terminal:
