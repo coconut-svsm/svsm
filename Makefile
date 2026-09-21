@@ -129,7 +129,7 @@ miri:
 
 test-igvm: $(IGVM_TEST_FILES)
 
-test-in-svsm: bin/coconut-test-qemu.igvm $(IGVMMEASUREBIN)
+test-in-svsm: bin/coconut-test-qemu.igvm $(IGVMMEASUREBIN) $(APROXYBIN)
 	./scripts/test-in-svsm.sh $(TEST_ARGS)
 
 test-in-hyperv: bin/coconut-test-hyperv.igvm

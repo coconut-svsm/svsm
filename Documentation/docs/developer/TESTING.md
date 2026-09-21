@@ -33,12 +33,31 @@ Just like booting a regular build of the SVSM, this requires a QEMU version
 built as specified in the [INSTALL.md](../installation/INSTALL.md) document.
 The path to the QEMU binary must be passed to the relevant script (see below).
 
+One of the tests performs a full attestation, which needs a Key Broker Service
+on the host for the guest to attest against. This is provided by
+[kbs-test](https://github.com/coconut-svsm/kbs-test), a throwaway server that
+is not part of this repository and must be built separately. Clone it outside
+of the COCONUT-SVSM checkout: cargo refuses to build a package nested under the
+COCONUT-SVSM workspace that is not a member of it.
+
+```shell
+git clone https://github.com/coconut-svsm/kbs-test.git
+cd kbs-test
+cargo build --release
+```
+
+The path of the resulting binary (`kbs-test/target/release/kbs-test`) is
+passed to the test script either with the `KBS` environment variable or with
+`--kbs`. The script starts the server itself, along with the attestation proxy
+that bridges it to the guest, and shuts both down when the tests finish. The attestation test is opt-in: if
+neither is given, the guest skips it. A path that does not exist is an error.
+
 ### Running
 
 ```shell
-QEMU=/path/to/qemu ./scripts/test-in-svsm.sh
+QEMU=/path/to/qemu KBS=/path/to/kbs-test ./scripts/test-in-svsm.sh
 # or
-QEMU=/path/to/qemu make test-in-svsm
+QEMU=/path/to/qemu KBS=/path/to/kbs-test make test-in-svsm
 ```
 
 The Makefile target will (re)build the relevant code for you before launching
