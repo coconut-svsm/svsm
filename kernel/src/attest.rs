@@ -129,7 +129,7 @@ impl AttestationDriver {
     pub fn attest(&mut self) -> Result<SecretSlice, SvsmError> {
         let negotiation = self.negotiation()?;
 
-        Ok(self.attestation(negotiation)?)
+        self.attestation(negotiation)
     }
 
     /// Send a negotiation request to the proxy. Proxy should reply with Negotiation parameters
@@ -150,7 +150,7 @@ impl AttestationDriver {
     /// Send an attestation request to the proxy. Proxy should reply with attestation response
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
-    fn attestation(&mut self, n: NegotiationResponse) -> Result<SecretSlice, AttestationError> {
+    fn attestation(&mut self, n: NegotiationResponse) -> Result<SecretSlice, SvsmError> {
         let curve =
             Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
 
@@ -176,15 +176,15 @@ impl AttestationDriver {
             .map_err(|_| AttestationError::AttestationDeserialize)?;
 
         if !response.success {
-            return Err(AttestationError::Failed);
+            Err(AttestationError::Failed)?
         }
 
         let Some(decryption) = response.decryption else {
-            return Err(AttestationError::PublicKeyMissing)?;
+            Err(AttestationError::PublicKeyMissing)?
         };
 
         let Some(secret_enc) = response.secret else {
-            return Err(AttestationError::SecretMissing);
+            Err(AttestationError::SecretMissing)?
         };
 
         // `secret_enc` holds ciphertext from the attestation server. Move it
