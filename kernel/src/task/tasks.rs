@@ -38,7 +38,7 @@ use crate::locking::RWLock;
 use crate::locking::SpinLock;
 use crate::locking::SpinLockIrqSafe;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR, VMRMapping};
+use crate::mm::vm::{Mapping, VMFlags, VMKernelStack, VMR, VMRMapping};
 use crate::mm::{
     PageBox, SVSM_PERTASK_BASE, SVSM_PERTASK_END, USER_MEM_END, USER_MEM_START,
     mappings::create_anon_mapping, mappings::create_file_mapping,
@@ -874,7 +874,7 @@ impl Task {
         file: Option<&FileHandle>,
         offset: usize,
         size: usize,
-        flags: VMFileMappingFlags,
+        flags: VMFlags,
     ) -> Result<VMRMapping<&'a VMR>, SvsmError> {
         let mapping = if let Some(f) = file {
             create_file_mapping(f, offset, size, flags)?
@@ -882,7 +882,7 @@ impl Task {
             create_anon_mapping(size, flags)?
         };
 
-        if flags.contains(VMFileMappingFlags::Fixed) {
+        if flags.contains(VMFlags::Fixed) {
             VMRMapping::new_at(vmr, addr, mapping)
         } else {
             VMRMapping::new_hint(vmr, addr, mapping)
@@ -895,7 +895,7 @@ impl Task {
         file: Option<&FileHandle>,
         offset: usize,
         size: usize,
-        flags: VMFileMappingFlags,
+        flags: VMFlags,
     ) -> Result<VirtAddr, SvsmError> {
         let guard = Self::mmap_common(self.mm.kernel_range(), addr, file, offset, size, flags)?;
         Ok(guard.leak())
@@ -907,7 +907,7 @@ impl Task {
         file: Option<&FileHandle>,
         offset: usize,
         size: usize,
-        flags: VMFileMappingFlags,
+        flags: VMFlags,
     ) -> Result<VMRMapping<&'a VMR>, SvsmError> {
         Self::mmap_common(self.mm.kernel_range(), addr, file, offset, size, flags)
     }
@@ -918,7 +918,7 @@ impl Task {
         file: Option<&FileHandle>,
         offset: usize,
         size: usize,
-        flags: VMFileMappingFlags,
+        flags: VMFlags,
     ) -> Result<VirtAddr, SvsmError> {
         let vmr = self.mm.user_range().ok_or(SvsmError::Mem)?;
         let guard = Self::mmap_common(vmr, addr, file, offset, size, flags)?;
@@ -933,6 +933,29 @@ impl Task {
     pub fn munmap_user(&self, addr: VirtAddr) -> Result<(), SvsmError> {
         let vmr = self.mm.user_range().ok_or(SvsmError::Mem)?;
         vmr.remove(addr).map(|_| ())
+    }
+
+    /// Sets the access to a region of this task's user address space.
+    ///
+    /// # Arguments
+    ///
+    /// * `region` - The user virtual memory region to change. Start and end
+    ///   addresses must be aligned to 4KiB and the region must be fully
+    ///   mapped.
+    /// * `access` - The access the region permits afterwards. As for
+    ///   [`VMR::set_access()`], this is the access the region ends up with and
+    ///   not the change to make to it.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, `Err(SvsmError)` on failure.
+    pub fn set_user_access(
+        &self,
+        region: MemoryRegion<VirtAddr>,
+        access: VMFlags,
+    ) -> Result<(), SvsmError> {
+        let vmr = self.mm.user_range().ok_or(SvsmError::Mem)?;
+        vmr.set_access(region, access)
     }
 
     /// Adds an object to the current task.

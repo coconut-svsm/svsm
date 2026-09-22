@@ -199,3 +199,115 @@ fn test_elf64_load_segments() {
     assert_eq!(total_range.vaddr_begin, 0x1000);
     assert_eq!(total_range.vaddr_end, 0x4000);
 }
+
+const TEST_ELF_HDR_SIZE: usize = 64;
+const TEST_PHDR_SIZE: usize = 56;
+
+/// Writes a minimal valid 64-bit little-endian ELF header for an ET_EXEC
+/// x86-64 file with `phnum` program headers immediately following the header.
+fn write_test_elf_hdr(buf: &mut [u8], phnum: u16) {
+    buf[..4].copy_from_slice(&[0x7f, b'E', b'L', b'F']);
+    buf[4] = 2; // ELFCLASS64
+    buf[5] = 1; // ELFDATA2LSB
+    buf[6] = 1; // EV_CURRENT
+    buf[16..18].copy_from_slice(&2u16.to_le_bytes()); // e_type = ET_EXEC
+    buf[18..20].copy_from_slice(&62u16.to_le_bytes()); // e_machine = EM_X86_64
+    buf[20..24].copy_from_slice(&1u32.to_le_bytes()); // e_version = EV_CURRENT
+    buf[24..32].copy_from_slice(&0x1000u64.to_le_bytes()); // e_entry
+    buf[32..40].copy_from_slice(&(TEST_ELF_HDR_SIZE as u64).to_le_bytes()); // e_phoff
+    buf[52..54].copy_from_slice(&(TEST_ELF_HDR_SIZE as u16).to_le_bytes()); // e_ehsize
+    buf[54..56].copy_from_slice(&(TEST_PHDR_SIZE as u16).to_le_bytes()); // e_phentsize
+    buf[56..58].copy_from_slice(&phnum.to_le_bytes()); // e_phnum
+    buf[58..60].copy_from_slice(&64u16.to_le_bytes()); // e_shentsize
+}
+
+/// Writes a program header with the given type, vaddr and memsz. The segment
+/// has no file backing (p_filesz = 0) and no alignment constraints
+/// (p_align = 1).
+fn write_test_phdr(buf: &mut [u8], p_type: Elf64Word, vaddr: Elf64Addr, memsz: Elf64Xword) {
+    buf[..4].copy_from_slice(&p_type.to_le_bytes());
+    buf[4..8].copy_from_slice(&4u32.to_le_bytes()); // p_flags = PF_R
+    buf[16..24].copy_from_slice(&vaddr.to_le_bytes()); // p_vaddr
+    buf[40..48].copy_from_slice(&memsz.to_le_bytes()); // p_memsz
+    buf[48..56].copy_from_slice(&1u64.to_le_bytes()); // p_align
+}
+
+#[test]
+fn test_elf64_relro_range() {
+    let mut byte_data = [0u8; TEST_ELF_HDR_SIZE + 2 * TEST_PHDR_SIZE];
+    write_test_elf_hdr(&mut byte_data, 2);
+    let (load_phdr, relro_phdr) = byte_data[TEST_ELF_HDR_SIZE..].split_at_mut(TEST_PHDR_SIZE);
+    write_test_phdr(load_phdr, Elf64Phdr::PT_LOAD, 0x1000, 0x2000);
+    write_test_phdr(relro_phdr, Elf64Phdr::PT_GNU_RELRO, 0x1000, 0x500);
+
+    let elf = Elf64File::read(&byte_data).expect("Failed to parse test ELF file");
+    assert_eq!(
+        elf.relro_vaddr_range,
+        Some(Elf64AddrRange {
+            vaddr_begin: 0x1000,
+            vaddr_end: 0x1500,
+        })
+    );
+
+    // Image loaded at the link-time address: no adjustment.
+    assert_eq!(
+        elf.image_relro_vaddr_range(0x1000),
+        Some(Elf64AddrRange {
+            vaddr_begin: 0x1000,
+            vaddr_end: 0x1500,
+        })
+    );
+
+    // Image loaded at a different address: range adjusted by the load base.
+    assert_eq!(
+        elf.image_relro_vaddr_range(0x9000),
+        Some(Elf64AddrRange {
+            vaddr_begin: 0x9000,
+            vaddr_end: 0x9500,
+        })
+    );
+}
+
+#[test]
+fn test_elf64_relro_range_empty() {
+    // An empty (p_memsz = 0) PT_GNU_RELRO segment is rejected.
+    let mut byte_data = [0u8; TEST_ELF_HDR_SIZE + 2 * TEST_PHDR_SIZE];
+    write_test_elf_hdr(&mut byte_data, 2);
+    let (load_phdr, relro_phdr) = byte_data[TEST_ELF_HDR_SIZE..].split_at_mut(TEST_PHDR_SIZE);
+    write_test_phdr(load_phdr, Elf64Phdr::PT_LOAD, 0x1000, 0x2000);
+    write_test_phdr(relro_phdr, Elf64Phdr::PT_GNU_RELRO, 0x1000, 0);
+
+    let res = Elf64File::read(&byte_data);
+    assert_eq!(res, Err(ElfError::InvalidSegmentSize));
+}
+
+#[test]
+fn test_elf64_relro_range_absent() {
+    let mut byte_data = [0u8; TEST_ELF_HDR_SIZE + TEST_PHDR_SIZE];
+    write_test_elf_hdr(&mut byte_data, 1);
+    write_test_phdr(
+        &mut byte_data[TEST_ELF_HDR_SIZE..],
+        Elf64Phdr::PT_LOAD,
+        0x1000,
+        0x2000,
+    );
+
+    let elf = Elf64File::read(&byte_data).expect("Failed to parse test ELF file");
+    assert_eq!(elf.relro_vaddr_range, None);
+    assert_eq!(elf.image_relro_vaddr_range(0x1000), None);
+}
+
+#[test]
+fn test_elf64_relro_phdr_conflict() {
+    // Multiple PT_GNU_RELRO program headers are rejected.
+    let mut byte_data = [0u8; TEST_ELF_HDR_SIZE + 3 * TEST_PHDR_SIZE];
+    write_test_elf_hdr(&mut byte_data, 3);
+    let (load_phdr, rest) = byte_data[TEST_ELF_HDR_SIZE..].split_at_mut(TEST_PHDR_SIZE);
+    let (relro_phdr0, relro_phdr1) = rest.split_at_mut(TEST_PHDR_SIZE);
+    write_test_phdr(load_phdr, Elf64Phdr::PT_LOAD, 0x1000, 0x2000);
+    write_test_phdr(relro_phdr0, Elf64Phdr::PT_GNU_RELRO, 0x1000, 0x500);
+    write_test_phdr(relro_phdr1, Elf64Phdr::PT_GNU_RELRO, 0x1500, 0x500);
+
+    let res = Elf64File::read(&byte_data);
+    assert_eq!(res, Err(ElfError::RelroPhdrConflict));
+}

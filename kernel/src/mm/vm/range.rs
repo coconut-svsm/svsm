@@ -21,7 +21,7 @@ use core::ops::Deref;
 use intrusive_collections::Bound;
 use intrusive_collections::rbtree::{CursorMut, RBTree};
 
-use super::{Mapping, VMM, VMMAdapter};
+use super::{Mapping, VMFlags, VMM, VMMAdapter};
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -453,6 +453,157 @@ impl VMR {
         Ok(node)
     }
 
+    /// Splits the [`VMM`]s overlapping `region` so that its boundaries
+    /// coincide with mapping boundaries, and sets the access to the mappings
+    /// in between.
+    ///
+    /// Only the mapping metadata is modified; existing page-table entries are
+    /// left in place for the caller to update. Helper for
+    /// [`VMR::set_access()`].
+    ///
+    /// # Arguments
+    ///
+    /// * `region` - The virtual memory region to change.
+    /// * `access` - The access the mappings covering the region permit.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, `Err(SvsmError::Mem)` if an overlapped mapping
+    /// cannot be split or have its access changed.
+    fn set_mappings_access(
+        &self,
+        region: MemoryRegion<VirtAddr>,
+        access: VMFlags,
+    ) -> Result<(), SvsmError> {
+        // The mappings are replaced rather than modified in place, as the tree
+        // is keyed on their start address.
+        let mut tree = self.tree.lock_write();
+        let mut cursor = tree.upper_bound_mut(Bound::Included(&region.start().pfn()));
+        if cursor.is_null() {
+            cursor = tree.front_mut();
+        }
+
+        while let Some(node) = cursor.get() {
+            let (vmm_start, vmm_end) = node.range();
+            if vmm_start >= region.end() {
+                break;
+            }
+            if vmm_end <= region.start() {
+                cursor.move_next();
+                continue;
+            }
+
+            let mapping = node.get_mapping();
+
+            // Split off the part of the mapping past the end of the region,
+            // replacing this VMM with one covering only what remains.
+            if vmm_end > region.end() {
+                let (inside, outside) = mapping.split_at(region.end() - vmm_start)?;
+                let outside = Box::new(VMM::new(region.end().pfn(), outside));
+                cursor
+                    .replace_with(Box::new(VMM::new(vmm_start.pfn(), inside)))
+                    .map_err(|_| SvsmError::Mem)?;
+                cursor.insert_after(outside);
+            }
+
+            // Split off the part of the mapping before the start of the
+            // region, and advance to the remainder.
+            if vmm_start < region.start() {
+                let mapping = cursor.get().unwrap().get_mapping();
+                let (outside, inside) = mapping.split_at(region.start() - vmm_start)?;
+                let inside = Box::new(VMM::new(region.start().pfn(), inside));
+                cursor
+                    .replace_with(Box::new(VMM::new(vmm_start.pfn(), outside)))
+                    .map_err(|_| SvsmError::Mem)?;
+                cursor.insert_after(inside);
+                cursor.move_next();
+            }
+
+            // The mapping now lies entirely within the region.
+            let vmm = cursor.get().unwrap();
+            let start_pfn = vmm.range_pfn().0;
+            let new_mapping = vmm.get_mapping().set_access(access)?;
+            cursor
+                .replace_with(Box::new(VMM::new(start_pfn, new_mapping)))
+                .map_err(|_| SvsmError::Mem)?;
+            cursor.move_next();
+        }
+
+        Ok(())
+    }
+
+    /// Sets the access to a memory region mapped in this [`VMR`].
+    ///
+    /// The mappings overlapping the region are split so that the region is
+    /// covered by mappings of its own, whose access becomes the one `access`
+    /// describes, and the page-table entries covering the region are updated
+    /// with the page-table flags those mappings now report.
+    ///
+    /// All pages in `region` must be mapped as 4KiB pages, otherwise an error
+    /// is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `region` - The virtual memory region to change. Start and end
+    ///   addresses must be aligned to 4KiB.
+    /// * `access` - The access the region permits afterwards.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, `Err(SvsmError::Mem)` otherwise.
+    ///
+    /// # Error behavior
+    ///
+    /// On failure, the mappings and pages already processed keep the new
+    /// access and no TLB flush is performed, so callers must not rely on
+    /// all-or-nothing semantics.
+    pub fn set_access(
+        &self,
+        region: MemoryRegion<VirtAddr>,
+        access: VMFlags,
+    ) -> Result<(), SvsmError> {
+        let vregion = self.virt_range();
+
+        if !region.start().is_aligned(PAGE_SIZE) || !region.end().is_aligned(PAGE_SIZE) {
+            return Err(SvsmError::Mem);
+        }
+
+        if region.start() < vregion.start() || region.end() > vregion.end() {
+            return Err(SvsmError::Mem);
+        }
+
+        // Update the mapping metadata first, so that page-table
+        // entries later derived from it describe the new access as
+        // well.
+        self.set_mappings_access(region, access)?;
+
+        let rstart = vregion.start();
+        let tree = self.tree.lock_read();
+        let mut pgtbl_parts = self.pgtbl_parts.lock_write();
+
+        for page in region.iter_pages(PageSize::Regular) {
+            // The mappings now cover the region exactly, so the protection of
+            // every page can be taken from the mapping containing it.
+            let node = tree
+                .upper_bound(Bound::Included(&page.pfn()))
+                .get()
+                .ok_or(SvsmError::Mem)?;
+            let (vmm_start, _) = node.range();
+            let prot = node.get_mapping().pt_flags(page - vmm_start);
+
+            let idx = PageTable::index::<3>(VirtAddr::from(page - rstart));
+            pgtbl_parts[idx].set_prot_4k(page, prot)?;
+        }
+
+        if self.per_cpu {
+            flush_tlb_global_percpu_range(region, PageSize::Regular);
+        } else {
+            flush_tlb_global_sync_range(region, PageSize::Regular);
+        }
+
+        Ok(())
+    }
+
     /// Dump all [`VMM`] mappings in the RBTree. This function is included for
     /// debugging purposes. And should not be called in production code.
     pub fn dump_ranges(&self) {
@@ -568,5 +719,184 @@ impl<V: Borrow<VMR>> Drop for VMRMapping<V> {
             .borrow()
             .remove(self.va)
             .expect("Error removing VRMapping virtual memory range");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mm::alloc::{DEFAULT_TEST_MEMORY_SIZE, TestRootMem};
+    use crate::mm::vm::{VMFlags, VMReserved, VMalloc};
+    use crate::types::PAGE_SIZE;
+    use alloc::sync::Arc;
+
+    /// Creates an empty [`VMR`] covering one granule, without allocating any
+    /// page tables: these tests only exercise the mapping metadata.
+    fn test_vmr() -> VMR {
+        VMR::new(
+            VirtAddr::new(0),
+            VirtAddr::new(VMR_GRANULE),
+            PTEntryFlags::USER,
+        )
+        .expect("Failed to create VMR")
+    }
+
+    /// Inserts a mapping into the tree of `vmr` without touching page tables,
+    /// which cannot be allocated in the test environment.
+    fn insert_untracked(vmr: &VMR, vaddr: VirtAddr, mapping: Mapping) {
+        let mut tree = vmr.tree.lock_write();
+        tree.insert(Box::new(VMM::new(vaddr.pfn(), mapping)));
+    }
+
+    fn writable_mapping(pages: usize) -> Mapping {
+        Arc::new(VMalloc::new(pages * PAGE_SIZE, VMFlags::Write).expect("Failed to create VMalloc"))
+    }
+
+    /// Returns the (start, end, writable) triple of every mapping in the tree.
+    fn tree_layout(vmr: &VMR) -> Vec<(usize, usize, bool)> {
+        let tree = vmr.tree.lock_read();
+        tree.iter()
+            .map(|vmm| {
+                let (start, end) = vmm.range();
+                let writable = vmm
+                    .get_mapping()
+                    .pt_flags(0)
+                    .contains(PTEntryFlags::WRITABLE);
+                (start.pfn(), end.pfn(), writable)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_set_access_exact_cover() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let vmr = test_vmr();
+        insert_untracked(&vmr, VirtAddr::new(0x10000), writable_mapping(4));
+
+        let region = MemoryRegion::new(VirtAddr::new(0x10000), 4 * PAGE_SIZE);
+        vmr.set_mappings_access(region, VMFlags::Read)
+            .expect("Failed to set access");
+
+        // The mapping covers the region exactly, so it is replaced whole
+        // and no split takes place.
+        assert_eq!(tree_layout(&vmr), [(0x10, 0x14, false)]);
+    }
+
+    #[test]
+    fn test_set_access_tail_overhang() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let vmr = test_vmr();
+        insert_untracked(&vmr, VirtAddr::new(0x10000), writable_mapping(4));
+
+        // Region ends inside the mapping: the tail must stay writable.
+        let region = MemoryRegion::new(VirtAddr::new(0x10000), 2 * PAGE_SIZE);
+        vmr.set_mappings_access(region, VMFlags::Read)
+            .expect("Failed to set access");
+
+        assert_eq!(tree_layout(&vmr), [(0x10, 0x12, false), (0x12, 0x14, true)]);
+    }
+
+    #[test]
+    fn test_set_access_head_overhang() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let vmr = test_vmr();
+        insert_untracked(&vmr, VirtAddr::new(0x10000), writable_mapping(4));
+
+        // Region starts inside the mapping: the head must stay writable.
+        let region = MemoryRegion::new(VirtAddr::new(0x12000), 2 * PAGE_SIZE);
+        vmr.set_mappings_access(region, VMFlags::Read)
+            .expect("Failed to set access");
+
+        assert_eq!(tree_layout(&vmr), [(0x10, 0x12, true), (0x12, 0x14, false)]);
+    }
+
+    #[test]
+    fn test_set_access_both_overhangs() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let vmr = test_vmr();
+        insert_untracked(&vmr, VirtAddr::new(0x10000), writable_mapping(4));
+
+        // Region strictly inside the mapping: split at both ends.
+        let region = MemoryRegion::new(VirtAddr::new(0x11000), 2 * PAGE_SIZE);
+        vmr.set_mappings_access(region, VMFlags::Read)
+            .expect("Failed to set access");
+
+        assert_eq!(
+            tree_layout(&vmr),
+            [(0x10, 0x11, true), (0x11, 0x13, false), (0x13, 0x14, true)]
+        );
+    }
+
+    #[test]
+    fn test_set_access_spanning_mappings() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let vmr = test_vmr();
+        // Two adjacent mappings, as exec() creates for a segment whose file
+        // contents are smaller than its memory size.
+        insert_untracked(&vmr, VirtAddr::new(0x10000), writable_mapping(2));
+        insert_untracked(&vmr, VirtAddr::new(0x12000), writable_mapping(2));
+
+        let region = MemoryRegion::new(VirtAddr::new(0x10000), 4 * PAGE_SIZE);
+        vmr.set_mappings_access(region, VMFlags::Read)
+            .expect("Failed to set access");
+
+        // Both are covered exactly, so both are replaced without splitting.
+        assert_eq!(
+            tree_layout(&vmr),
+            [(0x10, 0x12, false), (0x12, 0x14, false)]
+        );
+    }
+
+    #[test]
+    fn test_set_access_skips_preceding_mapping() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let vmr = test_vmr();
+        // A mapping ending before the region starts must not be touched.
+        insert_untracked(&vmr, VirtAddr::new(0x10000), writable_mapping(1));
+        insert_untracked(&vmr, VirtAddr::new(0x12000), writable_mapping(1));
+
+        let region = MemoryRegion::new(VirtAddr::new(0x12000), PAGE_SIZE);
+        vmr.set_mappings_access(region, VMFlags::Read)
+            .expect("Failed to set access");
+
+        assert_eq!(tree_layout(&vmr), [(0x10, 0x11, true), (0x12, 0x13, false)]);
+    }
+
+    #[test]
+    fn test_set_access_skips_mapping_before_gap() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let vmr = test_vmr();
+        // The region starts inside a gap, so the initial tree lookup lands on
+        // the mapping preceding it, which ends before the region and must be
+        // left alone.
+        insert_untracked(&vmr, VirtAddr::new(0x10000), writable_mapping(1));
+        insert_untracked(&vmr, VirtAddr::new(0x13000), writable_mapping(1));
+
+        // The region starts exactly where the preceding mapping ends.
+        let region = MemoryRegion::from_addresses(VirtAddr::new(0x11000), VirtAddr::new(0x14000));
+        vmr.set_mappings_access(region, VMFlags::Read)
+            .expect("Failed to set access");
+
+        assert_eq!(tree_layout(&vmr), [(0x10, 0x11, true), (0x13, 0x14, false)]);
+    }
+
+    #[test]
+    fn test_set_access_unsupported_mapping() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let vmr = test_vmr();
+        insert_untracked(&vmr, VirtAddr::new(0x10000), writable_mapping(1));
+        // VMReserved does not support having its access changed.
+        insert_untracked(
+            &vmr,
+            VirtAddr::new(0x11000),
+            Arc::new(VMReserved::new(PAGE_SIZE)),
+        );
+
+        let region = MemoryRegion::new(VirtAddr::new(0x10000), 2 * PAGE_SIZE);
+        assert!(vmr.set_mappings_access(region, VMFlags::Read).is_err());
+
+        // The mappings processed before the failure keep the new access: the
+        // operation is documented as not being all-or-nothing.
+        assert_eq!(tree_layout(&vmr)[0], (0x10, 0x11, false));
     }
 }

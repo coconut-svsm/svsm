@@ -148,6 +148,39 @@ bitflags! {
 }
 
 impl PTEntryFlags {
+    /// The flags describing the access a mapping permits, as opposed to those
+    /// describing its state or placement. Only these are replaced when the
+    /// protection of an existing mapping is changed.
+    pub fn prot_mask() -> Self {
+        Self::WRITABLE | Self::NX
+    }
+
+    /// Returns these flags with the access they describe replaced by
+    /// the one `prot` describes.
+    ///
+    /// Note that removing write access from a page the hardware has marked
+    /// dirty disables the dirty flag. TODO: support saved_dirty.
+    ///
+    /// # Arguments
+    ///
+    /// * `prot` - The flags to take the access from.
+    ///
+    /// # Returns
+    ///
+    /// The resulting flags.
+    pub fn with_prot(self, prot: Self) -> Self {
+        let prot = self
+            .difference(Self::prot_mask())
+            .union(prot.intersection(Self::prot_mask()));
+
+        // The CPU takes a dirty page that is not writable for a shadow stack.
+        if prot.contains(Self::WRITABLE) {
+            prot
+        } else {
+            prot.difference(Self::DIRTY)
+        }
+    }
+
     pub fn exec() -> Self {
         Self::PRESENT | Self::GLOBAL | Self::ACCESSED
     }
@@ -369,6 +402,18 @@ impl PTEntry {
     /// constrained to the supported feature flags.
     pub fn set(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
         self.set_unrestricted(addr, supported_flags(flags));
+    }
+
+    /// Replaces the flags of the page table entry, preserving its physical
+    /// address including the shared/private encoding.
+    pub fn set_flags(&mut self, flags: PTEntryFlags) {
+        debug_assert!(self.present());
+        let paddr = if is_shared(self.0) {
+            make_shared_address(self.address())
+        } else {
+            make_private_address(self.address())
+        };
+        self.set(paddr, flags);
     }
 
     /// Inserts the private address mask if the page is present.
@@ -1200,15 +1245,7 @@ impl PageTable {
                         return Err(SvsmError::Mem);
                     }
 
-                    let flags = PTEntryFlags::data_ro();
-
-                    let paddr = if is_shared(entry.0) {
-                        make_shared_address(entry.address())
-                    } else {
-                        make_private_address(entry.address())
-                    };
-
-                    entry.set(paddr, flags);
+                    entry.set_flags(PTEntryFlags::data_ro());
                 }
                 1 | 2 => {
                     // Ensure we never fell on a huge page while iterating over the region pages.
@@ -1350,6 +1387,29 @@ impl RawPageTablePart {
                 assert!(!mapping.entry.present());
                 None
             }
+        }
+    }
+
+    /// Replaces the access flags of a mapped 4KB page's page table entry with
+    /// `prot`, preserving all others.
+    ///
+    /// # Parameters
+    /// - `vaddr`: The virtual address of the page.
+    /// - `prot`: The new access flags, a subset of
+    ///   [`PTEntryFlags::prot_mask()`].
+    ///
+    /// # Returns
+    /// `Ok(())` on success, `Err(SvsmError::Mem)` if the address is not
+    /// mapped by a present 4KB page table entry.
+    fn set_prot_4k(&mut self, vaddr: VirtAddr, prot: PTEntryFlags) -> Result<(), SvsmError> {
+        let mapping = self.walk_addr(vaddr);
+        match mapping.level {
+            0 if mapping.entry.present() => {
+                let flags = mapping.entry.flags().with_prot(prot);
+                mapping.entry.set_flags(flags);
+                Ok(())
+            }
+            _ => Err(SvsmError::Mem),
         }
     }
 
@@ -1539,6 +1599,34 @@ impl PageTablePart {
         assert!(PageTable::index::<3>(vaddr) == self.idx);
 
         self.get_mut().and_then(|r| r.unmap_4k(vaddr))
+    }
+
+    /// Replaces the access flags of a mapped 4KiB page's page table entry
+    /// with `prot`, preserving all others.
+    ///
+    /// The caller is responsible for flushing the TLB after the page table
+    /// update.
+    ///
+    /// # Arguments
+    ///
+    /// * `vaddr` - The virtual address of the page.
+    /// * `prot` - The new access flags.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, `Err(SvsmError::Mem)` if the address is not
+    /// mapped by a present 4KiB page table entry.
+    ///
+    /// # Panics
+    ///
+    /// This method panics when `vaddr` is not within the region covered by
+    /// this [`PageTablePart`].
+    pub fn set_prot_4k(&mut self, vaddr: VirtAddr, prot: PTEntryFlags) -> Result<(), SvsmError> {
+        assert!(PageTable::index::<3>(vaddr) == self.idx);
+
+        self.get_mut()
+            .ok_or(SvsmError::Mem)?
+            .set_prot_4k(vaddr, prot)
     }
 
     /// Map a 2MiB page in the page table sub-tree

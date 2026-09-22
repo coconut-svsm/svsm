@@ -10,11 +10,12 @@ use super::TaskPointer;
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::fs::{Directory, open_read};
-use crate::mm::vm::VMFileMappingFlags;
+use crate::mm::vm::VMFlags;
 use crate::mm::zero_user_mem;
 use crate::mm::{USER_MEM_END, mmap_user};
 use crate::task::{create_user_task, current_task, finish_user_task, schedule};
 use crate::types::PAGE_SIZE;
+use crate::utils::MemoryRegion;
 use crate::utils::align_up;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
@@ -33,15 +34,15 @@ impl UserExecInfo {
     }
 }
 
-fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
-    let mut vm_flags = VMFileMappingFlags::Fixed;
+fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFlags {
+    let mut vm_flags = VMFlags::Fixed;
 
     if flags.contains(Elf64PhdrFlags::WRITE) {
-        vm_flags |= VMFileMappingFlags::Write | VMFileMappingFlags::Private;
+        vm_flags |= VMFlags::Write | VMFlags::Private;
     }
 
     if flags.contains(Elf64PhdrFlags::EXECUTE) {
-        vm_flags |= VMFileMappingFlags::Execute;
+        vm_flags |= VMFlags::Execute;
     }
 
     vm_flags
@@ -73,13 +74,8 @@ pub fn exec(info: UserExecInfo) -> Result<u64, SvsmError> {
 
     let current_task = current_task();
 
-    let vstart = current_task.mmap_kernel_guard(
-        VirtAddr::new(0),
-        Some(&fh),
-        0,
-        file_size,
-        VMFileMappingFlags::Read,
-    )?;
+    let vstart =
+        current_task.mmap_kernel_guard(VirtAddr::new(0), Some(&fh), 0, file_size, VMFlags::Read)?;
 
     // SAFETY: `vstart` has just been mapped using `file_size` as the size,
     // so it is safe to create a slice of the same size.
@@ -143,12 +139,33 @@ pub fn exec(info: UserExecInfo) -> Result<u64, SvsmError> {
         }
     }
 
+    // If the ELF file contains a PT_GNU_RELRO program header, make every
+    // whole page overlapping it read-only, as glibc's _dl_protect_relro()
+    // does.
+    //
+    // Following glibc semantics, both range boundaries are aligned down.
+    if let Some(relro) = elf_bin.image_relro_vaddr_range(virt_base) {
+        let relro_start = VirtAddr::from(relro.vaddr_begin).page_align();
+        let relro_end = VirtAddr::from(relro.vaddr_end).page_align();
+        if relro_start < relro_end {
+            let region = MemoryRegion::from_addresses(relro_start, relro_end);
+            current_task.set_user_access(region, VMFlags::Read)?;
+        } else {
+            log::warn!(
+                "RELRO region {:#x}..{:#x} of {} smaller than a page, not protected",
+                relro.vaddr_begin,
+                relro.vaddr_end,
+                info.binary
+            );
+        }
+    }
+
     // Make sure the mapping is gone before calling schedule
     drop(vstart);
 
     // Setup 64k of task stack
     let user_stack_size: usize = 64 * 1024;
-    let stack_flags: VMFileMappingFlags = VMFileMappingFlags::Fixed | VMFileMappingFlags::Write;
+    let stack_flags: VMFlags = VMFlags::Fixed | VMFlags::Write;
     let stack_addr = USER_MEM_END - user_stack_size;
     mmap_user(stack_addr, None, 0, user_stack_size, stack_flags)?;
 
