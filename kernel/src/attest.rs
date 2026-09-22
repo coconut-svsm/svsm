@@ -10,8 +10,8 @@ extern crate alloc;
 use crate::{
     crypto::{SecretSlice, get_svsm_rng},
     error::SvsmError,
-    greq::{pld_report::*, services::get_regular_report},
     io::{Read, Write},
+    platform::SVSM_PLATFORM,
     utils::vec::{try_to_vec, vec_sized},
 };
 #[cfg(feature = "attest-serial")]
@@ -29,7 +29,6 @@ use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
 use sha2::{Digest, Sha512};
-use zerocopy::{FromBytes, IntoBytes};
 
 #[cfg(feature = "attest-serial")]
 // TODO: Make the IO port configurable/discoverable or drop the support entirely.
@@ -129,7 +128,7 @@ impl AttestationDriver {
     pub fn attest(&mut self) -> Result<SecretSlice, SvsmError> {
         let negotiation = self.negotiation()?;
 
-        Ok(self.attestation(negotiation)?)
+        self.attestation(negotiation)
     }
 
     /// Send a negotiation request to the proxy. Proxy should reply with Negotiation parameters
@@ -150,7 +149,7 @@ impl AttestationDriver {
     /// Send an attestation request to the proxy. Proxy should reply with attestation response
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
-    fn attestation(&mut self, n: NegotiationResponse) -> Result<SecretSlice, AttestationError> {
+    fn attestation(&mut self, n: NegotiationResponse) -> Result<SecretSlice, SvsmError> {
         let curve =
             Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
 
@@ -160,7 +159,7 @@ impl AttestationDriver {
             .to_tpms_ecc_point(&curve.curve_ops().map_err(AttestationError::Crypto)?)
             .map_err(AttestationError::Crypto)?;
 
-        let evidence = evidence(&self.tee, hash(&n, &pub_key)?)?;
+        let evidence = SVSM_PLATFORM.attestation_evidence(&hash(&n, &pub_key)?)?;
 
         let req = AttestationRequest {
             tee: self.tee,
@@ -176,15 +175,15 @@ impl AttestationDriver {
             .map_err(|_| AttestationError::AttestationDeserialize)?;
 
         if !response.success {
-            return Err(AttestationError::Failed);
+            Err(AttestationError::Failed)?
         }
 
         let Some(decryption) = response.decryption else {
-            return Err(AttestationError::PublicKeyMissing)?;
+            Err(AttestationError::PublicKeyMissing)?
         };
 
         let Some(secret_enc) = response.secret else {
-            return Err(AttestationError::SecretMissing);
+            Err(AttestationError::SecretMissing)?
         };
 
         // `secret_enc` holds ciphertext from the attestation server. Move it
@@ -332,49 +331,6 @@ fn sc_key_generate(curve: &Curve) -> Result<EccKey, CryptoError> {
     EccKey::generate(&curve_ops, &mut rng, None)
 }
 
-/// Hash negotiation parameters and fetch TEE evidence.
-fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<AttestationEvidence, AttestationError> {
-    let evidence = match tee {
-        &Tee::Snp => {
-            let mut user_data = [0u8; 64];
-            user_data.copy_from_slice(&hash);
-
-            let request = SnpReportRequest::new(user_data, 0, 1);
-
-            let data = try_to_vec(request.as_bytes()).or(Err(AttestationError::VecAlloc))?;
-            // The buffer currently contains the the SnpReportRequest structure. However, SVSM
-            // will fill this buffer in with the SnpReportResponse when fetching the report.
-            // Ensure the array is large enough to contain the response (which is much larger
-            // than the request, as it contains the attestation report).
-            let mut buf: Vec<u8> = vec_sized(2048).or(Err(AttestationError::VecAlloc))?;
-
-            buf[..data.len()].copy_from_slice(&data);
-
-            let len = get_regular_report(&mut buf).or(Err(AttestationError::SnpGetReport))?;
-
-            // We have the length of the response. The rest of the response is unused.
-            // Parse the SnpReportResponse from the slice of the buf containing the
-            // response (that is, &buf[0..len]).
-            let resp = SnpReportResponse::ref_from_bytes(&buf[..len])
-                .or(Err(AttestationError::SnpGetReport))?;
-
-            // Get the attestation report as bytes for serialization in the
-            // AttestationRequest.
-            let report =
-                try_to_vec(resp.report().as_bytes()).or(Err(AttestationError::VecAlloc))?;
-
-            AttestationEvidence::Snp {
-                report,
-                certs_buf: None,
-            }
-        }
-        // We check for supported TEE architectures in the AttestationDriver's constructor.
-        _ => unreachable!(),
-    };
-
-    Ok(evidence)
-}
-
 /// Hash the negotiation parameters from the attestation server for inclusion in the
 /// attestation evidence.
 fn hash(
@@ -414,6 +370,41 @@ mod tests {
                 buffer: TpmBuffer::Owned(y.to_vec()),
             },
         }
+    }
+
+    /// Run a full attestation against the host attestation proxy.
+    ///
+    /// Requires `aproxy` and an attestation server on the host, see
+    /// Documentation/docs/developer/TESTING.md.
+    ///
+    /// The test is skipped when the proxy cannot be reached, as there is then
+    /// nothing to attest against. Once the transport is up, every failure is
+    /// fatal on purpose: the boot path in `svsm_init()` only logs an error and
+    /// carries on when attestation fails, so a regression anywhere between the
+    /// negotiation request and the decryption of the returned secret would
+    /// otherwise go unnoticed.
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg(test_in_svsm)]
+    fn test_attestation() {
+        use crate::testutils::has_test_iorequests;
+
+        if !has_test_iorequests() {
+            return;
+        }
+
+        let mut driver = match AttestationDriver::try_from(Tee::Snp) {
+            Ok(driver) => driver,
+            // Only a transport failure is tolerated here. Anything else, such
+            // as key generation failing, is a genuine bug.
+            Err(SvsmError::Vsock(e)) => {
+                log::info!("no attestation proxy to talk to ({e:?}), skipping");
+                return;
+            }
+            Err(e) => panic!("failed to set up the attestation driver: {e:?}"),
+        };
+
+        let _ = driver.attest().expect("attestation failed");
     }
 
     mod negotiation_hash {

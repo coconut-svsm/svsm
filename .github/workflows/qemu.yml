@@ -14,6 +14,9 @@ env:
   QEMU_REF: svsm
   IGVM_REPO: https://github.com/microsoft/igvm.git
   IGVM_REF: igvm-v0.3.4
+  # Throwaway KBS server used to exercise the in-SVSM attestation test.
+  KBS_TEST_REPO: https://github.com/coconut-svsm/kbs-test.git
+  KBS_TEST_REF: main
 
 permissions:
   contents: read
@@ -33,6 +36,11 @@ jobs:
         run: |
           QEMU_SHA=$(git ls-remote "$QEMU_REPO" --exit-code "$QEMU_REF" | cut -f 1)
           echo "QEMU_SHA=${QEMU_SHA}" >> "$GITHUB_ENV"
+
+      - name: Query coconut-svsm/kbs-test repo
+        run: |
+          KBS_TEST_SHA=$(git ls-remote "$KBS_TEST_REPO" --exit-code "$KBS_TEST_REF" | cut -f 1)
+          echo "KBS_TEST_SHA=${KBS_TEST_SHA}" >> "$GITHUB_ENV"
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -132,8 +140,45 @@ jobs:
       - name: Set up vhost-vsock permissions
         run: sudo chmod 666 /dev/vhost-vsock
 
+      - name: Get kbs-test from cache
+        id: kbs_test_cache
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: citests/kbs-test
+          key: kbs-test-${{ env.KBS_TEST_SHA }}
+
+      # The in-SVSM attestation test performs a full attestation against a KBS
+      # server on the host, bridged to the guest by aproxy. kbs-test is a
+      # throwaway server for exactly that purpose, and lives in its own
+      # repository rather than being vendored here.
+      - if: ${{ steps.kbs_test_cache.outputs.cache-hit != 'true' }}
+        name: Build kbs-test
+        run: |
+          OUT="$PWD/citests/kbs-test"
+          mkdir -p "$OUT"
+
+          # Build outside the coconut-svsm checkout: kbs-test pins its own
+          # toolchain in rust-toolchain.toml and rustup resolves that relative
+          # to the current directory, so building it in place would pick up the
+          # coconut-svsm toolchain instead.
+          mkdir -p ../scratch
+          pushd ../scratch
+
+          git clone "${{ env.KBS_TEST_REPO }}" \
+            --branch="${{ env.KBS_TEST_REF }}" \
+            --depth=1
+
+          pushd kbs-test
+          cargo build --release
+          cp target/release/kbs-test "$OUT"
+          popd
+
+          popd
+
+      # igvmmeasure and aproxy are needed by test-in-svsm.sh, which is invoked
+      # directly below rather than through the make target.
       - name: Build test
-        run: make bin/coconut-test-qemu.igvm
+        run: make bin/coconut-test-qemu.igvm bin/igvmmeasure aproxy
 
       ########################
 
@@ -151,7 +196,9 @@ jobs:
           PR_NUM=${{ github.event.pull_request.number }}
           VSOCK_PORT=$(( ${PR_NUM:-0} + 1024 ))
           VSOCK_CID=$(( ${PR_NUM:-0} + 10 ))
-          QEMU=./citests/qemu/bin/qemu-system-x86_64 scripts/test-in-svsm.sh \
+          QEMU=./citests/qemu/bin/qemu-system-x86_64 \
+          KBS=./citests/kbs-test/kbs-test \
+          scripts/test-in-svsm.sh \
             --vsock-port $VSOCK_PORT --vsock-cid $VSOCK_CID \
             --nocc --timeout 180 \
             </dev/null 2>&1
