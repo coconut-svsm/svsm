@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MSR_GS_BASE","SEV_GHCB"],"fn":["rdtsc","rdtscp","read_flags","read_msr","write_msr"],"struct":["RdtscpOut"]};
