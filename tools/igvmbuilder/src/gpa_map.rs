@@ -202,11 +202,11 @@ impl GpaMap {
         let kernel_fs = GpaRange::new(KERNEL_FS_BASE as u64, kernel_fs_len as u64)?;
 
         let (vmsa, vmsa_in_kernel_range) = match options.hypervisor {
-            Hypervisor::Qemu | Hypervisor::Vanadium => {
+            Hypervisor::Vanadium => {
                 // VMSA address is currently hardcoded in kvm
                 (GpaRange::new_page(0xFFFFFFFFF000)?, false)
             }
-            Hypervisor::HyperV => (
+            Hypervisor::HyperV | Hypervisor::Qemu => (
                 GpaRange::new_page(kernel_base + kernel_min_size - PAGE_SIZE_4K)?,
                 true,
             ),
