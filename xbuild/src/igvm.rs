@@ -95,6 +95,9 @@ struct IgvmTargetConfig {
     /// See help for `igvmbuilder --no_vtom`.
     #[serde(default)]
     no_vtom: bool,
+    /// See help for `igvmbuilder --secure-tsc`.
+    #[serde(default)]
+    secure_tsc: bool,
 }
 
 impl IgvmTargetConfig {
@@ -139,6 +142,9 @@ impl IgvmTargetConfig {
         }
         if let Some(comport) = self.comport.as_ref() {
             cmd.arg("--comport").arg(comport);
+        }
+        if self.secure_tsc {
+            cmd.arg("--secure-tsc");
         }
         if args.verbose {
             cmd.arg("--verbose");

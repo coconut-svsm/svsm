@@ -203,6 +203,7 @@ pub fn construct_vmsa(
     compatibility_mask: u32,
     extra_features: &Vec<SevExtraFeatures>,
     hypervisor: Hypervisor,
+    use_secure_tsc: bool,
 ) -> IgvmDirectiveHeader {
     let mut vmsa_box = SevVmsa::new_box_zeroed().expect("Failed to allocate memory for VMSA");
     let vmsa = vmsa_box.as_mut();
@@ -342,6 +343,7 @@ pub fn construct_vmsa(
     features.set_snp(true);
     features.set_restrict_injection(true);
     features.set_debug_swap(true);
+    features.set_secure_tsc(use_secure_tsc);
     if vtom != 0 {
         vmsa.virtual_tom = vtom;
         features.set_vtom(true);
@@ -354,7 +356,6 @@ pub fn construct_vmsa(
             SevExtraFeatures::PreventHostIBS => features.set_prevent_host_ibs(true),
             SevExtraFeatures::SNPBTBIsolation => features.set_snp_btb_isolation(true),
             SevExtraFeatures::VmplSSS => features.set_vmpl_supervisor_shadow_stack(true),
-            SevExtraFeatures::SecureTscEn => features.set_secure_tsc(true),
             SevExtraFeatures::VmsaRegProt => features.set_vmsa_reg_protection(true),
             SevExtraFeatures::SmtProtection => features.set_smt_protection(true),
         }
