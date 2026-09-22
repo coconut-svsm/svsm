@@ -6,15 +6,19 @@ endif
 CC := $(CROSS_PREFIX)gcc
 
 ifdef RELEASE
-OPENSSL_CONFIG_TYPE = --release
 TCGTPM_CFLAGS = -O3 -DDEBUG=NO
 else
-OPENSSL_CONFIG_TYPE = --debug
 TCGTPM_CFLAGS = -g -O0 -DDEBUG=YES
 endif
 
 # Allow user to not link in libcrt
 USE_LIBCRT ?= 1
+
+# OpenSSL and libcrt are built externally (by cocoon-tpm-ossl-bare-sys
+# and the libcrt crate respectively).
+# The following must be provided by the caller:
+#   OPENSSL_INCLUDE_DIR, OPENSSL_SRC_INCLUDE_DIR, OPENSSL_LIB_DIR
+#   LIBCRT_INCLUDE_DIR
 
 ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 DEPS_DIR := $(ROOT_DIR)/deps
@@ -33,20 +37,11 @@ NUM_JOBS ?= $(shell nproc)
 MAKEFLAGS += -j$(NUM_JOBS)
 endif
 
-LIBCRT_SRC_DIR = $(DEPS_DIR)/libcrt
-OPENSSL_SRC_DIR = $(DEPS_DIR)/openssl
 TCGTPM_SRC_DIR = $(DEPS_DIR)/tpm-20-ref/TPMCmd
 
-LIBCRT_BUILD_DIR = $(OUT_DIR)/libcrt-build
-OPENSSL_BUILD_DIR = $(OUT_DIR)/openssl-build
 TCGTPM_BUILD_DIR = $(OUT_DIR)/tcgtpm-build
 
-ifeq ($(USE_LIBCRT),1)
-LIBCRT = $(LIBCRT_BUILD_DIR)/libcrt.a
-else
-LIBCRT =
-endif
-LIBCRYPTO = $(OPENSSL_BUILD_DIR)/libcrypto.a
+LIBCRYPTO = $(OPENSSL_LIB_DIR)/libcrypto.a
 
 LIBTPM_TARGET = Tpm_CoreLib
 LIBTPM = $(TCGTPM_BUILD_DIR)/tpm/src/lib$(LIBTPM_TARGET).a
@@ -60,18 +55,11 @@ LIBTPMBIGNUM = $(TCGTPM_BUILD_DIR)/tpm/cryptolibs/TpmBigNum/lib$(LIBTPMBIGNUM_TA
 LIBBNMATH_TARGET = Tpm_CryptoLib_Math_Ossl
 LIBBNMATH = $(TCGTPM_BUILD_DIR)/cryptolib_Ossl/lib$(LIBBNMATH_TARGET).a
 
-OPENSSL_MAKEFILE = $(OPENSSL_BUILD_DIR)/Makefile
 TCGTPM_MAKEFILE = $(TCGTPM_BUILD_DIR)/Makefile
 
 ifeq ($(USE_LIBCRT),1)
-LIBCRT_INCLUDE = -I$(LIBCRT_SRC_DIR)/include
-LIBCRT_LINK = -Wl,rpath=$(LIBCRT_BUILD_DIR) -lcrt
 TCGTPM_CFLAGS += -static -nostdinc -fno-stack-protector -mno-sse -mno-red-zone
-OPENSSL_CFLAGS = -static -nostdinc -nostdlib -fno-stack-protector -mno-red-zone
-else
-LIBCRT_INCLUDE =
-LIBCRT_LINK =
-OPENSSL_CFLAGS =
+TCGTPM_CFLAGS += -I$(LIBCRT_INCLUDE_DIR)
 endif
 
 # Avoid running jobs of this Makefile in parallel to avoid possible conflicts
@@ -79,126 +67,7 @@ endif
 # Parallel builds are still used inside the sub-targets (-j flag)
 .NOTPARALLEL:
 
-all: $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
-
-.PHONY: $(LIBCRT)
-
-# libcrt
-$(LIBCRT):
-	mkdir -p $(LIBCRT_BUILD_DIR)
-	$(MAKE) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR) CC=$(CC)
-
-# openssl
-$(LIBCRYPTO): $(OPENSSL_MAKEFILE) $(LIBCRT)
-	$(MAKE) -C $(OPENSSL_BUILD_DIR)
-
-$(OPENSSL_MAKEFILE):
-	mkdir -p $(OPENSSL_BUILD_DIR)
-	(cd $(OPENSSL_BUILD_DIR) && \
-		perl $(OPENSSL_SRC_DIR)/Configure \
-			--cross-compile-prefix=$(CROSS_PREFIX) \
-			--config=$(DEPS_DIR)/openssl_svsm.conf \
-			--api=1.1.1 \
-			SVSM \
-			disable-legacy \
-			no-afalgeng \
-			no-aria \
-			no-asm \
-			no-async \
-			no-atexit \
-			no-autoerrinit \
-			no-autoload-config \
-			no-bf \
-			no-blake2 \
-			no-capieng \
-			no-cast \
-			no-chacha \
-			no-cmac \
-			no-cmp \
-			no-cms \
-			no-ct \
-			no-deprecated \
-			no-des \
-			no-dgram \
-			no-dh \
-			no-docs \
-			no-dsa \
-			no-dso \
-			no-dtls \
-			no-dtls1 \
-			no-dtls1-method \
-			no-dtls1_2 \
-			no-dtls1_2-method \
-			no-dynamic-engine \
-			no-ec2m \
-			no-ecdh \
-			no-ecdsa \
-			no-ecx  \
-			no-egd \
-			no-engine \
-			no-err \
-			no-filenames \
-			no-gost \
-			no-http  \
-			no-idea \
-			no-ktls \
-			no-makedepend \
-			no-md4 \
-			no-mdc2 \
-			no-ml-dsa \
-			no-ml-kem \
-			no-module \
-			no-multiblock \
-			no-nextprotoneg \
-			no-ocb \
-			no-ocsp \
-			no-padlockeng \
-			no-pic \
-			no-poly1305 \
-			no-posix-io \
-			no-psk \
-			no-quic \
-			no-rc2 \
-			no-rc4 \
-			no-rfc3779 \
-			no-rmd160 \
-			no-scrypt \
-			no-seed \
-			no-shared \
-			no-siphash \
-			no-siv \
-			no-sm2 \
-			no-sm2-precomp  \
-			no-sm3 \
-			no-sm4 \
-			no-sock \
-			no-srp \
-			no-srtp \
-			no-sse2 \
-			no-ssl \
-			no-ssl-trace \
-			no-ssl3-method \
-			no-static-engine \
-			no-stdio \
-			no-tests \
-			no-thread-pool \
-			no-threads \
-			no-tls1 \
-			no-tls1-method \
-			no-tls1_1 \
-			no-tls1_1-method \
-			no-tls1_2 \
-			no-tls1_2-method \
-			no-tls1_3 \
-			no-ts \
-			no-ui-console \
-			no-uplink \
-			no-whirlpool \
-			--with-rand-seed=getrandom \
-			$(OPENSSL_CONFIG_TYPE) \
-			$(OPENSSL_CFLAGS) \
-			$(LIBCRT_INCLUDE) \
-			$(LIBCRT_LINK))
+all: $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
 
 # tcgtpm
 $(LIBBNMATH): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
@@ -215,11 +84,10 @@ $(LIBPLATFORM): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
 
 TCGTPM_CFLAGS += -fPIE
 TCGTPM_CFLAGS += -DFILE_BACKED_NV=YES -DVTPM=YES
-TCGTPM_CFLAGS += $(LIBCRT_INCLUDE)
-TCGTPM_CFLAGS += -I$(OPENSSL_BUILD_DIR)/include
-TCGTPM_CFLAGS += -I$(OPENSSL_SRC_DIR)/include
+TCGTPM_CFLAGS += -I$(OPENSSL_INCLUDE_DIR)
+TCGTPM_CFLAGS += -I$(OPENSSL_SRC_INCLUDE_DIR)
 
-$(TCGTPM_MAKEFILE): $(LIBCRYPTO) $(LIBCRT)
+$(TCGTPM_MAKEFILE): $(LIBCRYPTO)
 	mkdir -p $(TCGTPM_BUILD_DIR)
 	(cd $(TCGTPM_BUILD_DIR) && \
 		cmake \
@@ -228,24 +96,15 @@ $(TCGTPM_MAKEFILE): $(LIBCRYPTO) $(LIBCRT)
 			-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
 			-DCMAKE_C_FLAGS="${TCGTPM_CFLAGS}" \
 			-DOPENSSL_CRYPTO_LIBRARY="$(LIBCRYPTO)" \
-			-DOPENSSL_INCLUDE_DIR="$(OPENSSL_BUILD_DIR)/include" \
+			-DOPENSSL_INCLUDE_DIR="$(OPENSSL_INCLUDE_DIR)" \
 			-Duser_TpmConfiguration_Dir="$(DEPS_DIR)/TpmConfiguration" \
 			$(TCGTPM_SRC_DIR))
 
 clean:
-	$(MAKE) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR) clean
-	[ ! -f $(OPENSSL_MAKEFILE) ] || $(MAKE) -C $(OPENSSL_BUILD_DIR) clean
 	[ ! -f $(TCGTPM_MAKEFILE) ] || $(MAKE) -C $(TCGTPM_BUILD_DIR) clean
 
 distclean: clean
-	rm -rf $(LIBCRT_BUILD_DIR)
-	rm -rf $(OPENSSL_BUILD_DIR)
 	rm -rf $(TCGTPM_BUILD_DIR)
 
-.PHONY: all clean distclean
-
-.PHONY: libcrt configure_openssl configure_tcgtpm libcrypto
-libcrt: $(LIBCRT)
-configure_openssl: $(OPENSSL_MAKEFILE)
-libcrypto: $(LIBCRYPTO)
+.PHONY: all clean distclean configure_tcgtpm
 configure_tcgtpm: $(TCGTPM_MAKEFILE)

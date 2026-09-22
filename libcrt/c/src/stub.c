@@ -30,7 +30,10 @@ int sscanf(const char  *buffer, const char  *format, ...)
     return 0;
 }
 
-int fputc(int c, FILE *f) 
+// fwrite, fread, fclose, fopen, fseek, ftell, fflush are provided by
+// SVSM Rust code (kernel/src/vtpm/tcgtpm/wrapper.rs).
+
+int fputc(int c, FILE *f)
 {
     NOT_IMPLEMENTED;
     return 0;

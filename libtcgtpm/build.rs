@@ -12,8 +12,25 @@ use std::process::Stdio;
 fn main() {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
-    // Build libtcgtpm.
+    // Read OpenSSL paths from cocoon-tpm-ossl-bare-sys (via cargo metadata).
+    let ossl_include_dir =
+        std::env::var("DEP_OSSL_OSSL_INCLUDE_DIR").expect("DEP_OSSL_OSSL_INCLUDE_DIR not set");
+    let ossl_src_include_dir = std::env::var("DEP_OSSL_OSSL_SRC_INCLUDE_DIR")
+        .expect("DEP_OSSL_OSSL_SRC_INCLUDE_DIR not set");
+    let ossl_lib_dir =
+        std::env::var("DEP_OSSL_OSSL_LIB_DIR").expect("DEP_OSSL_OSSL_LIB_DIR not set");
+
+    // Read libcrt include path from the libcrt crate (via cargo metadata).
+    let libcrt_include_dir =
+        std::env::var("DEP_CRT_INCLUDE_DIR").expect("DEP_CRT_INCLUDE_DIR not set");
+
+    // Build libtcgtpm. OpenSSL (libcrypto) and libcrt come from ossl-bare-sys and libcrt crate
+    // respectively.
     let mut cmd = Command::new("make");
+    cmd.arg(format!("OPENSSL_INCLUDE_DIR={ossl_include_dir}"));
+    cmd.arg(format!("OPENSSL_SRC_INCLUDE_DIR={ossl_src_include_dir}"));
+    cmd.arg(format!("OPENSSL_LIB_DIR={ossl_lib_dir}"));
+    cmd.arg(format!("LIBCRT_INCLUDE_DIR={libcrt_include_dir}"));
     if target_os != "none" {
         cmd.arg("USE_LIBCRT=0");
     }
@@ -41,7 +58,7 @@ fn main() {
         .use_core()
         .clang_arg("-Wno-incompatible-library-redeclaration")
         .clang_arg("-nostdinc")
-        .clang_arg("-isystemdeps/libcrt/include/")
+        .clang_arg(format!("-isystem{libcrt_include_dir}"))
         .clang_arg("-fno-pie") // libcrt.h hides symbols if pie is enabled
         .clang_arg("-Ideps/tpm-20-ref/TPMCmd/tpm/include")
         .clang_arg("-Ideps/TpmConfiguration")
@@ -66,13 +83,7 @@ fn main() {
     println!("cargo:rustc-link-search={out_dir}/tcgtpm-build/cryptolib_Ossl");
     println!("cargo:rustc-link-lib=Tpm_CryptoLib_Math_Ossl");
 
-    println!("cargo:rustc-link-search={out_dir}/openssl-build");
-    println!("cargo:rustc-link-lib=crypto");
-
-    if target_os == "none" {
-        println!("cargo:rustc-link-search={out_dir}/libcrt-build");
-        println!("cargo:rustc-link-lib=crt");
-    }
+    // libcrypto and libcrt are provided by cocoon-tpm-ossl-bare-sys and libcrt crate respectively, at link time.
 
     // Tell cargo not to rerun the build-script unless anything in this
     // directory changes.
