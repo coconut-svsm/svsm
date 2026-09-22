@@ -350,9 +350,6 @@ pub struct Task {
 
     pub shadow_stack_base: VirtAddr,
 
-    /// Page table that is loaded when the task is scheduled
-    pub page_table: SpinLock<PageBox<PageTable>>,
-
     /// Task kernel stack mapping
     _kernel_stack: VMRMapping<Arc<TaskMM>>,
 
@@ -361,6 +358,14 @@ pub struct Task {
 
     /// Task memory management state
     mm: Arc<TaskMM>,
+
+    /// Page table that is loaded when the task is scheduled.
+    ///
+    /// Declared after every `Arc<TaskMM>` so those drop first. `TaskPcid`
+    /// lives in `TaskMM`; its `Drop` must INVPCID the PCID before these
+    /// page-table pages are freed, otherwise a reused PCID can keep a stale
+    /// self-map and `virt_to_phys` panics on a live kernel address.
+    pub page_table: SpinLock<PageBox<PageTable>>,
 
     /// State relevant for scheduler
     sched_state: TaskSchedState,
@@ -554,10 +559,10 @@ impl Task {
             xsa,
             stack_bounds: bounds,
             shadow_stack_base,
-            page_table: SpinLock::new(pgtable),
             _kernel_stack: kernel_stack_mapping,
             _shadow_stack: shadow_stack_mapping,
             mm: task_mm,
+            page_table: SpinLock::new(pgtable),
             sched_state: TaskSchedState::new(cpu.get_cpu_index()),
             name: args.name,
             id: TASK_ID_ALLOCATOR.next_id(),
@@ -666,6 +671,10 @@ impl Task {
 
     pub fn rootdir(&self) -> Arc<dyn Directory> {
         self.rootdir.clone()
+    }
+
+    pub fn pcid(&self) -> Option<u16> {
+        self.mm.pcid()
     }
 
     pub fn set_task_active(&self) {
