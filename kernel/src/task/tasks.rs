@@ -37,21 +37,22 @@ use crate::fs::{Directory, FileHandle, opendir, stdout_open};
 use crate::locking::RWLock;
 use crate::locking::SpinLock;
 use crate::locking::SpinLockIrqSafe;
-use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR, VMRMapping};
+use crate::mm::pagetable::PageTable;
+use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack};
+use crate::mm::vm::{VmRange, Vmr, VmrMapping};
 use crate::mm::{
-    PageBox, SVSM_PERTASK_BASE, SVSM_PERTASK_END, USER_MEM_END, USER_MEM_START,
-    mappings::create_anon_mapping, mappings::create_file_mapping,
+    PageBox, SVSM_PERTASK, USER_MEM, mappings::create_anon_mapping, mappings::create_file_mapping,
 };
 use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CPL, SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::{MemoryRegion, is_aligned};
 use intrusive_collections::{LinkedList, LinkedListAtomicLink, intrusive_adapter};
 
+use super::TaskVm;
 use super::exec::exec;
 use super::schedule::complete_task_switch;
 use super::schedule::terminate;
-use super::task_mm::TaskMM;
+use super::task_mm::{TaskMM, UserVm};
 use super::{UserExecInfo, WaitQueue};
 
 pub const INITIAL_TASK_ID: u32 = 1;
@@ -354,10 +355,10 @@ pub struct Task {
     pub page_table: SpinLock<PageBox<PageTable>>,
 
     /// Task kernel stack mapping
-    _kernel_stack: VMRMapping<Arc<TaskMM>>,
+    _kernel_stack: VmrMapping<TaskVm, Arc<TaskMM>>,
 
     /// Task shadow stack mapping
-    _shadow_stack: Option<VMRMapping<Arc<TaskMM>>>,
+    _shadow_stack: Option<VmrMapping<TaskVm, Arc<TaskMM>>>,
 
     /// Task memory management state
     mm: Arc<TaskMM>,
@@ -452,7 +453,7 @@ struct CreateTaskArguments {
 
     // For a user task, supplies the `VMR` that will represent the user-mode
     // address space.
-    vm_user_range: Option<VMR>,
+    vm_user_range: Option<Vmr<UserVm>>,
 
     // The root directory that will be associated with this task.
     rootdir: Arc<dyn Directory>,
@@ -500,7 +501,7 @@ impl Task {
             let base_token_addr;
 
             // Map shadow stack into virtual address range
-            let mapping = VMRMapping::new(task_mm.clone(), Arc::new(shadow_stack))?;
+            let mapping = VmrMapping::new(task_mm.clone(), Arc::new(shadow_stack))?;
             let stack_base = mapping.virt_addr();
 
             // Initialize shadow stack
@@ -534,7 +535,7 @@ impl Task {
                 info.start_parameter,
             )?,
         };
-        let kernel_stack_mapping = VMRMapping::new(task_mm.clone(), stack)?;
+        let kernel_stack_mapping = VmrMapping::new(task_mm.clone(), stack)?;
         let stack_start = kernel_stack_mapping.virt_addr();
 
         task_mm.kernel_range().populate(&mut pgtable);
@@ -597,12 +598,8 @@ impl Task {
         root: Arc<dyn Directory>,
         name: Arc<str>,
     ) -> Result<TaskPointer, SvsmError> {
-        let vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER)?;
-        // SAFETY: the user address range is fully aligned to top-level paging
-        // boundaries.
-        unsafe {
-            vm_user_range.initialize_lazy()?;
-        }
+        let vm_user_range = Vmr::new();
+        vm_user_range.initialize_lazy()?;
 
         // Destroy the Box and get the pointer to the raw data
         let info_ptr = Box::into_raw(info);
@@ -868,14 +865,14 @@ impl Task {
         Some(guard)
     }
 
-    pub fn mmap_common<'a>(
-        vmr: &'a VMR,
+    fn mmap_range<'a, V: VmRange>(
+        vmr: &'a Vmr<V>,
         addr: VirtAddr,
         file: Option<&FileHandle>,
         offset: usize,
         size: usize,
         flags: VMFileMappingFlags,
-    ) -> Result<VMRMapping<&'a VMR>, SvsmError> {
+    ) -> Result<VmrMapping<V, &'a Vmr<V>>, SvsmError> {
         let mapping = if let Some(f) = file {
             create_file_mapping(f, offset, size, flags)?
         } else {
@@ -883,9 +880,9 @@ impl Task {
         };
 
         if flags.contains(VMFileMappingFlags::Fixed) {
-            VMRMapping::new_at(vmr, addr, mapping)
+            VmrMapping::new_at(vmr, addr, mapping)
         } else {
-            VMRMapping::new_hint(vmr, addr, mapping)
+            VmrMapping::new_hint(vmr, addr, mapping)
         }
     }
 
@@ -897,7 +894,7 @@ impl Task {
         size: usize,
         flags: VMFileMappingFlags,
     ) -> Result<VirtAddr, SvsmError> {
-        let guard = Self::mmap_common(self.mm.kernel_range(), addr, file, offset, size, flags)?;
+        let guard = Self::mmap_range(self.mm.kernel_range(), addr, file, offset, size, flags)?;
         Ok(guard.leak())
     }
 
@@ -908,8 +905,8 @@ impl Task {
         offset: usize,
         size: usize,
         flags: VMFileMappingFlags,
-    ) -> Result<VMRMapping<&'a VMR>, SvsmError> {
-        Self::mmap_common(self.mm.kernel_range(), addr, file, offset, size, flags)
+    ) -> Result<VmrMapping<TaskVm, &'a Vmr<TaskVm>>, SvsmError> {
+        Self::mmap_range(self.mm.kernel_range(), addr, file, offset, size, flags)
     }
 
     pub fn mmap_user(
@@ -921,7 +918,7 @@ impl Task {
         flags: VMFileMappingFlags,
     ) -> Result<VirtAddr, SvsmError> {
         let vmr = self.mm.user_range().ok_or(SvsmError::Mem)?;
-        let guard = Self::mmap_common(vmr, addr, file, offset, size, flags)?;
+        let guard = Self::mmap_range(vmr, addr, file, offset, size, flags)?;
         Ok(guard.leak())
     }
 
@@ -1060,8 +1057,7 @@ impl Task {
 }
 
 pub fn is_task_fault(vaddr: VirtAddr) -> bool {
-    (vaddr >= USER_MEM_START && vaddr < USER_MEM_END)
-        || (vaddr >= SVSM_PERTASK_BASE && vaddr < SVSM_PERTASK_END)
+    USER_MEM.region().contains(vaddr) || SVSM_PERTASK.region().contains(vaddr)
 }
 
 /// Finished the setup of a new thread by doing all setup work which needs to
@@ -1128,7 +1124,7 @@ unsafe fn run_user_task(info_ptr: *mut UserExecInfo, _unused: u64, ctxt: &mut X8
         rip: entry as usize,
         cs: (SVSM_USER_CS | SVSM_USER_CPL).into(),
         flags: EFLAGS_INIT | EFLAGS_IF,
-        rsp: (USER_MEM_END - 8).into(),
+        rsp: (USER_MEM.end() - 8).into(),
         ss: (SVSM_USER_DS | SVSM_USER_CPL).into(),
     };
 

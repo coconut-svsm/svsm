@@ -15,7 +15,6 @@ use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::fs::{FileHandle, FsError};
 use crate::mm::PageRef;
-use crate::mm::vm::VMR;
 use crate::mm::{PAGE_SIZE, pagetable::PTEntryFlags};
 use crate::types::PAGE_SHIFT;
 use crate::utils::align_up;
@@ -164,7 +163,6 @@ impl VirtualMapping for VMFileMapping {
 
     fn handle_page_fault(
         &self,
-        _vmr: &VMR,
         _offset: usize,
         _write: bool,
     ) -> Result<VMPageFaultResolution, SvsmError> {
