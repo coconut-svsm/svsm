@@ -189,7 +189,7 @@ pub mod svsm_gdbstub {
                     // (and thus the page tables remain valid) while the
                     // task page table remains active.
                     unsafe {
-                        task.page_table.lock().load();
+                        task.page_table.lock_write().load();
                     }
                     (cr3.bits(), Some(task.clone()))
                 } else {

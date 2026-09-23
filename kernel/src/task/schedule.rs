@@ -535,7 +535,7 @@ unsafe fn switch_to(prev_task: Option<TaskPointer>, next_task: TaskPointer) -> O
     // the page table and stack information in those tasks are correct and
     // can be used to switch to the correct page table and execution stack.
     unsafe {
-        let cr3 = (*next).page_table.lock().cr3_value().bits();
+        let cr3 = (*next).page_table.lock_read().cr3_value().bits();
 
         // Switch to new task
         let new_prev = switch_context(
@@ -613,7 +613,7 @@ fn preemption_checks() {
 pub unsafe fn update_task_percpu_page_tables(t: *const Task) {
     // SAFETY: the caller guarantees the correctness of the task pointer.
     let task = unsafe { &*t };
-    let mut pt = task.page_table.lock();
+    let mut pt = task.page_table.lock_write();
     this_cpu().populate_page_table(&mut pt);
 }
 

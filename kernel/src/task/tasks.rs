@@ -34,7 +34,6 @@ use crate::cpu::{X86ExceptionContext, X86InterruptFrame};
 use crate::error::SvsmError;
 use crate::fs::{Directory, FileHandle, opendir, stdout_open};
 use crate::locking::RWLock;
-use crate::locking::SpinLock;
 use crate::locking::SpinLockIrqSafe;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR, VMRMapping};
@@ -350,7 +349,7 @@ pub struct Task {
     pub shadow_stack_base: VirtAddr,
 
     /// Page table that is loaded when the task is scheduled
-    pub page_table: SpinLock<PageBox<PageTable>>,
+    pub page_table: RWLock<PageBox<PageTable>>,
 
     /// Task kernel stack mapping
     _kernel_stack: VMRMapping<Arc<TaskMM>>,
@@ -553,7 +552,7 @@ impl Task {
             xsa,
             stack_bounds: bounds,
             shadow_stack_base,
-            page_table: SpinLock::new(pgtable),
+            page_table: RWLock::new(pgtable),
             _kernel_stack: kernel_stack_mapping,
             _shadow_stack: shadow_stack_mapping,
             mm: task_mm,
@@ -735,7 +734,7 @@ impl Task {
             .user_range()
             .filter(|vmr| vmr.virt_range().contains(vaddr))
             .ok_or(SvsmError::Mem)?;
-        let mut pgtbl = self.page_table.lock();
+        let mut pgtbl = self.page_table.lock_write();
         vmr.handle_page_fault(&mut pgtbl, vaddr, write)?;
         Ok(())
     }
