@@ -53,7 +53,7 @@ use crate::cpu::percpu::PERCPU_PAGING_ROOT_OFFSET;
 use crate::cpu::percpu::PERCPU_SHARED_INDEX_OFFSET;
 use crate::cpu::percpu::PERCPU_SHARED_OFFSET;
 use crate::cpu::percpu::irq_nesting_count;
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::percpu::{current_task, this_cpu};
 use crate::cpu::shadow_stack::{IS_CET_ENABLED, PL0_SSP, is_cet_ss_enabled};
 use crate::cpu::sse::{sse_restore_context, sse_save_context};
 use crate::cpu::x86::apic_post_irq;
@@ -392,10 +392,6 @@ pub fn finish_user_task(task: TaskPointer) {
     this_cpu().runqueue_mut().prepare_run_task(task);
 }
 
-pub fn current_task() -> TaskPointer {
-    this_cpu().current_task()
-}
-
 /// Check to see if the task scheduled on the current processor has the given id
 pub fn is_current_task(id: u32) -> bool {
     match &this_cpu().runqueue().current_task {
@@ -472,7 +468,7 @@ pub fn go_idle() {
     // Mark this task as blocked and indicate that it is waiting for wake after
     // idle.  Only one task on each CPU can be in the wake-from-idle state at
     // one time.
-    let task = this_cpu().current_task();
+    let task = current_task();
     task.set_task_blocked();
     let mut runqueue = this_cpu().runqueue_mut();
     assert!(runqueue.wake_from_idle.is_none());
@@ -492,7 +488,7 @@ pub fn set_affinity(cpu_index: usize) {
     // Affinity signaling is only required if the target CPU is not the current
     // CPU.
     if cpu_index != this_cpu().get_cpu_index() {
-        let task = this_cpu().current_task();
+        let task = current_task();
         let target_cpu = PERCPU_AREAS.get_by_cpu_index(cpu_index);
 
         // Disable interrupts to prevent delays in scheduling once the task
@@ -539,7 +535,7 @@ unsafe fn switch_to(prev_task: Option<TaskPointer>, next_task: TaskPointer) -> O
     // the page table and stack information in those tasks are correct and
     // can be used to switch to the correct page table and execution stack.
     unsafe {
-        let cr3 = (*next).page_table.lock().cr3_value().bits();
+        let cr3 = (*next).page_table.lock_read().cr3_value().bits();
 
         // Switch to new task
         let new_prev = switch_context(
@@ -617,7 +613,7 @@ fn preemption_checks() {
 pub unsafe fn update_task_percpu_page_tables(t: *const Task) {
     // SAFETY: the caller guarantees the correctness of the task pointer.
     let task = unsafe { &*t };
-    let mut pt = task.page_table.lock();
+    let mut pt = task.page_table.lock_write();
     this_cpu().populate_page_table(&mut pt);
 }
 

@@ -11,9 +11,9 @@ mod tasks;
 mod waiting;
 
 pub use schedule::{
-    RunQueue, TASKLIST, create_user_task, current_task, finish_user_task, go_idle, is_current_task,
-    schedule, schedule_init, scheduler_idle, set_affinity, start_kernel_task, start_kernel_thread,
-    terminate, wait_for_termination, wake_and_schedule_task,
+    RunQueue, TASKLIST, create_user_task, finish_user_task, go_idle, is_current_task, schedule,
+    schedule_init, scheduler_idle, set_affinity, start_kernel_task, start_kernel_thread, terminate,
+    wait_for_termination, wake_and_schedule_task,
 };
 
 pub use tasks::{
