@@ -460,6 +460,17 @@ impl PTPage {
         Some(unsafe { Self::from_vaddr(address) })
     }
 
+    fn from_entry(entry: PTEntry) -> Option<&'static Self> {
+        if !entry.present() || entry.huge() {
+            return None;
+        }
+
+        let address = phys_to_virt(entry.address());
+        // SAFETY: Every PTEntry points to a previously allocated page-table
+        // page, so this pointer dereference is safe.
+        Some(unsafe { &*address.as_ptr() })
+    }
+
     /// Generates a `PTPage` from a virtual address.
     /// # Safety
     /// The caller must ensure that the virtual address is a valid page table.
@@ -483,6 +494,20 @@ impl Index<usize> for PTPage {
 impl IndexMut<usize> for PTPage {
     fn index_mut(&mut self, index: usize) -> &mut PTEntry {
         &mut self.entries[index]
+    }
+}
+
+/// A struct representing an immutable reference to a PTE at a particular
+/// level in the page table hierarchy.
+#[derive(Debug)]
+pub struct Mapping<'a> {
+    level: usize,
+    entry: &'a PTEntry,
+}
+
+impl<'a> Mapping<'a> {
+    const fn new(entry: &'a PTEntry, level: usize) -> Self {
+        Self { entry, level }
     }
 }
 
@@ -648,6 +673,20 @@ impl PageTable {
         MappingMut::new(&mut page[idx], 0)
     }
 
+    fn walk_addr_at(mut page: &PTPage, vaddr: VirtAddr, level: usize) -> Mapping<'_> {
+        for level in (1..=level).rev() {
+            let idx = Self::index_at(vaddr, level);
+            let entry = &page[idx];
+            match PTPage::from_entry(*entry) {
+                Some(p) => page = p,
+                None => return Mapping::new(entry, level),
+            }
+        }
+
+        let idx = Self::index::<0>(vaddr);
+        Mapping::new(&page[idx], 0)
+    }
+
     /// Walk the virtual address and return the corresponding mapping.
     ///
     /// # Parameters
@@ -657,6 +696,10 @@ impl PageTable {
     /// A `MappingMut` representing the found mapping.
     fn walk_addr_mut(&mut self, vaddr: VirtAddr) -> MappingMut<'_> {
         Self::walk_addr_mut_at(&mut self.root, vaddr, 3)
+    }
+
+    fn walk_addr(&self, vaddr: VirtAddr) -> Mapping<'_> {
+        Self::walk_addr_at(&self.root, vaddr, 3)
     }
 
     /// Calculate the virtual address of a PTE in the self-map, which maps a
@@ -887,8 +930,8 @@ impl PageTable {
 
     /// Gets the physical address for a mapped `vaddr` or `None` if
     /// no such mapping exists.
-    pub fn check_mapping(&mut self, vaddr: VirtAddr) -> Option<PhysAddr> {
-        let mapping = self.walk_addr_mut(vaddr);
+    pub fn check_mapping(&self, vaddr: VirtAddr) -> Option<PhysAddr> {
+        let mapping = self.walk_addr(vaddr);
         match mapping.level {
             0 | 1 => Some(mapping.entry.address()),
             _ => None,
@@ -1005,8 +1048,8 @@ impl PageTable {
     /// # Returns
     /// The physical address of the mapping if present; otherwise, an error
     /// ([`SvsmError`]).
-    pub fn phys_addr(&mut self, vaddr: VirtAddr) -> Result<PhysAddr, SvsmError> {
-        let mapping = self.walk_addr_mut(vaddr);
+    pub fn phys_addr(&self, vaddr: VirtAddr) -> Result<PhysAddr, SvsmError> {
+        let mapping = self.walk_addr(vaddr);
 
         match mapping.level {
             0 => {
