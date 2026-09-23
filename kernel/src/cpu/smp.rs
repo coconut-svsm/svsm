@@ -52,7 +52,7 @@ fn start_cpu(
 ) -> Result<(), SvsmError> {
     let start_rip: u64 = (start_ap as *const u8) as u64;
     let percpu = PerCpu::alloc(percpu_shared)?;
-    let pgtable = this_cpu().get_pgtable().clone_shared()?;
+    let pgtable = this_cpu().new_pgtable()?;
     percpu.setup(platform, pgtable)?;
 
     platform.start_cpu(percpu, start_rip, ap_start_context_ref)?;

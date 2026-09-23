@@ -747,6 +747,12 @@ impl PerCpu {
         unsafe { self.pgtbl.load(Ordering::Relaxed).as_mut().unwrap() }
     }
 
+    /// Return a new page table. The new page table will be empty, except
+    /// for the shared portion of the virtual address space.
+    pub fn new_pgtable(&self) -> Result<PageBox<PageTable>, SvsmError> {
+        self.get_pgtable().clone_shared()
+    }
+
     /// Registers an already set up GHCB page for this CPU.
     ///
     /// # Panics
