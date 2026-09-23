@@ -10,9 +10,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::x86::smap::{clac, stac};
 use crate::error::SvsmError;
 use crate::insn_decode::{InsnError, InsnMachineMem};
-use crate::mm::{
-    USER_MEM_END, USER_MEM_START, memory::valid_phys_region, ptguards::PerCPUPageMappingGuard,
-};
+use crate::mm::{USER_MEM, memory::valid_phys_region, ptguards::PerCPUPageMappingGuard};
 use crate::utils::MemoryRegion;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -823,7 +821,7 @@ impl<T> UserPtr<T> {
     /// falls within userspace.
     #[inline]
     pub fn new(v: VirtAddr) -> Result<Self, SvsmError> {
-        let userspace = MemoryRegion::from_addresses(USER_MEM_START, USER_MEM_END);
+        let userspace = USER_MEM.region();
         let region =
             MemoryRegion::checked_new(v, size_of::<T>()).ok_or(SvsmError::InvalidAddress)?;
         if !userspace.contains_region(&region) {
@@ -902,7 +900,7 @@ impl<T> UserPtr<[T]> {
     /// checking that the entire object falls within userspace.
     #[inline]
     pub fn new(v: VirtAddr, len: usize) -> Result<Self, SvsmError> {
-        let userspace = MemoryRegion::from_addresses(USER_MEM_START, USER_MEM_END);
+        let userspace = USER_MEM.region();
         let region = len
             .checked_mul(size_of::<T>())
             .and_then(|size| MemoryRegion::checked_new(v, size))

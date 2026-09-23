@@ -40,8 +40,7 @@ use crate::locking::SpinLockIrqSafe;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR, VMRMapping};
 use crate::mm::{
-    PageBox, SVSM_PERTASK_BASE, SVSM_PERTASK_END, USER_MEM_END, USER_MEM_START,
-    mappings::create_anon_mapping, mappings::create_file_mapping,
+    PageBox, SVSM_PERTASK, USER_MEM, mappings::create_anon_mapping, mappings::create_file_mapping,
 };
 use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CPL, SVSM_USER_CS, SVSM_USER_DS};
@@ -597,7 +596,7 @@ impl Task {
         root: Arc<dyn Directory>,
         name: Arc<str>,
     ) -> Result<TaskPointer, SvsmError> {
-        let vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER)?;
+        let vm_user_range = VMR::new(USER_MEM, PTEntryFlags::USER)?;
         // SAFETY: the user address range is fully aligned to top-level paging
         // boundaries.
         unsafe {
@@ -1060,8 +1059,7 @@ impl Task {
 }
 
 pub fn is_task_fault(vaddr: VirtAddr) -> bool {
-    (vaddr >= USER_MEM_START && vaddr < USER_MEM_END)
-        || (vaddr >= SVSM_PERTASK_BASE && vaddr < SVSM_PERTASK_END)
+    USER_MEM.region().contains(vaddr) || SVSM_PERTASK.region().contains(vaddr)
 }
 
 /// Finished the setup of a new thread by doing all setup work which needs to
@@ -1128,7 +1126,7 @@ unsafe fn run_user_task(info_ptr: *mut UserExecInfo, _unused: u64, ctxt: &mut X8
         rip: entry as usize,
         cs: (SVSM_USER_CS | SVSM_USER_CPL).into(),
         flags: EFLAGS_INIT | EFLAGS_IF,
-        rsp: (USER_MEM_END - 8).into(),
+        rsp: (USER_MEM.end() - 8).into(),
         ss: (SVSM_USER_DS | SVSM_USER_CPL).into(),
     };
 

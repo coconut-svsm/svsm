@@ -33,12 +33,11 @@ use crate::locking::{
 };
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::virtualrange::VirtualRange;
+use crate::mm::virtualrange::{SubVmAllocator, SubVmRange};
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
 use crate::mm::{
-    PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU_BASE,
-    SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END, SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K,
-    SVSM_PERCPU_TEMP_SIZE_2M, SVSM_PERCPU_TEMP_SIZE_4K, SVSM_PERCPU_VMSA_BASE,
+    AddrSpaceDescriptor, PERCPU_TEMP_2M, PERCPU_TEMP_4K, PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK,
+    SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU, SVSM_PERCPU_CAA, SVSM_PERCPU_VMSA_BASE,
     SVSM_SHADOW_STACK_ISST_DF_BASE, SVSM_SHADOW_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
     virt_to_phys,
 };
@@ -55,9 +54,7 @@ use crate::task::TaskPointer;
 use crate::task::schedule;
 use crate::task::scheduler_idle;
 use crate::task::wake_and_schedule_task;
-use crate::types::{
-    PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
-};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS};
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use alloc::boxed::Box;
@@ -254,8 +251,8 @@ impl GuestVmsaRef {
     pub fn caa(&self) -> Option<NonNull<SvsmCaa>> {
         let caa_phys = self.caa_phys()?;
         let offset = caa_phys.page_offset();
-        let ptr = (SVSM_PERCPU_CAA_BASE + offset).as_mut_ptr();
-        // SAFETY: `SVSM_PERCPU_CAA_BASE` is defined at compile time to
+        let ptr = (SVSM_PERCPU_CAA.base() + offset).as_mut_ptr();
+        // SAFETY: `SVSM_PERCPU_CAA.base()` is defined at compile time to
         // page-aligned and non-zero. Adding a page offset to a page-aligned
         // address can never overflow.
         unsafe { Some(NonNull::new_unchecked(ptr)) }
@@ -388,6 +385,30 @@ pub const PERCPU_SHARED_INDEX_OFFSET: usize = offset_of!(PerCpuShared, cpu_index
 
 const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
 
+#[derive(Debug)]
+pub struct PerCpu4kRange;
+
+impl SubVmRange for PerCpu4kRange {
+    const DESCRIPTOR: AddrSpaceDescriptor = PERCPU_TEMP_4K;
+    const GRANULE: usize = PAGE_SIZE;
+
+    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator<Self>> {
+        this_cpu().vrange_4k_mut()
+    }
+}
+
+#[derive(Debug)]
+pub struct PerCpu2mRange;
+
+impl SubVmRange for PerCpu2mRange {
+    const DESCRIPTOR: AddrSpaceDescriptor = PERCPU_TEMP_2M;
+    const GRANULE: usize = PAGE_SIZE_2M;
+
+    fn get_allocator() -> impl core::ops::DerefMut<Target = SubVmAllocator<Self>> {
+        this_cpu().vrange_2m_mut()
+    }
+}
+
 /// CPU-local data.
 ///
 /// While the contents of this struct are never accessed outside the local CPU
@@ -426,9 +447,9 @@ where
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
     /// Address allocator for per-cpu 4k temporary mappings
-    vrange_4k: RWLock<VirtualRange>,
+    vrange_4k: RWLock<SubVmAllocator<PerCpu4kRange>>,
     /// Address allocator for per-cpu 2m temporary mappings
-    vrange_2m: RWLock<VirtualRange>,
+    vrange_2m: RWLock<SubVmAllocator<PerCpu2mRange>>,
     /// Local APIC state for APIC emulation if enabled
     guest_apic: RWLock<Option<LocalApic>>,
 
@@ -462,13 +483,13 @@ impl PerCpu {
             svsm_vmsa: ImmutAfterInitCell::uninit(),
             reset_ip: AtomicU64::new(0xffff_fff0),
             vm_range: {
-                let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL)?;
+                let mut vmr = VMR::new(SVSM_PERCPU, PTEntryFlags::GLOBAL)?;
                 vmr.set_per_cpu(true);
                 vmr
             },
 
-            vrange_4k: RWLock::new(VirtualRange::new()),
-            vrange_2m: RWLock::new(VirtualRange::new()),
+            vrange_4k: RWLock::new(SubVmAllocator::new()),
+            vrange_2m: RWLock::new(SubVmAllocator::new()),
             guest_apic: RWLock::new(None),
 
             shared,
@@ -790,28 +811,22 @@ impl PerCpu {
         let vaddr = VirtAddr::from(ptr::from_ref(self));
         let paddr = virt_to_phys(vaddr);
         let self_mapping = VMPhysMem::new_mapping(paddr, PAGE_SIZE, true);
-        self.vm_range.insert_at(SVSM_PERCPU_BASE, self_mapping)?;
+        self.vm_range.insert_at(SVSM_PERCPU.base(), self_mapping)?;
         Ok(())
     }
 
     fn initialize_vm_ranges(&self) -> Result<(), SvsmError> {
-        const PAGE_COUNT_4K: usize = SVSM_PERCPU_TEMP_SIZE_4K / PAGE_SIZE;
-        const { assert!(PAGE_COUNT_4K < VirtualRange::CAPACITY) };
-
-        let temp_mapping_4k = VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_4K);
+        let mut range = self.vrange_4k_mut();
+        let temp_mapping_4k = VMReserved::new_mapping(range.descriptor().size());
         self.vm_range
-            .insert_at(SVSM_PERCPU_TEMP_BASE_4K, temp_mapping_4k)?;
-        self.vrange_4k_mut()
-            .init(SVSM_PERCPU_TEMP_BASE_4K, PAGE_COUNT_4K, PAGE_SHIFT);
+            .insert_at(range.descriptor().base(), temp_mapping_4k)?;
+        range.init();
 
-        const PAGE_COUNT_2M: usize = SVSM_PERCPU_TEMP_SIZE_2M / PAGE_SIZE_2M;
-        const { assert!(PAGE_COUNT_2M < VirtualRange::CAPACITY) };
-
-        let temp_mapping_2m = VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_2M);
+        let mut range = self.vrange_2m_mut();
+        let temp_mapping_2m = VMReserved::new_mapping(range.descriptor().size());
         self.vm_range
-            .insert_at(SVSM_PERCPU_TEMP_BASE_2M, temp_mapping_2m)?;
-        self.vrange_2m_mut()
-            .init(SVSM_PERCPU_TEMP_BASE_2M, PAGE_COUNT_2M, PAGE_SHIFT_2M);
+            .insert_at(range.descriptor().base(), temp_mapping_2m)?;
+        range.init();
 
         Ok(())
     }
@@ -1046,14 +1061,15 @@ impl PerCpu {
 
     fn unmap_caa(&self) {
         // Ignore errors - the mapping might or might not be there
-        let _ = self.vm_range.remove(SVSM_PERCPU_CAA_BASE);
+        let _ = self.vm_range.remove(SVSM_PERCPU_CAA.base());
     }
 
     fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.unmap_caa();
 
         let caa_mapping = VMPhysMem::new_mapping(paddr, PAGE_SIZE, true);
-        self.vm_range.insert_at(SVSM_PERCPU_CAA_BASE, caa_mapping)?;
+        self.vm_range
+            .insert_at(SVSM_PERCPU_CAA.base(), caa_mapping)?;
 
         Ok(())
     }
@@ -1231,19 +1247,19 @@ impl PerCpu {
         self.runqueue().current_task()
     }
 
-    pub fn vrange_4k(&self) -> ReadLockGuard<'_, VirtualRange> {
+    pub fn vrange_4k(&self) -> ReadLockGuard<'_, SubVmAllocator<PerCpu4kRange>> {
         self.vrange_4k.read_noblock()
     }
 
-    pub fn vrange_4k_mut(&self) -> WriteLockGuard<'_, VirtualRange> {
+    pub fn vrange_4k_mut(&self) -> WriteLockGuard<'_, SubVmAllocator<PerCpu4kRange>> {
         self.vrange_4k.write_noblock()
     }
 
-    pub fn vrange_2m(&self) -> ReadLockGuard<'_, VirtualRange> {
+    pub fn vrange_2m(&self) -> ReadLockGuard<'_, SubVmAllocator<PerCpu2mRange>> {
         self.vrange_2m.read_noblock()
     }
 
-    pub fn vrange_2m_mut(&self) -> WriteLockGuard<'_, VirtualRange> {
+    pub fn vrange_2m_mut(&self) -> WriteLockGuard<'_, SubVmAllocator<PerCpu2mRange>> {
         self.vrange_2m.write_noblock()
     }
 
@@ -1263,7 +1279,7 @@ pub fn this_cpu() -> &'static PerCpu {
     // SAFETY: The PerCPU area is always mapped at the same virtual address, so
     // dereferencing a pointer to that address is safe. The PerCPU area is also
     // never freed, so using a static lifetime is safe as well.
-    unsafe { &*SVSM_PERCPU_BASE.as_ptr::<PerCpu>() }
+    unsafe { &*SVSM_PERCPU.base().as_ptr::<PerCpu>() }
 }
 
 pub fn try_this_cpu() -> Option<&'static PerCpu> {
@@ -1282,7 +1298,7 @@ pub fn try_this_cpu() -> Option<&'static PerCpu> {
              ".quad (1b)",
              ".quad (2b)",
              ".popsection",
-                in(reg) SVSM_PERCPU_BASE.bits(),
+                in(reg) SVSM_PERCPU.base().bits(),
                 out(reg) _,
                 out("rcx") rcx,
                 options(att_syntax, nostack));
