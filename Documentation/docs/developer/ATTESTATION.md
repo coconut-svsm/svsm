@@ -336,14 +336,14 @@ SEV-SNP machine with an SVSM-enabled kernel.
     Common parameters:
 
     * `--url http://0.0.0.0:8080`: The attestation server is running at `http://0.0.0.0:8080`.
-    * `--protocol kbs`: The attestation server communicates via the KBS
+    * `--protocol sample-kbs`: The attestation server communicates via the KBS
         protocol, configure the backend to use the KBS protocol.
 
     **vsock parameters**
     ```shell
     cd svsm
     make aproxy
-    bin/aproxy --protocol kbs \
+    bin/aproxy --protocol sample-kbs \
                --url http://0.0.0.0:8080 \
                --vsock
     ```
@@ -355,7 +355,7 @@ SEV-SNP machine with an SVSM-enabled kernel.
     ```shell
     cd svsm
     make aproxy
-    bin/aproxy --protocol kbs \
+    bin/aproxy --protocol sample-kbs \
                --url http://0.0.0.0:8080 \
                --unix /tmp/svsm-proxy.sock \
                --force

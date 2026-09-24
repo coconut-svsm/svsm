@@ -9,7 +9,7 @@ mod kbs;
 
 use crate::ArgsBackend;
 use anyhow::Context;
-use kbs::{KbsProtocol, SampleKbs};
+use kbs::{KbsProtocol, SampleKbs, TrusteeKbs};
 use libaproxy::*;
 use reqwest::{blocking::Client, cookie::Jar};
 use std::sync::Arc;
@@ -38,6 +38,7 @@ impl HttpClient {
         let mut protocol = self.protocol;
         match &mut protocol {
             Protocol::SampleKbs(kbs) => kbs.negotiation(self, req),
+            Protocol::TrusteeKbs(kbs) => kbs.negotiation(self, req),
         }
     }
 
@@ -45,6 +46,7 @@ impl HttpClient {
         let mut protocol = self.protocol;
         match &mut protocol {
             Protocol::SampleKbs(kbs) => kbs.attestation(self, req),
+            Protocol::TrusteeKbs(kbs) => kbs.attestation(self, req),
         }
     }
 }
@@ -53,12 +55,14 @@ impl HttpClient {
 #[derive(Clone, Copy, Debug)]
 pub enum Protocol {
     SampleKbs(KbsProtocol<SampleKbs>),
+    TrusteeKbs(KbsProtocol<TrusteeKbs>),
 }
 
 impl From<ArgsBackend> for Protocol {
     fn from(value: ArgsBackend) -> Self {
         match value {
-            ArgsBackend::Kbs => Self::SampleKbs(KbsProtocol::new(SampleKbs)),
+            ArgsBackend::SampleKbs => Self::SampleKbs(KbsProtocol::new(SampleKbs)),
+            ArgsBackend::TrusteeKbs => Self::TrusteeKbs(KbsProtocol::new(TrusteeKbs)),
         }
     }
 }
