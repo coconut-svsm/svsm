@@ -17,8 +17,10 @@ use serde::Deserialize;
 use serde_json::Value;
 
 pub mod sample;
+pub mod trustee;
 
 pub use sample::SampleKbs;
+pub use trustee::TrusteeKbs;
 
 const KBS_API_VERSION: &str = "0.4.0";
 
