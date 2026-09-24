@@ -43,6 +43,13 @@ pub fn this_cpu_shared() -> &'static PerCpuShared {
     PERCPU_SHARED.with(|percpu_shared| *percpu_shared)
 }
 
+/// Returns the current CPU's [`PerCpuShared`], or `None` if it has not been
+/// set up yet. Unlike [`this_cpu_shared()`], this is safe to call at any
+/// point during boot.
+pub fn try_this_cpu_shared() -> Option<&'static PerCpuShared> {
+    PERCPU_SHARED.try_with(|percpu_shared| *percpu_shared)
+}
+
 #[derive(Debug)]
 pub struct ApStartContextRef {
     mapping: PerCPUPageMappingGuard,
