@@ -9,6 +9,7 @@ extern crate alloc;
 
 use super::*;
 use alloc::vec::Vec;
+pub use kbs_types::HashAlgorithm as HashAlgo;
 use serde::{Deserialize, Serialize};
 
 /// The initial payload sent from SVSM to the attestation proxy. The version indicates the version
@@ -29,6 +30,15 @@ pub enum NegotiationParam {
     EcPublicKeyBytes,
 }
 
+/// The payload serialization format SVSM should use to organize public key components and nonces.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PayloadFormat {
+    /// Raw sequential binary representation of public key coordinates and challenge.
+    RawBinary,
+    /// JWS-compliant JSON formatted representation of runtime_data.
+    JwsJson,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NegotiationResponse {
     /// Challenge returned from the attestation server to verify freshness of attestation evidence.
@@ -37,6 +47,8 @@ pub struct NegotiationResponse {
         deserialize_with = "deserialize_base64"
     )]
     pub challenge: Vec<u8>,
-    /// Parameters to be hashed in the specific order defined by the array
-    pub params: Vec<NegotiationParam>,
+    /// The hashing algorithm to use.
+    pub hash_algo: HashAlgo,
+    /// The payload formatting to use.
+    pub payload_format: PayloadFormat,
 }
