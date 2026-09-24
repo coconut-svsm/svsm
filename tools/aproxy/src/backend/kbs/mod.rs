@@ -6,27 +6,50 @@
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
 use super::*;
-use anyhow::{Context, bail};
+use anyhow::Context;
 use base64::{
     Engine,
     prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD},
 };
 use kbs_types::*;
 use reqwest::StatusCode;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
+
+pub mod sample;
+pub mod trustee;
+
+pub use sample::SampleKbs;
+pub use trustee::TrusteeKbs;
 
 const KBS_API_VERSION: &str = "0.4.0";
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct KbsProtocol;
+pub trait KbsBackend: std::fmt::Debug + Clone + Copy + Send + Sync {
+    fn hash_algo(&self) -> HashAlgo;
+    fn payload_format(&self) -> PayloadFormat;
+    fn get_primary_evidence(
+        &self,
+        evidence: &AttestationEvidence,
+    ) -> anyhow::Result<serde_json::Value>;
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct KbsProtocol<B: KbsBackend> {
+    backend: B,
+}
+
+impl<B: KbsBackend> KbsProtocol<B> {
+    pub fn new(backend: B) -> Self {
+        Self { backend }
+    }
+}
 
 #[derive(Deserialize, Debug)]
 struct TokenResponse {
     pub token: String,
 }
 
-impl AttestationProtocol for KbsProtocol {
+impl<B: KbsBackend> AttestationProtocol for KbsProtocol<B> {
     /// KBS servers usually want two components hashed into attestation evidence: the public
     /// components of the TEE key, and a nonce provided in the KBS challenge that is fetched
     /// from the server's /auth endpoint. These must be hased in order.
@@ -39,7 +62,7 @@ impl AttestationProtocol for KbsProtocol {
         request: NegotiationRequest,
     ) -> anyhow::Result<NegotiationResponse> {
         if request.version != (0, 1, 0) {
-            return Err(anyhow!("invalid request version"));
+            return Err(anyhow::anyhow!("invalid request version"));
         }
         let req = Request {
             version: KBS_API_VERSION.to_string(),
@@ -62,18 +85,15 @@ impl AttestationProtocol for KbsProtocol {
         let challenge: Challenge =
             serde_json::from_str(&text).context("unable to convert KBS /auth response to JSON")?;
 
-        // Challenge nonce is a base64-encoded byte vector. Inform SVSM of this so it could
-        // decode the bytes and hash them into the TEE evidence.
-        let params = vec![
-            NegotiationParam::EcPublicKeyBytes,
-            NegotiationParam::Challenge,
-        ];
+        let hash_algo = self.backend.hash_algo();
+        let payload_format = self.backend.payload_format();
 
         let resp = NegotiationResponse {
             challenge: BASE64_STANDARD
                 .decode(challenge.nonce)
                 .context("unable to decode challenge nonce from base64")?,
-            params,
+            hash_algo,
+            payload_format,
         };
 
         Ok(resp)
@@ -88,7 +108,7 @@ impl AttestationProtocol for KbsProtocol {
         http: &mut HttpClient,
         request: AttestationRequest,
     ) -> anyhow::Result<AttestationResponse> {
-        let evidence: KbsEvidence = (&request).try_into()?;
+        let primary_evidence = self.backend.get_primary_evidence(&request.evidence)?;
 
         // Create a KBS attestation object from the TEE evidence and key.
         let attestation = Attestation {
@@ -98,8 +118,7 @@ impl AttestationProtocol for KbsProtocol {
                 tee_pubkey: request.key.into(),
             },
             tee_evidence: CompositeEvidence {
-                primary_evidence: serde_json::to_value(&evidence)
-                    .context("unable to serialize attestation evidence to JSON")?,
+                primary_evidence,
                 additional_evidence: String::new(),
             },
         };
@@ -216,44 +235,4 @@ fn unwrap_epk(resp: &Response) -> anyhow::Result<EcP256PublicKey> {
         .context("unable to decode EC y value from base64")?;
 
     Ok(EcP256PublicKey { x, y })
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(untagged)]
-enum KbsEvidence {
-    Snp {
-        #[serde(rename = "snp-report")]
-        snp_report: String,
-        #[serde(rename = "certs-buf")]
-        certs_buf: Option<String>,
-    },
-}
-
-impl TryFrom<&AttestationRequest> for KbsEvidence {
-    type Error = anyhow::Error;
-
-    // At the moment, only SEV-SNP evidence is allowed. However, preserve the following match
-    // statement to describe how other TEE architectures would serialize AttestationEvidence.
-    #[allow(irrefutable_let_patterns)]
-    fn try_from(data: &AttestationRequest) -> anyhow::Result<Self> {
-        match data.tee {
-            Tee::Snp => {
-                let AttestationEvidence::Snp {
-                    ref report,
-                    ref certs_buf,
-                } = data.evidence
-                else {
-                    bail!("invalid SEV-SNP evidence")
-                };
-
-                Ok(Self::Snp {
-                    snp_report: BASE64_STANDARD.encode(report),
-                    certs_buf: certs_buf
-                        .as_ref()
-                        .map(|certs| BASE64_STANDARD.encode(certs)),
-                })
-            }
-            _ => Err(anyhow!("invalid TEE")),
-        }
-    }
 }
