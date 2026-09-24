@@ -222,10 +222,8 @@ fn unwrap_epk(resp: &Response) -> anyhow::Result<EcP256PublicKey> {
 #[serde(untagged)]
 enum KbsEvidence {
     Snp {
-        #[serde(rename = "snp-report")]
-        snp_report: String,
-        #[serde(rename = "certs-buf")]
-        certs_buf: Option<String>,
+        attestation_report: String,
+        cert_chain: Option<String>,
     },
 }
 
@@ -247,10 +245,8 @@ impl TryFrom<&AttestationRequest> for KbsEvidence {
                 };
 
                 Ok(Self::Snp {
-                    snp_report: BASE64_STANDARD.encode(report),
-                    certs_buf: certs_buf
-                        .as_ref()
-                        .map(|certs| BASE64_STANDARD.encode(certs)),
+                    attestation_report: BASE64_STANDARD.encode(report),
+                    cert_chain: certs_buf.clone().map(|certs| BASE64_STANDARD.encode(certs)),
                 })
             }
             _ => Err(anyhow!("invalid TEE")),
