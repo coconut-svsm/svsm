@@ -303,3 +303,62 @@ pub fn preemption_checks() {
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::rwlock::*;
+
+    #[test]
+    #[should_panic]
+    fn nonreentrant_write_write() {
+        let lock = RWLock::new(0);
+        let _guard = lock.lock_write();
+        let _deadlock = lock.lock_write();
+    }
+
+    #[test]
+    #[should_panic]
+    fn nonreentrant_write_read() {
+        let lock = RWLock::new(0);
+        let _guard = lock.lock_write();
+        let _deadlock = lock.lock_read();
+    }
+
+    #[test]
+    #[should_panic]
+    fn nonreentrant_read_write() {
+        let lock = RWLock::new(0);
+        let _guard = lock.lock_read();
+        let _deadlock = lock.lock_write();
+    }
+
+    #[test]
+    #[should_panic]
+    fn nonreentrant_read_read() {
+        let lock = RWLock::new(0);
+        let _guard = lock.lock_read();
+        let _deadlock = lock.lock_read();
+    }
+
+    /// Holding several distinct locks at once, and re-locking after a release,
+    /// must not be flagged as reentrancy.
+    #[test]
+    fn distinct_locks_and_relock() {
+        let a = RWLock::new(1);
+        let b = RWLock::new(2);
+
+        let ga = a.lock_write();
+        let gb = b.lock_read();
+        assert_eq!(*ga, 1);
+        assert_eq!(*gb, 2);
+        drop(ga);
+        drop(gb);
+
+        // Re-locking the same lock after the previous guard is dropped is fine.
+        let ga = a.lock_write();
+        assert_eq!(*ga, 1);
+        drop(ga);
+        let gr = a.lock_read();
+        assert_eq!(*gr, 1);
+    }
+}
