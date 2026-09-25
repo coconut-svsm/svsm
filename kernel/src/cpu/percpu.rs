@@ -27,6 +27,8 @@ use crate::cpu::x86::{ApicAccess, X86Apic};
 use crate::error::{ApicError, SvsmError};
 use crate::hyperv::HypercallPagesGuard;
 use crate::hyperv::{self, HypercallPage};
+#[cfg(feature = "lockdep")]
+use crate::locking::lockdep::LockTracker;
 use crate::locking::{
     LockGuard, RWLock, RWLockIrqSafe, ReadLockGuard, ReadLockGuardIrqSafe, SpinLock,
     WriteLockGuard, WriteLockGuardIrqSafe,
@@ -419,6 +421,11 @@ where
     irq_state: IrqState,
 
     pgtbl: AtomicPtr<PageTable>,
+
+    /// Tracking of [`RWLock`]s held by this CPU.
+    #[cfg(feature = "lockdep")]
+    lock_tracker: LockTracker,
+
     cr3: AtomicUsize,
     tss: X86Tss,
     isst: RWLock<Isst>,
@@ -458,6 +465,8 @@ impl PerCpu {
             cr3: AtomicUsize::new(0),
             apic: X86Apic::default(),
             irq_state: IrqState::new(),
+            #[cfg(feature = "lockdep")]
+            lock_tracker: LockTracker::new(),
             tss: X86Tss::new(),
             isst: RWLock::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
@@ -493,6 +502,12 @@ impl PerCpu {
 
     pub fn shared(&self) -> &PerCpuShared {
         self.shared
+    }
+
+    /// Returns a reference to this CPU's held-lock tracker.
+    #[cfg(feature = "lockdep")]
+    pub fn lock_tracker(&self) -> &LockTracker {
+        &self.lock_tracker
     }
 
     pub fn initialize_apic(&self, accessor: &'static dyn ApicAccess) {

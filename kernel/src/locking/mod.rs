@@ -5,6 +5,8 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 pub mod common;
+#[cfg(feature = "lockdep")]
+pub mod lockdep;
 pub mod rwlock;
 pub mod spinlock;
 
