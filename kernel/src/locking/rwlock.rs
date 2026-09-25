@@ -5,6 +5,8 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::common::*;
+#[cfg(feature = "lockdep")]
+use super::lockdep::{self, LockMode};
 use crate::types::TPR_LOCK;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
@@ -99,6 +101,10 @@ impl<'a, T, I: IrqLocking> RawReadLockGuard<'a, T, I> {
         let rwlock = orig.rwlock;
         rwlock.fetch_add(compose_val(1, 0), Ordering::Release);
 
+        // Track the additional reference produced by the split.
+        #[cfg(feature = "lockdep")]
+        lockdep::record(rwlock, LockMode::NonReentrantRead);
+
         let (a, b) = f(&*orig);
         (
             RawReadLockGuard {
@@ -120,6 +126,8 @@ impl<'a, T, I: IrqLocking> RawReadLockGuard<'a, T, I> {
 impl<T, I> Drop for RawReadLockGuard<'_, T, I> {
     /// Release the read lock
     fn drop(&mut self) {
+        #[cfg(feature = "lockdep")]
+        lockdep::release(self.rwlock);
         self.rwlock.fetch_sub(compose_val(1, 0), Ordering::Release);
     }
 }
@@ -239,6 +247,10 @@ impl<'a, T, I: IrqLocking> RawWriteLockGuard<'a, T, I> {
         let rwlock = orig.rwlock;
         rwlock.fetch_add(compose_val(0, 1), Ordering::Release);
 
+        // Track the additional reference produced by the split.
+        #[cfg(feature = "lockdep")]
+        lockdep::record(rwlock, LockMode::Write);
+
         let (a, b) = f(&mut *orig);
         (
             RawWriteLockGuard {
@@ -261,6 +273,8 @@ impl<'a, T, I: IrqLocking> RawWriteLockGuard<'a, T, I> {
 /// Implements the behavior of the [`WriteLockGuard`] when it is dropped
 impl<T, I> Drop for RawWriteLockGuard<'_, T, I> {
     fn drop(&mut self) {
+        #[cfg(feature = "lockdep")]
+        lockdep::release(self.rwlock);
         self.rwlock.fetch_sub(compose_val(0, 1), Ordering::Release);
     }
 }
@@ -435,8 +449,16 @@ impl<T: Send, I: IrqLocking> RawRWLock<T, I> {
     /// # Returns
     ///
     /// A [`WriteLockGuard`] that provides write access to the protected data.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `lockdep` feature is enabled and the current CPU already
+    /// holds this lock for read or write, which would produce a deadlock.
     pub fn lock_write(&self) -> RawWriteLockGuard<'_, T, I> {
         let irq_state = I::acquire_lock();
+
+        #[cfg(feature = "lockdep")]
+        lockdep::check(&self.rwlock, LockMode::Write);
 
         // Waiting for current writer to finish
         loop {
@@ -458,6 +480,9 @@ impl<T: Send, I: IrqLocking> RawRWLock<T, I> {
         let val: u64 = self.wait_for_readers();
         assert!(val == compose_val(0, 1));
 
+        #[cfg(feature = "lockdep")]
+        lockdep::record(&self.rwlock, LockMode::Write);
+
         RawWriteLockGuard {
             rwlock: &self.rwlock,
             // SAFETY: the UnsafeCell is initialized on construction, so the
@@ -478,6 +503,9 @@ impl<T: Send, I: IrqLocking> RawRWLock<T, I> {
         self.rwlock
             .compare_exchange(val, new_val, Ordering::Acquire, Ordering::Relaxed)
             .ok()?;
+
+        #[cfg(feature = "lockdep")]
+        lockdep::record(&self.rwlock, LockMode::Write);
 
         Some(RawWriteLockGuard {
             rwlock: &self.rwlock,
@@ -522,8 +550,22 @@ impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
     /// # Returns
     ///
     /// A [`ReadLockGuard`] that provides read access to the protected data.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `lockdep` feature is enabled and the current CPU already
+    /// holds this lock for read or write, which would produce a deadlock.
+    ///
+    /// Recursively taking a read lock is forbidden because it can deadlock
+    /// against a writer that starts waiting between the two acquisitions. Use
+    /// [`try_lock_read`](Self::try_lock_read) if multiple non-blocking readers
+    /// on the same CPU are required.
     pub fn lock_read(&self) -> RawReadLockGuard<'_, T, I> {
         let irq_state = I::acquire_lock();
+
+        #[cfg(feature = "lockdep")]
+        lockdep::check(&self.rwlock, LockMode::NonReentrantRead);
+
         loop {
             let val = self.wait_for_writers();
             let (readers, _) = split_val(val);
@@ -538,6 +580,9 @@ impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
             }
             core::hint::spin_loop();
         }
+
+        #[cfg(feature = "lockdep")]
+        lockdep::record(&self.rwlock, LockMode::NonReentrantRead);
 
         RawReadLockGuard {
             rwlock: &self.rwlock,
@@ -560,6 +605,9 @@ impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
                 (writers == 0).then(|| compose_val(readers + 1, 0))
             })
             .ok()?;
+
+        #[cfg(feature = "lockdep")]
+        lockdep::record(&self.rwlock, LockMode::NonReentrantRead);
 
         Some(RawReadLockGuard {
             rwlock: &self.rwlock,
@@ -609,6 +657,9 @@ mod tests {
 
         let read_guard2 = rwlock.lock_read();
         assert_eq!(*read_guard2, 42);
+        // Drop before re-locking below: recursively taking a read lock
+        // on the same CPU is forbidden by the deadlock detector.
+        drop(read_guard2);
 
         // Create another RWLock instance for modification
         let rwlock_modify = RWLock::new(0);
@@ -625,11 +676,12 @@ mod tests {
 
     #[test]
     fn test_concurrent_readers() {
-        // Let's test two concurrent readers on a new RWLock instance
         let rwlock_concurrent = RWLock::new(123);
 
-        let read_guard1 = rwlock_concurrent.lock_read();
-        let read_guard2 = rwlock_concurrent.lock_read();
+        // Use non-blocking methods to avoid triggering the deadlock
+        // detector.
+        let read_guard1 = rwlock_concurrent.try_lock_read().unwrap();
+        let read_guard2 = rwlock_concurrent.try_lock_read().unwrap();
 
         // Assert that both readers can access the same value (123)
         assert_eq!(*read_guard1, 123);
