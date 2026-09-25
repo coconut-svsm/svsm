@@ -487,47 +487,32 @@ impl GHCBIOPort {
 
 impl IOPort for GHCBIOPort {
     fn outb(&self, port: u16, value: u8) {
-        let ret = current_ghcb().ioio_out(port, GHCBIOSize::Size8, value as u64);
-        if ret.is_err() {
-            request_termination_msr();
-        }
+        current_ghcb()
+            .ioio_out(port, GHCBIOSize::Size8, value as u64)
+            .unwrap();
     }
 
     fn inb(&self, port: u16) -> u8 {
-        let ret = current_ghcb().ioio_in(port, GHCBIOSize::Size8);
-        match ret {
-            Ok(v) => (v & 0xff) as u8,
-            Err(_e) => request_termination_msr(),
-        }
+        current_ghcb().ioio_in(port, GHCBIOSize::Size8).unwrap() as u8
     }
 
     fn outw(&self, port: u16, value: u16) {
-        let ret = current_ghcb().ioio_out(port, GHCBIOSize::Size16, value as u64);
-        if ret.is_err() {
-            request_termination_msr();
-        }
+        current_ghcb()
+            .ioio_out(port, GHCBIOSize::Size16, value as u64)
+            .unwrap();
     }
 
     fn inw(&self, port: u16) -> u16 {
-        let ret = current_ghcb().ioio_in(port, GHCBIOSize::Size16);
-        match ret {
-            Ok(v) => (v & 0xffff) as u16,
-            Err(_e) => request_termination_msr(),
-        }
+        current_ghcb().ioio_in(port, GHCBIOSize::Size16).unwrap() as u16
     }
 
     fn outl(&self, port: u16, value: u32) {
-        let ret = current_ghcb().ioio_out(port, GHCBIOSize::Size32, value as u64);
-        if ret.is_err() {
-            request_termination_msr();
-        }
+        current_ghcb()
+            .ioio_out(port, GHCBIOSize::Size32, value as u64)
+            .unwrap();
     }
 
     fn inl(&self, port: u16) -> u32 {
-        let ret = current_ghcb().ioio_in(port, GHCBIOSize::Size32);
-        match ret {
-            Ok(v) => (v & 0xffffffff) as u32,
-            Err(_e) => request_termination_msr(),
-        }
+        current_ghcb().ioio_in(port, GHCBIOSize::Size32).unwrap() as u32
     }
 }
