@@ -1,10 +1,15 @@
+ifdef RELEASE
 FEATURES ?= vtpm
+else
+FEATURES ?= vtpm,lockdep
+endif
+
 ifneq ($(FEATURES),)
 SVSM_ARGS += --features ${FEATURES}
 XBUILD_ARGS += -f ${FEATURES}
 endif
 
-FEATURES_TEST ?= vtpm,virtio-drivers,block,vsock,uefivars,secureboot,enable-console-log,attest
+FEATURES_TEST ?= vtpm,virtio-drivers,block,vsock,uefivars,secureboot,enable-console-log,attest,lockdep
 SVSM_ARGS_TEST += --no-default-features
 ifneq ($(FEATURES_TEST),)
 SVSM_ARGS_TEST += --features ${FEATURES_TEST}
