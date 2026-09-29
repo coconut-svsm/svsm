@@ -12,7 +12,7 @@ use crate::error::SvsmError;
 use crate::fs::{Directory, open_read};
 use crate::mm::vm::VMFileMappingFlags;
 use crate::mm::zero_user_mem;
-use crate::mm::{USER_MEM_END, mmap_user};
+use crate::mm::{USER_MEM, mmap_user};
 use crate::task::{create_user_task, current_task, finish_user_task, schedule};
 use crate::types::PAGE_SIZE;
 use crate::utils::align_up;
@@ -149,7 +149,7 @@ pub fn exec(info: UserExecInfo) -> Result<u64, SvsmError> {
     // Setup 64k of task stack
     let user_stack_size: usize = 64 * 1024;
     let stack_flags: VMFileMappingFlags = VMFileMappingFlags::Fixed | VMFileMappingFlags::Write;
-    let stack_addr = USER_MEM_END - user_stack_size;
+    let stack_addr = USER_MEM.end() - user_stack_size;
     mmap_user(stack_addr, None, 0, user_stack_size, stack_flags)?;
 
     Ok(entry)
