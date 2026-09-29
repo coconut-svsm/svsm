@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::hyperv;
+use crate::sev::SECURE_TSC_ACCESSOR;
 use crate::sev::status::sev_flags;
 use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_ATTRIBUTES, SVSM_DS, SVSM_DS_ATTRIBUTES};
 use cpuarch::sev_status::SEVStatusFlags;
@@ -71,6 +72,13 @@ impl From<hyperv::HvTableRegister> for VMSASegment {
     }
 }
 
+fn configure_secure_tsc(vmsa: &mut VMSA) {
+    if let Some(info) = SECURE_TSC_ACCESSOR.tsc_info() {
+        vmsa.guest_tsc_scale = info.tsc_scale;
+        vmsa.guest_tsc_offset = info.tsc_offset;
+    }
+}
+
 pub fn init_svsm_vmsa(vmsa: &mut VMSA, vtom: u64, context: &hyperv::HvInitialVpContext) {
     vmsa.es = context.es.into();
     vmsa.cs = context.cs.into();
@@ -104,6 +112,7 @@ pub fn init_svsm_vmsa(vmsa: &mut VMSA, vtom: u64, context: &hyperv::HvInitialVpC
     vmsa.vtom = vtom;
 
     vmsa.sev_features = sev_flags().as_sev_features();
+    configure_secure_tsc(vmsa);
 }
 
 fn real_mode_code_segment(rip: u64) -> VMSASegment {
@@ -174,4 +183,5 @@ pub fn init_guest_vmsa(v: &mut VMSA, rip: u64, alternate_injection: bool) {
     }
 
     v.sev_features = sev_status.as_sev_features();
+    configure_secure_tsc(v);
 }

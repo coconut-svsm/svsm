@@ -79,6 +79,10 @@ pub struct CmdOptions {
     /// Use Alternate Injection if available
     #[arg(long, default_value_t = false)]
     pub alt_injection: bool,
+
+    /// Use Secure TSC
+    #[arg(long, default_value_t = false)]
+    pub secure_tsc: bool,
 }
 
 impl CmdOptions {
@@ -112,7 +116,6 @@ pub enum SevExtraFeatures {
     PreventHostIBS,
     SNPBTBIsolation,
     VmplSSS,
-    SecureTscEn,
     VmsaRegProt,
     SmtProtection,
 }

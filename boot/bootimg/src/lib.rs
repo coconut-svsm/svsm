@@ -172,8 +172,10 @@ where
         debug_serial_port: boot_image_params.boot_params.debug_serial_port,
         ap_start_context_addr: boot_image_params.ap_start_context_addr,
         use_alternate_injection: boot_image_params.boot_params.use_alternate_injection != 0,
+        use_secure_tsc: boot_image_params.boot_params.use_secure_tsc != 0,
         kernel_page_table_vaddr: kernel_page_tables.root_vaddr(),
         vmsa_in_kernel_heap,
+        _reserved: [false; 7],
     };
     add_page_contents(add_page_data, launch_info_paddr, launch_info.as_bytes())?;
 

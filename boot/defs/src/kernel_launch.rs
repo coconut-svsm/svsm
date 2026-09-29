@@ -39,6 +39,8 @@ pub struct KernelLaunchInfo {
     pub debug_serial_port: u16,
     pub vmsa_in_kernel_heap: bool,
     pub use_alternate_injection: bool,
+    pub use_secure_tsc: bool,
+    pub _reserved: [bool; 7],
 }
 
 pub const INITIAL_KERNEL_STACK_WORDS: usize = 3;
