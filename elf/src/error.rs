@@ -49,6 +49,7 @@ pub enum ElfError {
     UnalignedSegmentAddress,
     LoadSegmentConflict,
     DynamicPhdrConflict,
+    RelroPhdrConflict,
 
     UnterminatedDynamicSection,
     DynamicFieldConflict,
@@ -131,6 +132,9 @@ impl fmt::Display for ElfError {
             }
             Self::DynamicPhdrConflict => {
                 write!(f, "multiple ELF PT_DYNAMIC program headers")
+            }
+            Self::RelroPhdrConflict => {
+                write!(f, "multiple ELF PT_GNU_RELRO program headers")
             }
 
             Self::UnterminatedDynamicSection => {
