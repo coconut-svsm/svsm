@@ -72,7 +72,7 @@ use svsm::types::PAGE_SIZE;
 use svsm::utils::MemoryRegion;
 use svsm::utils::ScopedMut;
 use svsm::utils::round_to_pages;
-#[cfg(all(feature = "virtio-drivers", any(feature = "block", feature = "vsock")))]
+#[cfg(any(feature = "block", feature = "vsock"))]
 use svsm::virtio::probe_mmio_slots;
 #[cfg(feature = "vtpm")]
 use svsm::vtpm::vtpm_init;
