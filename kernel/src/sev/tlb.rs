@@ -113,6 +113,18 @@ pub fn flush_address_sync(va: VirtAddr) {
 }
 
 pub fn flush_tlb_scope(flush_scope: &TlbFlushScope) {
+    if let Some(pcid) = flush_scope.pcid {
+        // PCID-scoped flush via INVLPGB. RDX layout matches Linux (pcid << 16 | asid):
+        // PCID in bits 31:16, ASID in bits 15:0. Set both valid_pcid and valid_asid in
+        // RAX; without valid_asid the hardware mis-scopes the flush and a raw PCID in
+        // RDX would be interpreted as an ASID instead of occupying bits 31:16.
+        let rax = InvlpgbRax::new()
+            .with_valid_asid(true)
+            .with_valid_pcid(true);
+        do_invlpgb(rax.into_bits(), 0, u64::from(pcid) << 16);
+        do_tlbsync();
+        return;
+    }
     match flush_scope.range {
         TlbFlushRange::All => flush_tlb_sync(flush_scope.global),
         TlbFlushRange::Range { region, pgsize } => {

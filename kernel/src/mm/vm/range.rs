@@ -5,7 +5,9 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, VirtAddr};
-use crate::cpu::{flush_tlb_global_percpu_range, flush_tlb_global_sync_range};
+use crate::cpu::{
+    flush_tlb_global_percpu_range, flush_tlb_global_sync_range, flush_tlb_pcid_sync_range,
+};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart};
@@ -66,6 +68,14 @@ pub struct VMR {
     /// Indicates that this [`struct VMR`] is visible only on a single CPU
     /// and therefore TLB flushes do not require broadcast.
     per_cpu: bool,
+
+    /// PCID of the address space that owns this VMR, if translations are
+    /// retained across context switches. `None` for global/shared VMRs and
+    /// for tasks that load CR3 with bit 63 clear (reserved PCID 0).
+    ///
+    /// Shootdowns must use this PCID rather than the current CPU's PCID:
+    /// the owner may be inactive on every CPU that receives the IPI.
+    pcid: Option<u16>,
 }
 
 impl VMR {
@@ -94,6 +104,7 @@ impl VMR {
             pgtbl_parts: RWLock::new(Vec::new()),
             pt_flags: flags,
             per_cpu: false,
+            pcid: None,
         })
     }
 
@@ -101,6 +112,14 @@ impl VMR {
     /// so that TLB flushes do not require broadcast.
     pub fn set_per_cpu(&mut self, per_cpu: bool) {
         self.per_cpu = per_cpu;
+    }
+
+    /// Associates this VMR with the PCID of its owning address space.
+    ///
+    /// Subsequent mapping removals invalidate that PCID on every CPU instead
+    /// of using `INVLPG`, which only affects the current PCID.
+    pub fn set_pcid(&mut self, pcid: u16) {
+        self.pcid = Some(pcid);
     }
 
     /// Allocated all [`PageTablePart`]s needed to map this region
@@ -446,6 +465,11 @@ impl VMR {
 
         if self.per_cpu {
             flush_tlb_global_percpu_range(region, pgsize);
+        } else if let Some(pcid) = self.pcid {
+            // The page-table update above must complete before this
+            // shootdown. The synchronous flush must complete before the
+            // unmapped page can be freed or reassigned.
+            flush_tlb_pcid_sync_range(pcid, region, pgsize);
         } else {
             flush_tlb_global_sync_range(region, pgsize);
         }
