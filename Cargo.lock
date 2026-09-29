@@ -2672,9 +2672,6 @@ dependencies = [
 [[package]]
 name = "verus_macro_stub"
 version = "0.1.0"
-dependencies = [
- "proc-macro2",
-]
 
 [[package]]
 name = "verus_prettyplease"
