@@ -308,8 +308,8 @@ SEV-SNP machine with an SVSM-enabled kernel.
     ```shell
     git clone https://github.com/coconut-svsm/svsm.git
     # ... build OVMF, qemu, SVSM IGVM, etc...
-    FW_FILE=... make FEATURES=attest,vsock,virtio-drivers                # vsock transport (default)
-    FW_FILE=... make FEATURES=attest,vsock,attest-serial,virtio-drivers  # vsock with serial fallback (testing)
+    FW_FILE=... make FEATURES=attest            # vsock transport (default)
+    FW_FILE=... make FEATURES=attest-serial     # vsock with serial fallback (testing)
     ```
 
 2. Clone and run the `kbs-test` server used for testing. Supply the following
