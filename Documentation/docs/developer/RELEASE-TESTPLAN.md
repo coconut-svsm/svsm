@@ -187,35 +187,46 @@ cd svsm-vtpm-test
 cargo run
 ```
 
-### Attestation Tests
+### Attestation and Persistence Tests
 
-Test SVSM attestation via KBS using both transport methods. See
-[ATTESTATION.md](ATTESTATION.md) for full details.
+Test persistence by unlocking the persistent state with a secret obtained from
+KBS attestation over vsock. See [ATTESTATION.md](ATTESTATION.md) for full
+details.
 
-If attestation fails, SVSM will panic and the VM will not boot.
-On success, `[SVSM] attestation successful` appears in the boot logs.
-
-#### Build SVSM and proxy
-
+On success, the following messages appear in the boot logs:
 ```
-cargo xbuild -f attest,vsock,attest-serial,virtio-drivers configs/qemu-target.json
-make aproxy
+[SVSM] attestation successful
+[SVSM] persistent CocoonFs storage opened successfully
 ```
 
-#### Start the kbs-test server
+If attestation fails, SVSM will not unlock the persistent state, so services
+cannot persist data across reboots (e.g. vTPM NV state).
+
+#### Build SVSM, proxy, and igvmmeasure
+
+```
+cargo xbuild -f persistence configs/qemu-target.json
+make aproxy bin/igvmmeasure
+```
+
+#### Create the state image and start the kbs-test server
 
 In a separate terminal:
 
 ```
 SVSM=/path/to/svsm
+HEX_SECRET=793212d775af0b2a3e6186a9b701bfefd440d4a048e58fbac4240b913efb58f8
+
+git clone https://github.com/coconut-svsm/cocoon-tpm.git
+pushd cocoon-tpm
+cargo run -p cocoonfs-cli -- -i "$SVSM/cocoonfs.img" -f mkfs -K $HEX_SECRET -H sha2 -C aes -t 128 -I 'ddeeff' -s 8M
+popd
 
 git clone https://github.com/coconut-svsm/kbs-test.git
 cd kbs-test
 MEASUREMENT="$($SVSM/bin/igvmmeasure --check-kvm $SVSM/bin/coconut-qemu.igvm measure -b)"
-cargo run -- --measurement $MEASUREMENT
+cargo run -- --measurement $MEASUREMENT --secret $HEX_SECRET
 ```
-
-#### vsock transport
 
 Start the proxy in another terminal:
 
@@ -223,22 +234,31 @@ Start the proxy in another terminal:
 bin/aproxy --protocol kbs --url http://0.0.0.0:8080 --vsock
 ```
 
-Launch the guest:
+#### Automatically mount encrypted rootfs with a stateful TPM
+
+This test requires `$IMAGE` to have a LUKS-encrypted rootfs. `--snapshot off`
+is required because `systemd-cryptenroll` stores the sealed key in the LUKS2
+header of the guest image, which would otherwise be discarded at poweroff.
+Note that this permanently modifies `$IMAGE`.
+
+Launch the guest with an encrypted rootfs and seal the LUKS passphrase with
+the TPM:
 
 ```
-./scripts/launch_guest.sh --vsock 3
+./scripts/launch_guest.sh --vsock 3 --state cocoonfs.img --snapshot off
+
+# during the boot, enter the LUKS key to mount the root filesystem
+
+guest$ systemd-cryptenroll /dev/sda3 --wipe-slot=tpm2
+guest$ systemd-cryptenroll /dev/sda3 --tpm2-device=auto --tpm2-pcrs=0,1,4,5,7,9
+guest$ poweroff
 ```
 
-#### Serial transport
-
-Start the proxy in another terminal:
-
-```
-bin/aproxy --protocol kbs --url http://0.0.0.0:8080 --unix /tmp/svsm-proxy.sock --force
-```
-
-Launch the guest:
+Restart the guest; the LUKS passphrase sealed with the TPM will automatically
+decrypt the disk during the boot:
 
 ```
-./scripts/launch_guest.sh --aproxy /tmp/svsm-proxy.sock
+./scripts/launch_guest.sh --vsock 3 --state cocoonfs.img --snapshot off
+
+# rootfs automatically mounted, the login prompt is displayed directly
 ```
