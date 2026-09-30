@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GDT_SIZE"],"static":["GLOBAL_GDT"],"struct":["GDT","GDTDesc","GDTEntry"]};
