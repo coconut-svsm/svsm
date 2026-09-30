@@ -4,9 +4,11 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+mod context;
 mod mapping;
 mod range;
 
+pub use context::{ContextVMR, ContextVMRMapping};
 pub use mapping::{
     Mapping, RawAllocMapping, VMFileMapping, VMFileMappingFlags, VMKernelStack, VMM, VMMAdapter,
     VMPhysMem, VMReserved, VMalloc, VirtualMapping,

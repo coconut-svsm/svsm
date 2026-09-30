@@ -9,6 +9,7 @@ pub mod immut_after_init;
 pub mod memory_region;
 pub mod scoped;
 pub mod tcb_ptr;
+pub mod unique_va_allocator;
 pub mod util;
 pub mod vec;
 
