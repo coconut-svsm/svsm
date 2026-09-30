@@ -22,6 +22,14 @@ fn main() {
     let target = env::var("TARGET").unwrap();
     let libcrt_build_dir = out_path.join("libcrt");
 
+    // Cross-compile support: when the host is not x86_64, use a cross toolchain.
+    let host = std::env::var("HOST").unwrap();
+    let cc = if host.starts_with("x86_64") {
+        "gcc".to_string()
+    } else {
+        "x86_64-linux-gnu-gcc".to_string()
+    };
+
     // Only compile and link the C runtime for bare-metal targets.
     // For host builds (tests), the system libc provides these symbols.
     // Linking the bare-metal C objects on the host causes hidden-visibility
@@ -40,6 +48,7 @@ fn main() {
         let status = Command::new("make")
             .arg("-C")
             .arg(&libcrt_src_dir)
+            .arg(format!("CC={cc}"))
             .arg(format!("OUT_DIR={}", libcrt_build_dir.to_str().unwrap()))
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
