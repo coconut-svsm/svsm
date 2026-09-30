@@ -78,8 +78,6 @@ struct IgvmTargetConfig {
     /// See help for `igvmbuilder --policy`
     #[serde(default = "IgvmTargetConfig::default_policy")]
     policy: String,
-    /// See help for `igvmbuilder --comport`.
-    comport: Option<String>,
     /// Platform flags for igvmbuilder
     #[serde(default = "IgvmTargetConfig::default_platforms")]
     platforms: Vec<IgvmPlatform>,
@@ -136,9 +134,6 @@ impl IgvmTargetConfig {
         }
         if let Some(fs) = parts.fs.as_ref() {
             cmd.arg("--filesystem").arg(fs);
-        }
-        if let Some(comport) = self.comport.as_ref() {
-            cmd.arg("--comport").arg(comport);
         }
         if args.verbose {
             cmd.arg("--verbose");
