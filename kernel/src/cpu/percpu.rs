@@ -1093,7 +1093,7 @@ impl PerCpu {
             let mut vmsa_ref = self.guest_vmsa_ref();
             let caa = vmsa_ref.caa();
             let vmsa = vmsa_ref.vmsa();
-            apic.disable_apic_emulation(vmsa, caa);
+            apic.disable_apic_emulation(self, vmsa, caa);
         }
     }
 
@@ -1108,7 +1108,7 @@ impl PerCpu {
 
     pub fn update_apic_emulation(&self, vmsa: &mut VMSA, caa: Option<NonNull<SvsmCaa>>) {
         if let Some(mut apic) = self.guest_apic_mut() {
-            apic.present_interrupts(self.shared(), vmsa, caa);
+            apic.present_interrupts(self, vmsa, caa);
         }
     }
 
@@ -1143,7 +1143,7 @@ impl PerCpu {
         let vmsa = vmsa_ref.vmsa();
         self.guest_apic_mut()
             .ok_or(SvsmError::Apic(ApicError::Disabled))?
-            .read_register(self.shared(), vmsa, caa, register)
+            .read_register(self, vmsa, caa, register)
     }
 
     pub fn write_apic_register(&self, register: u64, value: u64) -> Result<(), SvsmError> {
