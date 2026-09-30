@@ -12,6 +12,7 @@ use bootdefs::platform::SvsmPlatformType;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::ptr::NonNull;
+use core::sync::atomic::{AtomicBool, Ordering};
 use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::boot_params::BootParamBox;
 use svsm::boot_params::BootParams;
@@ -664,8 +665,7 @@ fn test_in_svsm_task(_context: usize) {
     exit(QEMUExitValue::Success);
 }
 
-#[panic_handler]
-fn panic(info: &PanicInfo<'_>) -> ! {
+fn __panic(info: &PanicInfo<'_>) {
     if let Some(mut secrets_page) = secrets_page_mut() {
         secrets_page.clear_vmpck(0);
         secrets_page.clear_vmpck(1);
@@ -686,6 +686,17 @@ fn panic(info: &PanicInfo<'_>) -> ! {
     print_stack(3);
 
     debug_break();
+}
+
+#[panic_handler]
+fn panic(info: &PanicInfo<'_>) -> ! {
+    // Guard against re-entering the panic handler. This may happen if any
+    // of the actions in __panic() trigger a panic themselves (e.g printing
+    // output or walking the stacktrace).
+    static IN_PANIC: AtomicBool = AtomicBool::new(false);
+    if !IN_PANIC.swap(true, Ordering::Relaxed) {
+        __panic(info);
+    }
 
     // If we are running tests, notify qemu. Otherwise, simply
     // terminate the guest.
