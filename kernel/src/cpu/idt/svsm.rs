@@ -20,6 +20,7 @@ use super::common::{
 use crate::address::VirtAddr;
 use crate::cpu::X86ExceptionContext;
 use crate::cpu::irq_state::{raw_get_tpr, raw_set_tpr, tpr_from_vector};
+use crate::cpu::msr::MSR_GS_BASE;
 use crate::cpu::registers::RFlags;
 use crate::cpu::shadow_stack::IS_CET_ENABLED;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
@@ -214,7 +215,7 @@ extern "C" fn ex_handler_breakpoint(ctx: &mut X86ExceptionContext) {
     handle_debug_exception(ctx, BP_VECTOR);
 }
 
-// Doube-Fault handler
+// Double-Fault handler
 #[unsafe(no_mangle)]
 extern "C" fn ex_handler_double_fault(ctxt: &mut X86ExceptionContext) {
     let cr2 = read_cr2();
@@ -520,6 +521,7 @@ global_asm!(
     include_str!("../x86/smap.S"),
     include_str!("svsm_entry.S"),
     IF = const RFlags::IF.bits(),
+    MSR_GS_BASE = const MSR_GS_BASE,
     EXCEP_R15_OFF = const offset_of!(X86ExceptionContext, regs.r15),
     EXCEP_R14_OFF = const offset_of!(X86ExceptionContext, regs.r14),
     EXCEP_R13_OFF = const offset_of!(X86ExceptionContext, regs.r13),
