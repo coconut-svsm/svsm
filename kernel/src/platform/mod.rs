@@ -155,9 +155,6 @@ pub trait SvsmPlatform: Sync {
         Ok(())
     }
 
-    /// Completes initialization of a per-CPU object during construction.
-    fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError>;
-
     /// Completes initialization of a per-CPU object on the target CPU.
     fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError>;
 

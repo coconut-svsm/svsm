@@ -6,11 +6,6 @@
 
 .code64
 
-.section .data
-.globl HV_DOORBELL_ADDR
-HV_DOORBELL_ADDR:
-	.quad 0
-
 .pushsection .entry.text, "ax"
 
 .macro push_regs
@@ -36,7 +31,49 @@ HV_DOORBELL_ADDR:
 	pushq	%rax
 .endm
 
-.macro default_entry_with_ist name: req handler:req error_code:req vector:req
+// The exception frame records the privilege level before the entry.  The
+// registers have already been saved, so the test does not change their state.
+// A #HV before this swap sees kernel CS while GS still holds the user base.
+// The interrupt gate has cleared IF, and this entry code is outside the IRET
+// takeover window, so #HV processing is deferred.  The deferred path uses no
+// GS-relative accesses and preserves GS, letting this entry resume and swap.
+.macro swapgs_on_user_entry
+	testb	$3, {EXCEP_CS_OFF}(%rsp)
+	jz	L\@
+	swapgs
+L\@:
+.endm
+
+// Establish kernel GS only after committing to #HV processing and saving
+// all registers.  Deferred #HV handling uses no GS-relative accesses and
+// leaves GS unchanged.  CS cannot identify the active base during an entry
+// or return transition, so test bit 63 of MSR_GS_BASE via the high half in EDX.
+// When taking over an IRET before R12 is restored, preserve its return flag.
+// Otherwise record the interrupted GS state in R12 for the eventual return.
+.macro hv_swapgs_if_needed save_state:req
+	.if \save_state
+	xorl	%r12d, %r12d
+	.endif
+	movl	${MSR_GS_BASE}, %ecx
+	rdmsr
+	testl	%edx, %edx
+	js	Ldone\@
+	.if \save_state
+	movl	$1, %r12d
+	.endif
+	swapgs
+Ldone\@:
+.endm
+
+// NMI, MCE, and double fault can arrive before the interrupted entry has
+// swapped GS, or after the interrupted return has swapped it back.  CS
+// therefore cannot identify the active GS base.  Read the base itself:
+// kernel bases are negative, while user bases have the sign bit clear.
+// All registers are saved before RDMSR clobbers RAX, RCX, and RDX.
+// Keep the swap decision in callee-saved R12 until the return path undoes it.
+// This also restores user GS when returning to kernel code that was caught
+// in an entry or return transition, where the saved CS is misleading.
+.macro safe_entry name:req handler:req error_code:req vector:req
 	.globl asm_entry_\name
 asm_entry_\name:
 	asm_clac
@@ -45,11 +82,20 @@ asm_entry_\name:
 	pushq	$0
 	.endif
 	push_regs
+	xorl	%r12d, %r12d
+	movl	${MSR_GS_BASE}, %ecx
+	rdmsr
+	testl	%edx, %edx
+	js	L\@
+	swapgs
+	movl	$1, %r12d
+L\@:
 	movl	$\vector, %esi
 	movq	%rsp, %rdi
 	xorl	%edx, %edx
 	call	ex_handler_\handler
-	jmp	default_return
+	cli
+	jmp	return_all_paths
 .endm
 
 .macro default_entry_no_ist name: req handler:req error_code:req vector:req
@@ -61,6 +107,7 @@ asm_entry_\name:
 	pushq	$0
 	.endif
 	push_regs
+	swapgs_on_user_entry
 	testl	${IF}, {EXCEP_FLAGS_OFF}(%rsp)
 	jz	L\@
 	sti
@@ -79,6 +126,7 @@ asm_entry_irq_\name:
 
 	pushq	$0
 	push_regs
+	swapgs_on_user_entry
 	movl	$\vector, %edi
 	call	common_isr_handler_entry
 	jmp	default_return
@@ -197,6 +245,7 @@ hv_no_rip_redirect:
 	// Switch to the stack pointer from the previous exception, which
 	// points to the register save area, and continue with #HV
 	// processing.
+	movq	%rax, %rbx
 	movq	%rcx, %rsp
 	// Pop the current stack frame, so that the previous stack frame sits
 	// on top of the shadow stack.
@@ -205,9 +254,16 @@ hv_no_rip_redirect:
 	movl	$3, %eax
 	incsspq	%rax
 2:
+	// R12 holds the previous return's swap flag until its final restore.
+	// At the frame pop it has already been restored, and GS itself now
+	// holds the outgoing base, so recover the flag from that base instead.
+	leaq	iret_frame_pop(%rip), %rax
+	cmpq	%rax, %rbx
+	jae	handle_hv_save_gs_state
 	jmp	handle_as_hv
 
 postpone_hv:
+	// No GS swap is performed until committing to #HV processing.
 	popq	%rcx
 	popq	%rbx
 	popq	%rax
@@ -298,37 +354,43 @@ continue_hv:
 	xorl	%edx, %edx
 	rdsspq	%rdx
 	pushq	%rdx
+	// A new context, including one reconstructed at IRET, must return
+	// with the GS base that was active at the interrupted instruction.
+handle_hv_save_gs_state:
+	hv_swapgs_if_needed save_state=1
+	jmp	handle_hv_with_kernel_gs
 handle_as_hv:
-	// Load the address of the #HV doorbell page.  The global address
-	// might not yet be configured, and the per-CPU page might also not
-	// yet be configured, so only process events if there is a valid
-	// doorbell page.
-	movq	HV_DOORBELL_ADDR(%rip), %rsi
+	hv_swapgs_if_needed save_state=0
+handle_hv_with_kernel_gs:
+	// Load the address of the #HV doorbell page.  The per-CPU pointer is
+	// initialized to NULL until the page is configured.
+	movq	%gs:__svsm_percpu_hv_doorbell(%rip), %rdi
+	movq	%rdi, %rsi
 	testq	%rsi, %rsi
-	jz	default_return
-	movq	(%rsi), %rdi
-	testq	%rdi, %rdi
-	jz	default_return
+	jz	return_all_paths
 handle_as_hv_with_doorbell:
 	call	process_hv_events
-	// fall through to default_return
+	// Preserve R12's swap flag, including when returning to a kernel
+	// entry or return transition with user GS.
+	cli
+	jmp	return_all_paths
 
 .globl default_return
 default_return:
 	// Ensure that interrupts are disabled before attempting any return.
 	cli
+	xorl	%r12d, %r12d
 	testb	$3, {EXCEP_CS_OFF}(%rsp) // Check CS RPL in exception frame
 	jnz	return_user
 return_all_paths:
+	// R12 records whether to restore user GS, independently of the saved
+	// CS.  Rust calls preserve it, and #HV takeover retains or recovers it.
 	// If interrupts were previously available, then check whether any #HV
 	// events are pending.  If so, proceed as if the original trap was
 	// #HV.
 	testl	${IF}, {EXCEP_FLAGS_OFF}(%rsp) // check EFLAGS.IF in exception frame
 	jz	begin_iret_return
-	movq	HV_DOORBELL_ADDR(%rip), %rdi
-	test	%rdi, %rdi
-	jz	begin_iret_return
-	movq	(%rdi), %rdi
+	movq	%gs:__svsm_percpu_hv_doorbell(%rip), %rdi
 	test	%rdi, %rdi
 	jz	begin_iret_return
 	testw	$0x8000, (%rdi)
@@ -346,7 +408,6 @@ begin_iret_return:
 	movq	{EXCEP_R15_OFF}(%rsp), %r15
 	movq	{EXCEP_R14_OFF}(%rsp), %r14
 	movq	{EXCEP_R13_OFF}(%rsp), %r13
-	movq	{EXCEP_R12_OFF}(%rsp), %r12
 	movq	{EXCEP_R11_OFF}(%rsp), %r11
 	movq	{EXCEP_R10_OFF}(%rsp), %r10
 	movq	{EXCEP_R9_OFF}(%rsp), %r9
@@ -359,14 +420,22 @@ begin_iret_return:
 	movq	{EXCEP_RBX_OFF}(%rsp), %rbx
 	movq	{EXCEP_RAX_OFF}(%rsp), %rax
 
-	// Skip error code.
-	addq	${EXCEP_FRAME_OFF}, %rsp
+	// Keep the swap flag live until GS has been restored.  RSP still
+	// points at the full context throughout the register restore sequence.
+	testl	%r12d, %r12d
+	jz	iret_restore_r12
+	swapgs
 
+iret_restore_r12:
+	movq	{EXCEP_R12_OFF}(%rsp), %r12
+iret_frame_pop:
+	// Skip the saved registers and error code.
+	addq	${EXCEP_FRAME_OFF}, %rsp
 default_iret:
 	iretq
 
 return_user:
-	// Put user-mode specific return code here
+	movl	$1, %r12d
 	jmp	return_all_paths
 
 .globl thread_entry_asm
@@ -399,7 +468,7 @@ default_entry_no_ist	name=de		handler=terminate			error_code=0	vector=0
 default_entry_no_ist	name=db		handler=debug			error_code=0	vector=1
 
 // NMI Non-Maskable-Interrupt Exception (Vector 2)
-default_entry_no_ist	name=nmi	handler=panic			error_code=0	vector=2
+safe_entry		name=nmi	handler=panic			error_code=0	vector=2
 
 // #BP Breakpoint Exception (Vector 3)
 default_entry_no_ist	name=bp		handler=breakpoint		error_code=0	vector=3
@@ -414,7 +483,7 @@ default_entry_no_ist	name=br		handler=terminate		error_code=0	vector=5
 default_entry_no_ist	name=ud		handler=terminate		error_code=0	vector=6
 
 // #DF Double-Fault Exception (Vector 8)
-default_entry_with_ist	name=df		handler=double_fault		error_code=1	vector=8
+safe_entry		name=df		handler=double_fault		error_code=1	vector=8
 
 // #SS Stack Exception (Vector 12)
 default_entry_no_ist	name=ss		handler=terminate		error_code=1	vector=12
@@ -437,7 +506,7 @@ default_entry_no_ist	name=mf		handler=terminate		error_code=0	vector=16
 default_entry_no_ist	name=ac		handler=terminate		error_code=1	vector=17
 
 // #MC Machine-Check Exception (Vector 18)
-default_entry_no_ist	name=mce	handler=panic			error_code=0	vector=18
+safe_entry		name=mce	handler=panic			error_code=0	vector=18
 
 // #XF SIMD Floating-Point Exception (Vector 19)
 default_entry_no_ist	name=xf		handler=terminate		error_code=0	vector=19

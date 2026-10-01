@@ -14,7 +14,7 @@ use crate::mm::validate::{
 };
 use crate::mm::virt_to_phys;
 use crate::platform::PageStateChangeOp;
-use crate::sev::hv_doorbell::HVDoorbell;
+use crate::sev::hv_doorbell::{HVDoorbell, try_with_current_hv_doorbell};
 use crate::sev::utils::raw_vmgexit;
 use crate::types::{Bytes, GUEST_VMPL, PAGE_SIZE_2M, PageSize};
 use crate::utils::MemoryRegion;
@@ -135,6 +135,27 @@ impl TryFrom<Bytes> for GHCBIOSize {
 
 #[derive(Debug)]
 pub struct GhcbPage(PageBox<GHCB>);
+
+percpu! {
+    static GHCB_PAGE: GhcbPage;
+}
+
+pub fn setup_ghcb() -> Result<(), SvsmError> {
+    let ghcb = GhcbPage::new()?;
+    assert!(GHCB_PAGE.init(ghcb).is_ok(), "GHCB already initialized");
+    Ok(())
+}
+
+pub fn with_current_ghcb<F, R>(f: F) -> R
+where
+    F: FnOnce(&GHCB) -> R,
+{
+    GHCB_PAGE.with(|ghcb| f(ghcb))
+}
+
+pub fn register_ghcb() -> Result<(), SvsmError> {
+    with_current_ghcb(GHCB::register)
+}
 
 impl GhcbPage {
     pub fn new() -> Result<Self, SvsmError> {
@@ -831,16 +852,16 @@ pub fn switch_to_vmpl(vmpl: u32) {
     // The switch to a lower VMPL must be done with an assembly sequence in
     // order to ensure that any #HV that occurs during the sequence will
     // correctly block the VMPL switch so that events can be processed.
-    let hv_doorbell = this_cpu().hv_doorbell();
-    let ptr = match hv_doorbell {
-        Some(doorbell) => ptr::from_ref(doorbell),
-        None => ptr::null(),
-    };
-    // SAFETY: FFI call. Parameters and return values are checked.
-    unsafe {
-        if !switch_to_vmpl_unsafe(ptr, vmpl) {
-            panic!("Failed to switch to VMPL {}", vmpl);
-        }
+    let switched = try_with_current_hv_doorbell(|doorbell| {
+        // SAFETY: FFI call. Parameters and return values are checked.
+        unsafe { switch_to_vmpl_unsafe(ptr::from_ref(doorbell), vmpl) }
+    })
+    .unwrap_or_else(|| {
+        // SAFETY: FFI call. Parameters and return values are checked.
+        unsafe { switch_to_vmpl_unsafe(ptr::null(), vmpl) }
+    });
+    if !switched {
+        panic!("Failed to switch to VMPL {}", vmpl);
     }
 }
 

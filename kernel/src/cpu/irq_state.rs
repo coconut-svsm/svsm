@@ -4,11 +4,20 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::cpu::percpu::this_cpu;
-use crate::cpu::{irqs_disable, irqs_enable, lower_tpr, raise_tpr};
 use core::arch::asm;
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+
+percpu! {
+    static IRQ_STATE: IrqState = IrqState::new();
+}
+
+pub(crate) fn with_irq_state<F, R>(f: F) -> R
+where
+    F: FnOnce(&IrqState) -> R,
+{
+    IRQ_STATE.with(f)
+}
 
 /// Interrupt flag in RFLAGS register
 pub const EFLAGS_IF: usize = 1 << 9;
@@ -40,7 +49,7 @@ pub fn raw_irqs_enable() {
 
     // Now that interrupts are enabled, process any #HV events that may be
     // pending.
-    this_cpu().process_hv_events_if_required();
+    crate::sev::hv_doorbell::process_hv_events_if_required();
 }
 
 /// Query IRQ state on current CPU
@@ -142,10 +151,10 @@ pub struct IrqState {
 
 impl IrqState {
     /// Create a new instance of `IrqState`
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             state: AtomicBool::new(false),
-            counts: Default::default(),
+            counts: [const { AtomicI32::new(0) }; TPR_LIMIT],
         }
     }
 
@@ -289,6 +298,64 @@ impl IrqState {
             raw_set_tpr(0);
         }
     }
+}
+
+/// Disables IRQs on the current CPU. Keeps track of the nesting level and
+/// the original IRQ state.
+///
+/// Caller needs to make sure to match every `irqs_disable()` call with an
+/// `irqs_enable()` call.
+#[inline(always)]
+pub fn irqs_disable() {
+    IRQ_STATE.with(IrqState::disable);
+}
+
+/// Reduces IRQ-disable nesting level on the current CPU and restores the
+/// original IRQ state when the level reaches 0.
+///
+/// Caller needs to make sure to match every `irqs_disable()` call with an
+/// `irqs_enable()` call.
+#[inline(always)]
+pub fn irqs_enable() {
+    IRQ_STATE.with(IrqState::enable);
+}
+
+/// Increments the IRQ-disable nesting level without disabling interrupts.
+///
+/// Caller needs to ensure interrupts are already disabled and balance every
+/// call with [`irqs_pop_nesting`].
+#[inline(always)]
+pub fn irqs_push_nesting(was_enabled: bool) {
+    IRQ_STATE.with(|state| state.push_nesting(was_enabled));
+}
+
+/// Reduces the IRQ-disable nesting level without restoring interrupt state.
+///
+/// Caller needs to balance this with a preceding [`irqs_push_nesting`].
+#[inline(always)]
+pub fn irqs_pop_nesting() {
+    IRQ_STATE.with(|state| state.pop_nesting());
+}
+
+/// Returns the current IRQ-disable nesting depth.
+pub fn irq_nesting_count() -> i32 {
+    IRQ_STATE.with(IrqState::count)
+}
+
+/// Raises TPR on the current CPU and tracks its nesting level.
+///
+/// Caller must balance every call with [`lower_tpr`].
+#[inline(always)]
+pub fn raise_tpr(tpr_value: usize) {
+    IRQ_STATE.with(|state| state.raise_tpr(tpr_value));
+}
+
+/// Lowers TPR to the highest level still required by the nesting state.
+///
+/// Caller must balance a preceding [`raise_tpr`] for `tpr_value`.
+#[inline(always)]
+pub fn lower_tpr(tpr_value: usize) {
+    IRQ_STATE.with(|state| state.lower_tpr(tpr_value));
 }
 
 impl Drop for IrqState {

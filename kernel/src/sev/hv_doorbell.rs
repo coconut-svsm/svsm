@@ -3,8 +3,7 @@
 
 use crate::cpu::IrqState;
 use crate::cpu::idt::svsm::common_isr_handler;
-use crate::cpu::irq_state::{raw_get_tpr, tpr_from_vector};
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::irq_state::{irqs_pop_nesting, irqs_push_nesting, raw_get_tpr, tpr_from_vector};
 use crate::error::SvsmError;
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::virt_to_phys;
@@ -14,6 +13,13 @@ use bitfield_struct::bitfield;
 use core::arch::asm;
 use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 use zerocopy::FromBytes;
+
+percpu! {
+    // `SharedBox` is pointer-transparent and `PerCpuStorage` keeps its value
+    // at offset zero, so entry assembly can load this symbol as a pointer.
+    #[percpu_asm_symbol("__svsm_percpu_hv_doorbell")]
+    static HV_DOORBELL: SharedBox<HVDoorbell>;
+}
 
 #[bitfield(u8)]
 pub struct HVDoorbellFlags {
@@ -166,11 +172,37 @@ impl HVDoorbell {
 ///
 /// # Panics
 ///
-/// Panics if te HV doorbell page has not been set up beforehand.
-pub fn current_hv_doorbell() -> &'static HVDoorbell {
-    this_cpu()
-        .hv_doorbell()
-        .expect("HV doorbell page dereferenced before allocating")
+/// Panics if the HV doorbell page has not been set up beforehand.
+pub fn with_current_hv_doorbell<F, R>(f: F) -> R
+where
+    F: FnOnce(&HVDoorbell) -> R,
+{
+    try_with_current_hv_doorbell(f).expect("HV doorbell page dereferenced before allocating")
+}
+
+pub fn try_with_current_hv_doorbell<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&HVDoorbell) -> R,
+{
+    HV_DOORBELL.try_with(|doorbell| f(doorbell))
+}
+
+pub fn setup_hv_doorbell() -> Result<(), SvsmError> {
+    assert!(
+        !HV_DOORBELL.is_initialized(),
+        "Attempted to reinitialize HV doorbell page"
+    );
+    let doorbell = crate::sev::ghcb::with_current_ghcb(allocate_hv_doorbell_page)?;
+    HV_DOORBELL
+        .init(doorbell)
+        .expect("Attempted to reinitialize HV doorbell page");
+    Ok(())
+}
+
+pub fn process_hv_events_if_required() {
+    try_with_current_hv_doorbell(|doorbell| {
+        crate::cpu::irq_state::with_irq_state(|irq_state| doorbell.process_if_required(irq_state))
+    });
 }
 
 /// # Safety
@@ -184,12 +216,11 @@ pub unsafe extern "C" fn process_hv_events(hv_doorbell: *const HVDoorbell) {
     // interrupts were previously enabled, so that any code that deals with
     // maskable interrupts knows that interrupts were enabled prior to reaching
     // this point.
-    let cpu = this_cpu();
-    cpu.irqs_push_nesting(true);
+    irqs_push_nesting(true);
     // SAFETY: the correctness of #HV doorbell page has been guaranteed by the
     // caller.
     unsafe {
         (*hv_doorbell).process_pending_events();
     }
-    cpu.irqs_pop_nesting();
+    irqs_pop_nesting();
 }
