@@ -302,6 +302,9 @@ unsafe fn svsm_start(
     let mut launch_info = unsafe { ScopedMut::<KernelLaunchInfo>::new(li).unwrap() };
     init_platform_type(platform_type);
 
+    // Capture startup messages before the regular log buffer is available.
+    install_early_logger();
+
     GLOBAL_GDT.load_selectors();
 
     let mut early_idt = [IdtEntry::default(); EARLY_IDT_ENTRIES];
@@ -407,8 +410,6 @@ unsafe fn svsm_start(
     platform
         .env_setup_late(debug_serial_port)
         .expect("Late environment setup failed");
-
-    install_early_logger();
 
     // it's important to make sure that idle task
     // has been already created and console is
