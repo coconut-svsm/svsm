@@ -41,4 +41,5 @@ nav:
       - 'developer/design/OBJECT.md'
   - SVSM Protocols:
     - UEFI MM Protocol: 'protocols/uefivars.md'
+    - OCP Protocol: 'protocols/observability.md'
   - 'COCONUT-SVSM Rustdoc': 'rustdoc/svsm'
