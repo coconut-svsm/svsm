@@ -28,12 +28,12 @@ use cocoon_tpm_tpm2_interface::{TpmEccCurve, TpmsEccPoint};
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
-use sha2::{Digest, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
 #[cfg(feature = "attest-serial")]
 // TODO: Make the IO port configurable/discoverable or drop the support entirely.
 const ATTEST_DEFAULT_SERIAL_IO_ADDR: u16 = 0x3e8; // COM3
+const TEE_REPORT_DATA_LEN: usize = 64;
 
 enum Transport {
     Vsock(VsockStream),
@@ -154,13 +154,38 @@ impl AttestationDriver {
         let curve =
             Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
 
+        let nonce = n.challenge.clone();
+
+        let params = match n.payload_format {
+            PayloadFormat::JwsJson => None,
+            PayloadFormat::RawBinary => {
+                let static_params = alloc::vec![
+                    NegotiationParam::EcPublicKeyBytes,
+                    NegotiationParam::Challenge,
+                ];
+                Some(static_params)
+            }
+        };
+
         let pub_key = self
             .ecc
             .pub_key()
             .to_tpms_ecc_point(&curve.curve_ops().map_err(AttestationError::Crypto)?)
             .map_err(AttestationError::Crypto)?;
 
-        let evidence = evidence(&self.tee, hash(&n, &pub_key)?)?;
+        let formatted_bytes = match n.payload_format {
+            PayloadFormat::RawBinary => {
+                let params = params.ok_or(AttestationError::NegotiationDeserialize)?;
+                let formatter = RawBinaryFormatter { params };
+                formatter.format(&nonce, &pub_key)?
+            }
+            PayloadFormat::JwsJson => {
+                let formatter = JwsJsonFormatter;
+                formatter.format(&nonce, &pub_key)?
+            }
+        };
+        let digest = n.hash_algo.digest(&formatted_bytes);
+        let evidence = evidence(&self.tee, prepare_report_data(&digest)?)?;
 
         let req = AttestationRequest {
             tee: self.tee,
@@ -292,6 +317,8 @@ pub enum AttestationError {
     Crypto(CryptoError),
     /// Guest has failed attestation.
     Failed,
+    /// Negotiation Response challenge length from KBS is invalid
+    InvalidChallengeLength,
     // Unable to derive wrap key.
     KeyDerivation(concat_kdf::Error),
     /// Error deserializing the negotiation response from JSON bytes.
@@ -375,28 +402,83 @@ fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<AttestationEvidence, Attestation
     Ok(evidence)
 }
 
-/// Hash the negotiation parameters from the attestation server for inclusion in the
-/// attestation evidence.
-fn hash(
-    n: &NegotiationResponse,
-    pub_key: &TpmsEccPoint<'static>,
-) -> Result<Vec<u8>, AttestationError> {
-    let mut sha = Sha512::new();
+trait PayloadFormatter {
+    fn format(
+        &self,
+        challenge: &[u8],
+        pub_key: &TpmsEccPoint<'_>,
+    ) -> Result<Vec<u8>, AttestationError>;
+}
 
-    for p in &n.params {
-        match p {
-            NegotiationParam::Challenge => {
-                sha.update(&n.challenge);
-            }
-            #[allow(irrefutable_let_patterns)]
-            NegotiationParam::EcPublicKeyBytes => {
-                sha.update(&*pub_key.x.buffer);
-                sha.update(&*pub_key.y.buffer);
+struct RawBinaryFormatter {
+    params: Vec<NegotiationParam>,
+}
+
+impl PayloadFormatter for RawBinaryFormatter {
+    fn format(
+        &self,
+        challenge: &[u8],
+        pub_key: &TpmsEccPoint<'_>,
+    ) -> Result<Vec<u8>, AttestationError> {
+        let mut buffer = Vec::new();
+
+        for p in &self.params {
+            match p {
+                NegotiationParam::Challenge => {
+                    buffer.extend_from_slice(challenge);
+                }
+                #[allow(irrefutable_let_patterns)]
+                NegotiationParam::EcPublicKeyBytes => {
+                    buffer.extend_from_slice(&pub_key.x.buffer);
+                    buffer.extend_from_slice(&pub_key.y.buffer);
+                }
             }
         }
+        Ok(buffer)
+    }
+}
+
+struct JwsJsonFormatter;
+
+impl PayloadFormatter for JwsJsonFormatter {
+    fn format(
+        &self,
+        challenge: &[u8],
+        pub_key: &TpmsEccPoint<'_>,
+    ) -> Result<Vec<u8>, AttestationError> {
+        use alloc::collections::BTreeMap;
+        use serde_json::json;
+
+        let x_encoded = BASE64_URL_SAFE_NO_PAD.encode(&*pub_key.x.buffer);
+        let y_encoded = BASE64_URL_SAFE_NO_PAD.encode(&*pub_key.y.buffer);
+        let nonce_encoded = BASE64_STANDARD.encode(challenge);
+
+        let mut key_map = BTreeMap::new();
+        key_map.insert("alg".to_string(), json!("ECDH-ES+A256KW"));
+        key_map.insert("crv".to_string(), json!("P-521"));
+        key_map.insert("kty".to_string(), json!("EC"));
+        key_map.insert("x".to_string(), json!(x_encoded));
+        key_map.insert("y".to_string(), json!(y_encoded));
+
+        let mut runtime_data = BTreeMap::new();
+        runtime_data.insert("additional-evidence".to_string(), json!(""));
+        runtime_data.insert("nonce".to_string(), json!(nonce_encoded));
+        runtime_data.insert("tee-pubkey".to_string(), json!(key_map));
+
+        serde_json::to_vec(&runtime_data).map_err(|_| AttestationError::NegotiationSerialize)
+    }
+}
+
+/// Take variable-sized negotiation challenge nonce from aproxy into 64 byte array required
+/// for the TEE attestation evidence report
+fn prepare_report_data(challenge_digest: &[u8]) -> Result<Vec<u8>, AttestationError> {
+    if challenge_digest.len() > TEE_REPORT_DATA_LEN {
+        return Err(AttestationError::InvalidChallengeLength);
     }
 
-    try_to_vec(&sha.finalize()).or(Err(AttestationError::VecAlloc))
+    let mut report_data = [0u8; TEE_REPORT_DATA_LEN];
+    report_data[..challenge_digest.len()].copy_from_slice(challenge_digest);
+    Ok(report_data.to_vec())
 }
 
 #[cfg(test)]
@@ -416,57 +498,48 @@ mod tests {
         }
     }
 
-    mod negotiation_hash {
-        use super::*;
+    #[test]
+    fn test_raw_binary_formatter() {
+        let challenge = vec![0xdd; 48];
+        let x = vec![0x10; 66];
+        let y = vec![0x20; 66];
+        let pub_key = make_ecc_point(&x, &y);
 
-        // The challenge size is server-dictated; 48 is an arbitrary choice.
-        const CHALLENGE_LEN: usize = 48;
-        // P-521 coordinate size.
-        const COORD_LEN: usize = 66;
+        let formatter = RawBinaryFormatter {
+            params: vec![
+                NegotiationParam::EcPublicKeyBytes,
+                NegotiationParam::Challenge,
+            ],
+        };
+        let formatted = formatter.format(&challenge, &pub_key).unwrap();
 
-        /// hash() feeds NegotiationParams into SHA-512 in the order they
-        /// appear in `response.params`. Verify that [Challenge, EcPublicKeyBytes]
-        /// and [EcPublicKeyBytes, Challenge] each produce the correct digest and
-        /// that the two digests differ — the server-negotiated ordering must
-        /// affect the resulting attestation evidence.
-        #[test]
-        fn hash_respects_param_ordering() {
-            let challenge = vec![0xdd; CHALLENGE_LEN];
-            let x = vec![0x10; COORD_LEN];
-            let y = vec![0x20; COORD_LEN];
-            let pub_key = make_ecc_point(&x, &y);
+        let mut expected = Vec::new();
+        expected.extend_from_slice(&x);
+        expected.extend_from_slice(&y);
+        expected.extend_from_slice(&challenge);
 
-            let response_chal_first = NegotiationResponse {
-                challenge: challenge.clone(),
-                params: vec![
-                    NegotiationParam::Challenge,
-                    NegotiationParam::EcPublicKeyBytes,
-                ],
-            };
-            let response_key_first = NegotiationResponse {
-                challenge: challenge.clone(),
-                params: vec![
-                    NegotiationParam::EcPublicKeyBytes,
-                    NegotiationParam::Challenge,
-                ],
-            };
+        assert_eq!(formatted, expected);
+    }
 
-            let result_chal_first = hash(&response_chal_first, &pub_key).unwrap();
-            let result_key_first = hash(&response_key_first, &pub_key).unwrap();
+    #[test]
+    fn test_jws_json_formatter() {
+        let challenge = vec![0xdd; 48];
+        let x = vec![0x10; 66];
+        let y = vec![0x20; 66];
+        let pub_key = make_ecc_point(&x, &y);
 
-            let mut sha = Sha512::new();
-            sha.update(&challenge);
-            sha.update(&x);
-            sha.update(&y);
-            assert_eq!(result_chal_first, sha.finalize().as_slice());
+        let formatter = JwsJsonFormatter;
+        let formatted = formatter.format(&challenge, &pub_key).unwrap();
 
-            let mut sha = Sha512::new();
-            sha.update(&x);
-            sha.update(&y);
-            sha.update(&challenge);
-            assert_eq!(result_key_first, sha.finalize().as_slice());
-
-            assert_ne!(result_chal_first, result_key_first);
-        }
+        let json_val: serde_json::Value = serde_json::from_slice(&formatted).unwrap();
+        assert_eq!(
+            json_val["nonce"].as_str().unwrap(),
+            BASE64_STANDARD.encode(&challenge)
+        );
+        assert_eq!(
+            json_val["tee-pubkey"]["alg"].as_str().unwrap(),
+            "ECDH-ES+A256KW"
+        );
+        assert_eq!(json_val["additional-evidence"].as_str().unwrap(), "");
     }
 }
