@@ -607,6 +607,8 @@ pub fn scheduler_idle() {
 fn preemption_checks() {
     assert!(irq_nesting_count() == 0);
     assert!(raw_get_tpr() == 0);
+    #[cfg(feature = "lockdep")]
+    crate::locking::lockdep::preemption_checks();
 }
 
 /// # Safety

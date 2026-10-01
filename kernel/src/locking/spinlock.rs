@@ -11,7 +11,25 @@ use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
+const NO_CPU: u32 = u32::MAX;
+
+/// Returns the index of the current running CPU. Used to keep track
+/// of the holder of a lock.
+#[inline]
+fn current_cpu_id() -> u32 {
+    #[cfg(target_os = "none")]
+    {
+        crate::cpu::percpu::try_this_cpu()
+            .map(|cpu| cpu.get_cpu_index() as u32)
+            .unwrap_or(NO_CPU)
+    }
+    #[cfg(not(target_os = "none"))]
+    {
+        NO_CPU
+    }
+}
 
 /// A lock guard obtained from a [`SpinLock`]. This lock guard
 /// provides exclusive access to the data protected by a [`SpinLock`],
@@ -34,6 +52,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 #[must_use = "if unused the SpinLock will immediately unlock"]
 pub struct RawLockGuard<'a, T, I> {
     holder: &'a AtomicU64,
+    cpu: &'a AtomicU32,
     /// Pointer to the protected data. This relaxes the borrow checker
     /// when implementing `map()` and related methods, and prevents
     /// introducing LLVM `noalias` violations, according to a comment
@@ -51,6 +70,7 @@ impl<'a, T, I: IrqLocking> RawLockGuard<'a, T, I> {
     {
         let mut orig = ManuallyDrop::new(orig);
         let holder = orig.holder;
+        let cpu = orig.cpu;
         // Move the original IRQ state out of drop.
         // SAFETY: we are really reading from a reference, so the source
         // pointer is safe. The original guard is behind `ManuallyDrop`,
@@ -59,6 +79,7 @@ impl<'a, T, I: IrqLocking> RawLockGuard<'a, T, I> {
         let value = f(&mut *orig);
         RawLockGuard {
             holder,
+            cpu,
             data: NonNull::from(value),
             _variance: PhantomData,
             irq_state,
@@ -78,6 +99,7 @@ unsafe impl<T: Send, I: Send> Send for RawLockGuard<'_, T, I> {}
 impl<T, I> Drop for RawLockGuard<'_, T, I> {
     /// Automatically releases the lock when the guard is dropped
     fn drop(&mut self) {
+        self.cpu.store(NO_CPU, Ordering::Relaxed);
         self.holder.fetch_add(1, Ordering::Release);
     }
 }
@@ -135,7 +157,7 @@ pub type LockGuardAnyTpr<'a, T, const TPR: usize> = RawLockGuard<'a, T, TprGuard
 ///     *guard += 2;
 /// };
 /// ```
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct RawSpinLock<T, I> {
     /// This atomic counter is incremented each time a thread attempts to
     /// acquire the lock. It helps to determine the order in which threads
@@ -144,6 +166,9 @@ pub struct RawSpinLock<T, I> {
     /// This counter represents the thread that currently holds the lock
     /// and has access to the protected data.
     holder: AtomicU64,
+    /// Index of the CPU currently holding the lock, or [`NO_CPU`] when the
+    /// lock is free, or when CPU index cannot be determined.
+    cpu: AtomicU32,
     /// This `UnsafeCell` is used to provide interior mutability of the
     /// protected data. That is, it allows the data to be accessed/modified
     /// while enforcing the locking mechanism.
@@ -156,6 +181,12 @@ pub struct RawSpinLock<T, I> {
 unsafe impl<T, I> Send for RawSpinLock<T, I> {}
 // SAFETY: A well-formed lock is always `Sync`.
 unsafe impl<T, I> Sync for RawSpinLock<T, I> {}
+
+impl<T: Default + Send, I: IrqLocking> Default for RawSpinLock<T, I> {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
 
 /// A lock can only be formed if the type it protects is `Send`, since the
 /// contents of the lock will be sent to different threads.
@@ -174,6 +205,7 @@ impl<T: Send, I: IrqLocking> RawSpinLock<T, I> {
         Self {
             current: AtomicU64::new(0),
             holder: AtomicU64::new(0),
+            cpu: AtomicU32::new(NO_CPU),
             data: UnsafeCell::new(data),
             phantom: PhantomData,
         }
@@ -197,16 +229,22 @@ impl<T: Send, I: IrqLocking> RawSpinLock<T, I> {
     pub fn lock(&self) -> RawLockGuard<'_, T, I> {
         let irq_state = I::acquire_lock();
 
+        let cpu = current_cpu_id();
         let ticket = self.current.fetch_add(1, Ordering::Relaxed);
         loop {
             let h = self.holder.load(Ordering::Acquire);
             if h == ticket {
                 break;
             }
+            if cpu != NO_CPU && self.cpu.load(Ordering::Relaxed) == cpu {
+                panic!("Detected reentrant spinlock deadlock on CPU {cpu}");
+            }
             core::hint::spin_loop();
         }
+        self.cpu.store(cpu, Ordering::Relaxed);
         RawLockGuard {
             holder: &self.holder,
+            cpu: &self.cpu,
             // SAFETY: the UnsafeCell is initialized on construction, so the
             // pointer can never be NULL
             data: unsafe { NonNull::new_unchecked(self.data.get()) },
@@ -253,8 +291,10 @@ impl<T: Send, I: IrqLocking> RawSpinLock<T, I> {
                 Ordering::Relaxed,
             );
             if result.is_ok() {
+                self.cpu.store(current_cpu_id(), Ordering::Relaxed);
                 return Some(RawLockGuard {
                     holder: &self.holder,
+                    cpu: &self.cpu,
                     // SAFETY: the UnsafeCell is initialized on construction, so the
                     // pointer can never be NULL
                     data: unsafe { NonNull::new_unchecked(self.data.get()) },
