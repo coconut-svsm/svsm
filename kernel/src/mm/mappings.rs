@@ -5,10 +5,10 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::VirtAddr;
+use crate::cpu::percpu::current_task;
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::mm::vm::{Mapping, VMFileMapping, VMFileMappingFlags, VMalloc};
-use crate::task::current_task;
 
 extern crate alloc;
 use alloc::sync::Arc;

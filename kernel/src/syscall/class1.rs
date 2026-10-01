@@ -8,13 +8,13 @@ extern crate alloc;
 
 use super::obj::{obj_add, obj_get};
 use crate::address::VirtAddr;
+use crate::cpu::percpu::current_task;
 use crate::error::SvsmError;
 use crate::fs::{
     DirEntry, FsError, FsObj, UserBuffer, create_root, find_dir, mkdir_root, open_root, rmdir_root,
     truncate, unlink_root,
 };
 use crate::mm::guestmem::UserPtr;
-use crate::task::current_task;
 use alloc::sync::Arc;
 use core::cmp::min;
 use core::ffi::c_char;

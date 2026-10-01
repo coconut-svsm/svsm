@@ -8,12 +8,13 @@ extern crate alloc;
 
 use super::TaskPointer;
 use crate::address::{Address, VirtAddr};
+use crate::cpu::percpu::current_task;
 use crate::error::SvsmError;
 use crate::fs::{Directory, open_read};
 use crate::mm::vm::VMFileMappingFlags;
 use crate::mm::zero_user_mem;
 use crate::mm::{USER_MEM_END, mmap_user};
-use crate::task::{create_user_task, current_task, finish_user_task, schedule};
+use crate::task::{create_user_task, finish_user_task, schedule};
 use crate::types::PAGE_SIZE;
 use crate::utils::align_up;
 use alloc::boxed::Box;
