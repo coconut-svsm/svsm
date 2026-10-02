@@ -5,7 +5,7 @@
 use crate::{Args, BuildResult, BuildTarget, Component, ComponentConfig, features::Features};
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{MAIN_SEPARATOR, PathBuf};
 
 /// Components to build the kernel. It consists of a list of
 /// component names and their respective build configurations.
@@ -35,8 +35,21 @@ impl KernelConfig {
         // Build each component and copy it to the output path
         let mut objs = Vec::new();
         for comp in self.components() {
-            // Build the component and objcopy it into bin/
+            // If comp.name has a separator, PathBuf::pop() will not
+            // undo PathBuf::push(comp.name) correctly.
+            assert!(!comp.name.contains(MAIN_SEPARATOR));
+
+            // Build the component
             let bin = comp.build(args, BuildTarget::svsm_kernel(), cmd_feats)?;
+
+            // Copy the original ELF to the destination directory. This is
+            // useful for debugging, as the ELF has not been stripped yet and
+            // contains debug information.
+            dst.push(comp.name);
+            std::fs::copy(&bin, dst.with_extension("elf"))?;
+            dst.pop();
+
+            // objcopy the result so that igvmbuilder can pick it up
             dst.push(comp.name);
             comp.config.objcopy.copy(&bin, &dst, args)?;
             objs.push(dst.clone());
