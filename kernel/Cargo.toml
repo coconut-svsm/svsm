@@ -96,9 +96,10 @@ attest = [
 attest-serial = ["attest"]
 
 default = []
+openssl = ["cocoon-tpm-crypto/openssl"]
 persistence = ["dep:cocoon-tpm-storage", "block", "virtio-drivers", "attest"]
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
-vtpm = ["dep:libtcgtpm"]
+vtpm = ["dep:libtcgtpm", "openssl"]
 nosmep = []
 nosmap = []
 verus_all = [

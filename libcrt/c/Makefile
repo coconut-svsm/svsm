@@ -15,7 +15,12 @@ CFLAGS += -fno-stack-protector
 CFLAGS += -ffreestanding
 CFLAGS += -Wall -Werror
 
-CC = gcc
+ifeq ($(shell uname -m),x86_64)
+CROSS_PREFIX :=
+else
+CROSS_PREFIX := x86_64-linux-gnu-
+endif
+CC := $(CROSS_PREFIX)gcc
 
 vpath %.c $(SRC_DIR)
 vpath %.s $(SRC_DIR)
