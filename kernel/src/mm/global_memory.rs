@@ -11,7 +11,7 @@ use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::{SIZE_LEVEL1, SVSM_GLOBAL_MAPPING_BASE, SVSM_GLOBAL_MAPPING_END};
+use crate::mm::{GLOBAL_MAPPING_2M, GLOBAL_MAPPING_4K};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::{MemoryRegion, align_up};
 
@@ -29,15 +29,16 @@ impl GlobalRanges {
     }
 
     fn init(&mut self) {
-        let region_4k_start = SVSM_GLOBAL_MAPPING_BASE;
-        let region_2m_start = SVSM_GLOBAL_MAPPING_BASE + SIZE_LEVEL1;
-        let page_count_4k = (region_2m_start - SVSM_GLOBAL_MAPPING_BASE) / PAGE_SIZE;
-        let page_count_2m = (SVSM_GLOBAL_MAPPING_END - region_2m_start) / PAGE_SIZE_2M;
-
-        self.range_4k
-            .init(region_4k_start, page_count_4k, PAGE_SHIFT);
-        self.range_2m
-            .init(region_2m_start, page_count_2m, PAGE_SHIFT_2M);
+        self.range_4k.init(
+            GLOBAL_MAPPING_4K.base(),
+            GLOBAL_MAPPING_4K.size() / PAGE_SIZE,
+            PAGE_SHIFT,
+        );
+        self.range_2m.init(
+            GLOBAL_MAPPING_2M.base(),
+            GLOBAL_MAPPING_2M.size() / PAGE_SIZE_2M,
+            PAGE_SHIFT_2M,
+        );
     }
 
     fn alloc(

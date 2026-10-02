@@ -12,10 +12,7 @@ use crate::utils::MemoryRegion;
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 use core::fmt::Debug;
 
-use super::{
-    SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
-    SVSM_PERCPU_TEMP_END_4K,
-};
+use super::{PERCPU_TEMP_2M, PERCPU_TEMP_4K};
 
 pub const VIRT_ALIGN_4K: usize = PAGE_SHIFT - 12;
 pub const VIRT_ALIGN_2M: usize = PAGE_SHIFT_2M - 12;
@@ -67,10 +64,8 @@ impl VirtualRange {
 }
 
 pub fn virt_log_usage() {
-    let page_count4k = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
-    let page_count2m = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
-    let unused_cap_4k = BitmapAllocator1024::CAPACITY - page_count4k;
-    let unused_cap_2m = BitmapAllocator1024::CAPACITY - page_count2m;
+    let unused_cap_4k = BitmapAllocator1024::CAPACITY - PERCPU_TEMP_4K.size() / PAGE_SIZE;
+    let unused_cap_2m = BitmapAllocator1024::CAPACITY - PERCPU_TEMP_2M.size() / PAGE_SIZE_2M;
 
     log::info!(
         "[CPU {}] Virtual memory pages used: {} * 4K, {} * 2M",
