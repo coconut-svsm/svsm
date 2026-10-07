@@ -16,8 +16,17 @@ fn main() {
     let libcrt_include_dir =
         std::env::var("DEP_CRT_INCLUDE_DIR").expect("DEP_CRT_INCLUDE_DIR not set");
 
+    // Cross-compile support: when the host is not x86_64, use a cross toolchain.
+    let host = std::env::var("HOST").unwrap();
+    let cc = if host.starts_with("x86_64") {
+        "gcc".to_string()
+    } else {
+        "x86_64-linux-gnu-gcc".to_string()
+    };
+
     // Build libtcgtpm. libcrt comes from the libcrt crate.
     let mut cmd = Command::new("make");
+    cmd.arg(format!("CC={cc}"));
     cmd.arg(format!("LIBCRT_INCLUDE_DIR={libcrt_include_dir}"));
     if target_os != "none" {
         cmd.arg("USE_LIBCRT=0");
