@@ -1,9 +1,4 @@
-ifeq ($(shell uname -m),x86_64)
-CROSS_PREFIX :=
-else
-CROSS_PREFIX := x86_64-linux-gnu-
-endif
-CC := $(CROSS_PREFIX)gcc
+CC ?= gcc
 
 ifdef RELEASE
 TCGTPM_CFLAGS = -O3 -DDEBUG=NO

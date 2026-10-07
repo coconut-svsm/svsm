@@ -24,9 +24,18 @@ fn main() {
     let libcrt_include_dir =
         std::env::var("DEP_CRT_INCLUDE_DIR").expect("DEP_CRT_INCLUDE_DIR not set");
 
+    // Cross-compile support: when the host is not x86_64, use a cross toolchain.
+    let host = std::env::var("HOST").unwrap();
+    let cc = if host.starts_with("x86_64") {
+        "gcc".to_string()
+    } else {
+        "x86_64-linux-gnu-gcc".to_string()
+    };
+
     // Build libtcgtpm. OpenSSL (libcrypto) and libcrt come from ossl-bare-sys and libcrt crate
     // respectively.
     let mut cmd = Command::new("make");
+    cmd.arg(format!("CC={cc}"));
     cmd.arg(format!("OPENSSL_INCLUDE_DIR={ossl_include_dir}"));
     cmd.arg(format!("OPENSSL_SRC_INCLUDE_DIR={ossl_src_include_dir}"));
     cmd.arg(format!("OPENSSL_LIB_DIR={ossl_lib_dir}"));
