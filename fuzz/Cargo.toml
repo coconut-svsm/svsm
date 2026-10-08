@@ -43,5 +43,11 @@ path = "fuzz_targets/bitmap_allocator.rs"
 test = false
 doc = false
 
+[[bin]]
+name = "flat_bitmap_allocator"
+path = "fuzz_targets/flat_bitmap_allocator.rs"
+test = false
+doc = false
+
 [lints]
 workspace = true
