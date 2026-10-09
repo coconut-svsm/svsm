@@ -1,0 +1,123 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="API documentation for the Rust `VsockTransport` trait in crate `svsm`."><title>VsockTransport in svsm::vsock::api - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-1a91846b.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="svsm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.88.0 (6b00bc388 2025-06-23)" data-channel="1.88.0" data-search-js="search-f7877310.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-4e99c027.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-7ef8a74a.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../svsm/index.html">svsm</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Vsock<wbr>Transport</a></h2><h3><a href="#required-methods">Required Methods</a></h3><ul class="block"><li><a href="#tymethod.connect" title="connect">connect</a></li><li><a href="#tymethod.is_local_port_used" title="is_local_port_used">is_local_port_used</a></li><li><a href="#tymethod.recv" title="recv">recv</a></li><li><a href="#tymethod.send" title="send">send</a></li><li><a href="#tymethod.shutdown" title="shutdown">shutdown</a></li></ul><h3><a href="#implementors">Implementors</a></h3></section><div id="rustdoc-modnav"><h2><a href="index.html">In svsm::<wbr>vsock::<wbr>api</a></h2></div></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">svsm</a>::<wbr><a href="../index.html">vsock</a>::<wbr><a href="index.html">api</a></div><h1>Trait <span class="trait">VsockTransport</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/svsm/vsock/api.rs.html#9-110">Source</a> </span></div><pre class="rust item-decl"><code>pub trait VsockTransport: <a class="trait" href="https://doc.rust-lang.org/1.88.0/core/marker/trait.Sync.html" title="trait core::marker::Sync">Sync</a> + <a class="trait" href="https://doc.rust-lang.org/1.88.0/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a> {
+    // Required methods
+    fn <a href="#tymethod.connect" class="fn">connect</a>(
+        &amp;self,
+        remote_cid: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+        local_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+        remote_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.88.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.unit.html">()</a>, <a class="enum" href="../../error/enum.SvsmError.html" title="enum svsm::error::SvsmError">SvsmError</a>&gt;;
+<span class="item-spacer"></span>    fn <a href="#tymethod.send" class="fn">send</a>(
+        &amp;self,
+        remote_cid: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+        local_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+        remote_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+        buffer: &amp;[<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u8.html">u8</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.88.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.usize.html">usize</a>, <a class="enum" href="../../error/enum.SvsmError.html" title="enum svsm::error::SvsmError">SvsmError</a>&gt;;
+<span class="item-spacer"></span>    fn <a href="#tymethod.recv" class="fn">recv</a>(
+        &amp;self,
+        remote_cid: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+        local_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+        remote_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+        buffer: &amp;mut [<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u8.html">u8</a>],
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.88.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.usize.html">usize</a>, <a class="enum" href="../../error/enum.SvsmError.html" title="enum svsm::error::SvsmError">SvsmError</a>&gt;;
+<span class="item-spacer"></span>    fn <a href="#tymethod.shutdown" class="fn">shutdown</a>(
+        &amp;self,
+        remote_cid: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+        local_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+        remote_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+        force: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.bool.html">bool</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.88.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.unit.html">()</a>, <a class="enum" href="../../error/enum.SvsmError.html" title="enum svsm::error::SvsmError">SvsmError</a>&gt;;
+<span class="item-spacer"></span>    fn <a href="#tymethod.is_local_port_used" class="fn">is_local_port_used</a>(&amp;self, port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.88.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.bool.html">bool</a>, <a class="enum" href="../../error/enum.SvsmError.html" title="enum svsm::error::SvsmError">SvsmError</a>&gt;;
+}</code></pre><h2 id="required-methods" class="section-header">Required Methods<a href="#required-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="tymethod.connect" class="method"><a class="src rightside" href="../../../src/svsm/vsock/api.rs.html#26">Source</a><h4 class="code-header">fn <a href="#tymethod.connect" class="fn">connect</a>(
+    &amp;self,
+    remote_cid: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+    local_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+    remote_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.88.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.unit.html">()</a>, <a class="enum" href="../../error/enum.SvsmError.html" title="enum svsm::error::SvsmError">SvsmError</a>&gt;</h4></section></summary><div class="docblock"><p>Establishes a connection to a remote vsock endpoint.</p>
+<p>This method initiates a connection to the specified remote CID and port
+using the provided local port. The call blocks until the connection is
+established or fails.</p>
+<h5 id="parameters"><a class="doc-anchor" href="#parameters">§</a>Parameters</h5>
+<ul>
+<li><code>remote_cid</code> - The CID of the remote endpoint to connect to</li>
+<li><code>local_port</code> - The local port to use for this connection</li>
+<li><code>remote_port</code> - The remote port to connect to</li>
+</ul>
+<h5 id="returns"><a class="doc-anchor" href="#returns">§</a>Returns</h5>
+<ul>
+<li><code>Ok()</code> if the connection was successfully established</li>
+<li><code>Err(SvsmError)</code> if the connection failed</li>
+</ul>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.send" class="method"><a class="src rightside" href="../../../src/svsm/vsock/api.rs.html#44-50">Source</a><h4 class="code-header">fn <a href="#tymethod.send" class="fn">send</a>(
+    &amp;self,
+    remote_cid: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+    local_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+    remote_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+    buffer: &amp;[<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u8.html">u8</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.88.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.usize.html">usize</a>, <a class="enum" href="../../error/enum.SvsmError.html" title="enum svsm::error::SvsmError">SvsmError</a>&gt;</h4></section></summary><div class="docblock"><p>Sends data over an established vsock connection.</p>
+<p>Transmits the contents of the provided buffer to the remote endpoint.
+The connection must have been previously established via <code>connect()</code>.</p>
+<h5 id="parameters-1"><a class="doc-anchor" href="#parameters-1">§</a>Parameters</h5>
+<ul>
+<li><code>remote_cid</code> - The CID of the remote endpoint</li>
+<li><code>local_port</code> - The local port of the connection</li>
+<li><code>remote_port</code> - The remote port of the connection</li>
+<li><code>buffer</code> - The data to send</li>
+</ul>
+<h5 id="returns-1"><a class="doc-anchor" href="#returns-1">§</a>Returns</h5>
+<ul>
+<li><code>Ok(usize)</code> - The number of bytes successfully sent</li>
+<li><code>Err(SvsmError)</code> if the send operation failed</li>
+</ul>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.recv" class="method"><a class="src rightside" href="../../../src/svsm/vsock/api.rs.html#70-76">Source</a><h4 class="code-header">fn <a href="#tymethod.recv" class="fn">recv</a>(
+    &amp;self,
+    remote_cid: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+    local_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+    remote_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+    buffer: &amp;mut [<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u8.html">u8</a>],
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.88.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.usize.html">usize</a>, <a class="enum" href="../../error/enum.SvsmError.html" title="enum svsm::error::SvsmError">SvsmError</a>&gt;</h4></section></summary><div class="docblock"><p>Receives data from an established vsock connection.</p>
+<p>Reads data from the remote endpoint into the provided buffer. This method
+blocks until all data is available or an error occurs, in such case
+returns all the received bytes, if any.
+The connection must have been previously established via <code>connect()</code>.</p>
+<h5 id="parameters-2"><a class="doc-anchor" href="#parameters-2">§</a>Parameters</h5>
+<ul>
+<li><code>remote_cid</code> - The CID of the remote endpoint</li>
+<li><code>local_port</code> - The local port of the connection</li>
+<li><code>remote_port</code> - The remote port of the connection</li>
+<li><code>buffer</code> - The buffer to receive data into</li>
+</ul>
+<h5 id="returns-2"><a class="doc-anchor" href="#returns-2">§</a>Returns</h5>
+<ul>
+<li><code>Ok(usize)</code> - The number of bytes successfully received</li>
+<li><code>Err(SvsmError)</code> if the receive operation failed</li>
+</ul>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.shutdown" class="method"><a class="src rightside" href="../../../src/svsm/vsock/api.rs.html#94-100">Source</a><h4 class="code-header">fn <a href="#tymethod.shutdown" class="fn">shutdown</a>(
+    &amp;self,
+    remote_cid: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+    local_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+    remote_port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>,
+    force: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.bool.html">bool</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.88.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.unit.html">()</a>, <a class="enum" href="../../error/enum.SvsmError.html" title="enum svsm::error::SvsmError">SvsmError</a>&gt;</h4></section></summary><div class="docblock"><p>Shuts down a vsock connection.</p>
+<p>Initiates a graceful shutdown of the connection telling the peer that we won’t
+send or receive any more data.</p>
+<h5 id="parameters-3"><a class="doc-anchor" href="#parameters-3">§</a>Parameters</h5>
+<ul>
+<li><code>remote_cid</code> - The CID of the remote endpoint</li>
+<li><code>local_port</code> - The local port of the connection</li>
+<li><code>remote_port</code> - The remote port of the connection</li>
+<li><code>force</code> - Forcibly terminates the connection, without waiting for peer confirm</li>
+</ul>
+<h5 id="returns-3"><a class="doc-anchor" href="#returns-3">§</a>Returns</h5>
+<ul>
+<li><code>Ok()</code> if the shutdown was successful</li>
+<li><code>Err(SvsmError)</code> if the shutdown failed</li>
+</ul>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.is_local_port_used" class="method"><a class="src rightside" href="../../../src/svsm/vsock/api.rs.html#109">Source</a><h4 class="code-header">fn <a href="#tymethod.is_local_port_used" class="fn">is_local_port_used</a>(&amp;self, port: <a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.u32.html">u32</a>) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.88.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.88.0/core/primitive.bool.html">bool</a>, <a class="enum" href="../../error/enum.SvsmError.html" title="enum svsm::error::SvsmError">SvsmError</a>&gt;</h4></section></summary><div class="docblock"><p>Returns whether the given local port is currently in use.</p>
+<h5 id="returns-4"><a class="doc-anchor" href="#returns-4">§</a>Returns</h5>
+<ul>
+<li><code>Ok(true)</code> - The port is in use</li>
+<li><code>Ok(false)</code> - The port is free</li>
+<li><code>Err(SvsmError)</code> if the check could not be performed</li>
+</ul>
+</div></details></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"><section id="impl-VsockTransport-for-VirtIOVsockDriver" class="impl"><a class="src rightside" href="../../../src/svsm/vsock/virtio_vsock.rs.html#54-188">Source</a><a href="#impl-VsockTransport-for-VirtIOVsockDriver" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.VsockTransport.html" title="trait svsm::vsock::api::VsockTransport">VsockTransport</a> for <a class="struct" href="../virtio_vsock/struct.VirtIOVsockDriver.html" title="struct svsm::vsock::virtio_vsock::VirtIOVsockDriver">VirtIOVsockDriver</a></h3></section></div><script src="../../../trait.impl/svsm/vsock/api/trait.VsockTransport.js" async></script></section></div></main></body></html>

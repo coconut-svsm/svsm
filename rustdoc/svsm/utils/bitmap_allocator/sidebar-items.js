@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["alloc_aligned"],"struct":["BitmapAllocator64","BitmapAllocatorTree"],"trait":["BitmapAllocator"],"type":["BitmapAllocator1024"]};

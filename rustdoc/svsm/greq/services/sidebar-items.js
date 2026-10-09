@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["REPORT_REQUEST_SIZE","REPORT_RESPONSE_SIZE"],"fn":["get_extended_report","get_regular_report","get_report"]};

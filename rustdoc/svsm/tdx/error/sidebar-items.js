@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TdVmcallError","TdxError","TdxSuccess"],"fn":["tdvmcall_result","tdx_recoverable_error","tdx_result"]};

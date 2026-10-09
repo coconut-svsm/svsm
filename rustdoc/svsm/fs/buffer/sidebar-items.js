@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["LINE_BUFFER_SIZE"],"struct":["LineBuffer","SliceMutRefBuffer","SliceRefBuffer","UserBuffer"],"trait":["Buffer"]};
