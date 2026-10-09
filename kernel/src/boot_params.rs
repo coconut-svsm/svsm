@@ -475,6 +475,10 @@ impl BootParams<'_> {
         self.boot_param_block.use_alternate_injection != 0
     }
 
+    pub fn use_secure_tsc(&self) -> bool {
+        self.boot_param_block.use_secure_tsc != 0
+    }
+
     pub fn has_qemu_testdev(&self) -> bool {
         self.boot_param_block.has_qemu_testdev != 0
     }
