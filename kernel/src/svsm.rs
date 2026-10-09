@@ -620,6 +620,16 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
             Err(e) => log::info!("Failed to launch /init: {e:?}"),
         }
 
+        #[cfg(feature = "omp-test")]
+        {
+            log::info!("Adding SVSM OMP object");
+            svsm::omp_test::add_svsm_object();
+            // repeating just for testing, the uniqueness
+            // is not checked in this case.
+            svsm::omp_test::add_svsm_object();
+            svsm::omp_test::add_svsm_object();
+        }
+
         // Start request processing on this CPU if required.
         if SVSM_PLATFORM.start_svsm_request_loop() {
             start_kernel_task(
