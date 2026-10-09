@@ -15,7 +15,7 @@ CFLAGS += -fno-stack-protector
 CFLAGS += -ffreestanding
 CFLAGS += -Wall -Werror
 
-CC = gcc
+CC ?= gcc 
 
 vpath %.c $(SRC_DIR)
 vpath %.s $(SRC_DIR)

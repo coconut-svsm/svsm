@@ -4,6 +4,8 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+cocoon-tpm-ossl-bare-sys = { workspace = true }
+libcrt = { workspace = true }
 
 [build-dependencies]
 bindgen = { workspace = true, features = ["runtime"] }

@@ -1,5 +1,5 @@
 # Exclude all git submodules
-exclude = ["libtcgtpm/deps/openssl/**", "libtcgtpm/deps/tpm-20-ref/**", "packit/**"]
+exclude = ["libtcgtpm/deps/tpm-20-ref/**", "packit/**"]
 
 [formatting]
 
