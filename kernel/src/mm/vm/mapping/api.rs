@@ -7,7 +7,6 @@
 use crate::address::{PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::vm::VMR;
 use crate::types::{PAGE_SHIFT, PageSize};
 
 use intrusive_collections::rbtree::AtomicLink;
@@ -116,10 +115,6 @@ pub trait VirtualMapping: core::fmt::Debug + Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * 'vmr' - Virtual memory range that contains the mapping. This
-    ///   [`VirtualMapping`] can use this to insert/remove regions
-    ///   as necessary to handle the page fault.
-    ///
     /// * `offset` - Offset into the virtual mapping that was the subject of
     ///   the page fault.
     ///
@@ -127,7 +122,6 @@ pub trait VirtualMapping: core::fmt::Debug + Send + Sync {
     ///   location, or 'false' if the fault was due to a read.
     fn handle_page_fault(
         &self,
-        _vmr: &VMR,
         _offset: usize,
         _write: bool,
     ) -> Result<VMPageFaultResolution, SvsmError> {
