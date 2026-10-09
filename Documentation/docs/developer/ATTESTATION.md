@@ -250,11 +250,26 @@ launching the proxy. The supported backend attestation protocols include:
 SVSM communicates with the attestation proxy using one of two transport methods:
 
 - **vsock** (default): SVSM uses vsock for communication with the host proxy on
-  port `1995`.
+  port `1995` by default. Set `ATTESTATIONPORT=<port>` in the IGVM command line
+  to select another host port. Valid values are decimal numbers from `1` to
+  `4294967294`; missing, malformed, or out-of-range values use `1995`.
 
 - **Serial port** (testing only): When the `attest-serial` feature is enabled,
   SVSM falls back to the COM3 serial port if the vsock connection fails. This
   is intended for testing purposes only.
+
+With QEMU command-line parameter support, configure the `igvm-cfg` object, for
+example:
+
+```text
+-object igvm-cfg,id=igvm0,file=coconut-qemu.igvm,cmdline="CONSOLEPORT=1 ATTESTATIONPORT=1996"
+```
+
+Start the corresponding attestation proxy with `--vsock 1996`. For separate
+proxy instances on the same host, choose a different listening port for each
+instance and set each VM's `ATTESTATIONPORT` to match its proxy. Each VM also
+needs its own vsock guest CID. The guest OS command line (`-append`) is separate
+from the IGVM command line.
 
 ## Error Handling
 
