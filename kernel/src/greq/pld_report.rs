@@ -8,6 +8,8 @@
 
 use core::mem::{offset_of, size_of};
 
+#[cfg(all(test, test_in_svsm))]
+use zerocopy::FromZeros;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::error::SvsmError;
@@ -192,6 +194,24 @@ pub struct AttestationReport {
     /// `Signature` is private. Instead add an empty field with a type
     /// that's not private.
     _empty: (),
+}
+
+#[cfg(all(test, test_in_svsm))]
+impl AttestationReport {
+    /// Build a report that is zeroed except for `report_data` and
+    /// `measurement`.
+    ///
+    /// The in-SVSM tests use this to stand in for a PSP-signed report when
+    /// running without SEV-SNP hardware. The signature is left zeroed, so it
+    /// only attests successfully against a server that does not verify it.
+    pub fn new_unsigned(report_data: [u8; 64], measurement: [u8; 48]) -> Self {
+        let mut report = Self::new_zeroed();
+
+        report.report_data = report_data;
+        report.measurement = measurement;
+
+        report
+    }
 }
 
 const _: () = assert!(
