@@ -9,6 +9,7 @@ mod fw;
 mod helpers;
 mod igvm;
 mod kernel;
+mod remap;
 mod version;
 
 use crate::{
@@ -97,6 +98,15 @@ impl BuildTarget {
         match self {
             Self::X8664UnknownNone => Some("x86_64-unknown-none"),
             Self::Host => None,
+        }
+    }
+
+    /// Append `--target` and, for bare-metal targets, the path remapping
+    /// config to `cmd`.
+    fn apply(&self, cmd: &mut Command) {
+        if let Some(triple) = self.as_str() {
+            cmd.args(["--target", triple]);
+            cmd.args(["--config", &remap::cargo_config(triple)]);
         }
     }
 }
@@ -222,8 +232,8 @@ impl ComponentConfig {
             if self.binary { "--bin" } else { "--package" },
             pkg,
         ]);
+        target.apply(&mut cmd);
         if let Some(triple) = target.as_str() {
-            cmd.args(["--target", triple]);
             bin.push(triple);
         };
         self.apply_features(&mut cmd, args, pkg, cmd_feats);
@@ -272,9 +282,7 @@ impl ComponentConfig {
             "--package",
             pkg,
         ]);
-        if let Some(triple) = target.as_str() {
-            cmd.args(["--target", triple]);
-        }
+        target.apply(&mut cmd);
         self.apply_features(&mut cmd, args, pkg, cmd_feats);
         if let Some(manifest) = self.manifest.as_ref() {
             cmd.args(["--manifest-path".as_ref(), manifest.as_os_str()]);
@@ -508,6 +516,7 @@ fn main() -> BuildResult<()> {
     let mut features = Features::create_from_args(&args);
 
     features.print_empty_features();
+    remap::check_env();
 
     generate_release_file();
 
