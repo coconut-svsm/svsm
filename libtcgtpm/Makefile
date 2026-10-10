@@ -23,6 +23,11 @@ OUT_DIR ?= $(ROOT_DIR)
 # used by different projects
 override OUT_DIR := $(abspath $(OUT_DIR))
 
+# Strip build paths from __FILE__ and debug info, matching xbuild/src/remap.rs.
+# GCC uses the last matching option, so OUT_DIR comes after the root.
+SVSM_ROOT := $(abspath $(ROOT_DIR)/..)
+PREFIX_MAP_CFLAGS := -ffile-prefix-map=$(SVSM_ROOT)=. -ffile-prefix-map=$(OUT_DIR)=./libtcgtpm/out
+
 # Include CARGO_MAKEFLAGS for jobserver coordination if available
 # Otherwise use -j with NUM_JOBS
 ifneq ($(CARGO_MAKEFLAGS),)
@@ -73,6 +78,8 @@ LIBCRT_INCLUDE =
 LIBCRT_LINK =
 OPENSSL_CFLAGS =
 endif
+TCGTPM_CFLAGS += $(PREFIX_MAP_CFLAGS)
+OPENSSL_CFLAGS += $(PREFIX_MAP_CFLAGS)
 
 # Avoid running jobs of this Makefile in parallel to avoid possible conflicts
 # when building the TPM libraries, which use the same Makefile and subdirectory.

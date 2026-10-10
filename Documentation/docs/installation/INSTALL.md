@@ -279,6 +279,45 @@ repository. This is the file which needs to be passed to QEMU.
 The project also contains a number of unit-tests that can be run by following
 the instructions in the [TESTING.md](../developer/TESTING.md) document.
 
+Reproducible builds
+-------------------
+
+Building the same commit with the same recipe, firmware and toolchain gives
+the same IGVM file and the same launch measurement, independent of the
+machine, the directory and the user doing the build. So a published launch
+measurement can be checked by building the sources and comparing.
+
+The following needs to match the original build:
+
+* The git commit, from a clean checkout with the release tags fetched, since
+  the kernel embeds the output of `git describe` as its version string.
+* The recipe, the build profile (debug or `--release`) and the cargo features
+  passed with `-f`.
+* The firmware file in `FW_FILE`.
+* The Rust toolchain from `rust-toolchain.toml`, and the `gcc` and `binutils`
+  of the host, which build the vTPM and strip the binaries.
+
+`RUSTFLAGS` must not be set. Cargo then drops the compiler flags which keep
+the build paths out of the image.
+
+Each build writes a `.buildinfo.json` file next to the IGVM file with the
+commit, recipe, firmware, build options, toolchain versions, the hash of each
+component and the launch measurement. Publish it together with the IGVM file.
+The file is not signed and is only used for comparison, never as build input.
+
+To check a published launch measurement, check out the recorded commit and
+build the same recipe with the same options, passing the build info file to
+`--verify`:
+
+```shell
+FW_FILE=/path/to/firmware/OVMF.fd cargo xbuild --release --verify coconut-qemu.igvm.buildinfo.json configs/qemu-target.json
+```
+
+The build only runs when the recipe matches the one recorded in the file.
+Afterwards the launch measurement and the hash of the IGVM file are compared
+with the recorded values. On a mismatch the command fails and prints which
+inputs differ, e.g. the firmware, the build profile or the compiler version.
+
 Putting it all together
 -----------------------
 
