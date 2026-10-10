@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::digest::Output;
 use sha2::{Digest, Sha256, Sha384};
 use std::collections::BTreeMap;
-use std::fmt;
+use std::fmt::{self, Display};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -152,6 +152,79 @@ impl BuildInfo {
         file.write_all(b"\n")?;
         Ok(())
     }
+
+    pub fn read(path: &Path) -> BuildResult<Self> {
+        let info: Self = serde_json::from_reader(File::open(path)?)?;
+        if info.format != FORMAT {
+            return Err(format!(
+                "{}: unsupported build info format {} (expected {FORMAT})",
+                path.display(),
+                info.format
+            )
+            .into());
+        }
+        Ok(info)
+    }
+
+    /// Compare this build against `expected`, print the differences and
+    /// return whether the image matched.
+    pub fn verify(&self, expected: &Self) -> bool {
+        let digest = report(
+            "launch digest",
+            &self.launch_digest,
+            &expected.launch_digest,
+        );
+        let image = report("image", &self.image.sha256, &expected.image.sha256);
+        if digest && image {
+            return true;
+        }
+
+        println!("\nInputs that differ:");
+        for (name, artifact) in &expected.components {
+            let got = self.components.get(name).map(|a| a.sha256.as_str());
+            report(name, &got.unwrap_or("missing"), &artifact.sha256);
+        }
+        report(
+            "firmware",
+            &firmware_digest(self.firmware.as_ref()),
+            &firmware_digest(expected.firmware.as_ref()),
+        );
+        report("recipe", &self.recipe.sha256, &expected.recipe.sha256);
+        report(
+            "commit",
+            &self.source.commit.as_deref().unwrap_or("none"),
+            &expected.source.commit.as_deref().unwrap_or("none"),
+        );
+        report(
+            "describe",
+            &self.source.describe.as_deref().unwrap_or("none"),
+            &expected.source.describe.as_deref().unwrap_or("none"),
+        );
+        report("release", &self.build.release, &expected.build.release);
+        report(
+            "all features",
+            &self.build.all_features,
+            &expected.build.all_features,
+        );
+        report(
+            "features",
+            &self.build.features.join(","),
+            &expected.build.features.join(","),
+        );
+        for (tool, got, want) in [
+            ("rustc", &self.build.rustc, &expected.build.rustc),
+            ("cargo", &self.build.cargo, &expected.build.cargo),
+            ("cc", &self.build.cc, &expected.build.cc),
+            ("objcopy", &self.build.objcopy, &expected.build.objcopy),
+        ] {
+            report(
+                tool,
+                &got.as_deref().unwrap_or("unknown"),
+                &want.as_deref().unwrap_or("unknown"),
+            );
+        }
+        false
+    }
 }
 
 impl Source {
@@ -164,6 +237,26 @@ impl Source {
             describe,
             dirty,
         }
+    }
+}
+
+/// Print one line comparing `got` with `want`, and return whether they match.
+fn report(what: &str, got: &dyn Display, want: &dyn Display) -> bool {
+    let (got, want) = (got.to_string(), want.to_string());
+    if got == want {
+        println!("{what:<14} ok       {got}");
+        true
+    } else {
+        println!("{what:<14} differs  built:    {got}");
+        println!("{:<14}          expected: {want}", "");
+        false
+    }
+}
+
+fn firmware_digest(fw: Option<&Firmware>) -> String {
+    match fw {
+        Some(fw) => format!("sha384 {}", fw.sha384),
+        None => "none".to_string(),
     }
 }
 
