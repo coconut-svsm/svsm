@@ -2,6 +2,7 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
+mod buildinfo;
 mod cargo;
 mod features;
 mod fs;
@@ -13,8 +14,8 @@ mod remap;
 mod version;
 
 use crate::{
-    features::Features, fs::FsConfig, fw::FirmwareConfig, helpers::HELPERS, igvm::IgvmConfig,
-    kernel::KernelConfig, version::generate_release_file,
+    buildinfo::BuildInfo, features::Features, fs::FsConfig, fw::FirmwareConfig, helpers::HELPERS,
+    igvm::IgvmConfig, kernel::KernelConfig, version::generate_release_file,
 };
 use clap::Parser;
 use serde::Deserialize;
@@ -385,8 +386,14 @@ impl Recipe {
         Ok(parts)
     }
 
-    /// Builds all the components for this recipe
-    fn build(&self, args: &Args, cmd_feats: &mut Features) -> BuildResult<()> {
+    /// Builds all the components for this recipe, which was read from
+    /// `path`. Returns the build info of every image the recipe produced.
+    fn build(
+        &self,
+        args: &Args,
+        path: &Path,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<Vec<BuildInfo>> {
         // Build kernel, guest firmware and guest filesystem
         let mut parts = self.build_kernel(args, cmd_feats)?;
         if let Some(fw) = self.firmware.build(args)? {
@@ -398,8 +405,24 @@ impl Recipe {
 
         // Check that we have all pieces and build the IGVM file
         let parts = parts.build()?;
-        self.igvm.build(args, &parts, cmd_feats)?;
-        Ok(())
+        let images = self.igvm.build(args, &parts, cmd_feats)?;
+
+        let mut infos = Vec::with_capacity(images.len());
+        for image in images {
+            let info = BuildInfo::collect(
+                args,
+                path,
+                &parts,
+                &image.path,
+                image.launch_digest,
+                image.measure,
+            )?;
+            let info_path = BuildInfo::path_for(&image.path);
+            info.write(&info_path)?;
+            println!("Wrote build info to {}", info_path.display());
+            infos.push(info);
+        }
+        Ok(infos)
     }
 }
 
@@ -495,6 +518,20 @@ struct Args {
     recipes: Vec<PathBuf>,
 }
 
+/// Build the recipes in `args` and return the build info of every image.
+fn build_all(args: &Args, features: &mut Features) -> BuildResult<Vec<BuildInfo>> {
+    let mut infos = Vec::new();
+    for filename in args.recipes.iter() {
+        let f = File::open(filename)?;
+        let recipe = serde_json::from_reader::<_, Recipe>(f)?;
+        if args.print_config {
+            println!("{}: {recipe:#?}", filename.display());
+        }
+        infos.append(&mut recipe.build(args, filename, features)?);
+    }
+    Ok(infos)
+}
+
 fn check_root_path() -> BuildResult<()> {
     let Ok(root) = std::env::var("CARGO_MANIFEST_DIR") else {
         return Ok(());
@@ -513,22 +550,12 @@ fn main() -> BuildResult<()> {
     check_root_path()?;
 
     let args = Args::parse();
-    let mut features = Features::create_from_args(&args);
-
-    features.print_empty_features();
     remap::check_env();
-
     generate_release_file();
 
-    for filename in args.recipes.iter() {
-        let f = File::open(filename)?;
-        let recipe = serde_json::from_reader::<_, Recipe>(f)?;
-        if args.print_config {
-            println!("{}: {recipe:#?}", filename.display());
-        }
-        recipe.build(&args, &mut features)?;
-    }
-
+    let mut features = Features::create_from_args(&args);
+    features.print_empty_features();
+    build_all(&args, &mut features)?;
     features.print_unused_features();
 
     Ok(())
