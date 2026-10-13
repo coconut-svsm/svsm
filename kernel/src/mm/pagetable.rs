@@ -13,7 +13,7 @@ use crate::cpu::registers::RFlags;
 use crate::error::SvsmError;
 use crate::mm::{
     PGTABLE_LVL3_IDX_PTE_SELFMAP, PGTABLE_LVL3_IDX_SHARED, PageBox, SVSM_PTE_BASE, phys_to_virt,
-    virt_to_phys,
+    virt_from_idx, virt_to_phys,
 };
 use crate::platform::SvsmPlatform;
 use crate::types::{PAGE_SIZE, PAGE_SIZE_1G, PAGE_SIZE_2M, PageSize};
@@ -603,6 +603,58 @@ impl<S: ActiveState> Deref for ActivePageTable<S> {
 impl<S: ActiveState> DerefMut for ActivePageTable<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
+    }
+}
+
+impl<S: ActiveState> ActivePageTable<S> {
+    /// Self-map virtual address of the PTE that maps `vaddr`.
+    fn get_pte_address(vaddr: VirtAddr) -> VirtAddr {
+        virt_from_idx(S::SELFMAP_IDX) + ((usize::from(vaddr) & 0x0000_FFFF_FFFF_F000) >> 9)
+    }
+
+    /// Walk the hierarchy through the self-map and return the self-map address
+    /// of the mapping for `vaddr` (the first non-present or huge entry, or the
+    /// leaf PTE) together with its level.
+    fn walk(vaddr: VirtAddr) -> (VirtAddr, usize) {
+        let pte_addr = Self::get_pte_address(vaddr);
+        let pde_addr = Self::get_pte_address(pte_addr);
+        let pdpe_addr = Self::get_pte_address(pde_addr);
+        let pml4e_addr = Self::get_pte_address(pdpe_addr);
+
+        let addrs = [pte_addr, pde_addr, pdpe_addr, pml4e_addr];
+        for (level, addr) in addrs.into_iter().enumerate().skip(1).rev() {
+            // SAFETY: the hierarchy is read top-down through correctly computed
+            // self-map addresses, so each present level guarantees the next can
+            // be read.
+            let entry = unsafe { PTEntry::read_pte(addr) };
+            let is_huge = (level == 1 || level == 2) && entry.huge();
+            if !entry.present() || is_huge {
+                return (addr, level);
+            }
+        }
+
+        (pte_addr, 0)
+    }
+
+    #[expect(dead_code)]
+    fn walk_addr(&self, vaddr: VirtAddr) -> Mapping<'_> {
+        let (addr, level) = Self::walk(vaddr);
+        // SAFETY: the self-map address is valid for the active page table; the
+        // shared borrow of `self` prevents concurrent mutation of the entry.
+        Mapping::new(unsafe { &*addr.as_ptr() }, level)
+    }
+
+    // The `&mut self` borrow is required for soundness even though the body
+    // does not write through `self`: the returned entry aliases page-table
+    // memory reachable through `self` via the self-map, so exclusive access
+    // must be held. clippy cannot see this alias.
+    #[expect(dead_code)]
+    #[allow(clippy::needless_pass_by_ref_mut)]
+    fn walk_addr_mut(&mut self, vaddr: VirtAddr) -> MappingMut<'_> {
+        let (addr, level) = Self::walk(vaddr);
+        // SAFETY: as in `walk_addr`; the exclusive borrow of `self` prevents
+        // aliasing of the returned entry.
+        MappingMut::new(unsafe { &mut *addr.as_mut_ptr() }, level)
     }
 }
 
