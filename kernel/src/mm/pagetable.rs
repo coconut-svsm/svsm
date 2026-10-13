@@ -461,17 +461,6 @@ impl PTPage {
         Some(unsafe { Self::from_vaddr(address) })
     }
 
-    fn from_entry(entry: PTEntry) -> Option<&'static Self> {
-        if !entry.present() || entry.huge() {
-            return None;
-        }
-
-        let address = phys_to_virt(entry.address());
-        // SAFETY: Every PTEntry points to a previously allocated page-table
-        // page, so this pointer dereference is safe.
-        Some(unsafe { &*address.as_ptr() })
-    }
-
     /// Generates a `PTPage` from a virtual address.
     /// # Safety
     /// The caller must ensure that the virtual address is a valid page table.
@@ -743,24 +732,6 @@ impl PageTable {
         MappingMut::new(&mut page[idx], 0)
     }
 
-    fn walk_addr_at(mut page: &PTPage, vaddr: VirtAddr, level: usize) -> Mapping<'_> {
-        for level in (1..=level).rev() {
-            let idx = Self::index_at(vaddr, level);
-            let entry = &page[idx];
-            match PTPage::from_entry(*entry) {
-                Some(p) => page = p,
-                None => return Mapping::new(entry, level),
-            }
-        }
-
-        let idx = Self::index::<0>(vaddr);
-        Mapping::new(&page[idx], 0)
-    }
-
-    fn walk_addr(&self, vaddr: VirtAddr) -> Mapping<'_> {
-        Self::walk_addr_at(&self.root, vaddr, 3)
-    }
-
     /// Calculate the virtual address of a PTE in the self-map, which maps a
     /// specified virtual address.
     ///
@@ -904,7 +875,6 @@ impl<S: ActiveState> ActivePageTable<S> {
         (pte_addr, 0)
     }
 
-    #[expect(dead_code)]
     fn walk_addr(&self, vaddr: VirtAddr) -> Mapping<'_> {
         let (addr, level) = Self::walk(vaddr);
         // SAFETY: the self-map address is valid for the active page table; the
@@ -1139,9 +1109,7 @@ impl<S: ActiveState> ActivePageTable<S> {
             _ => assert!(!mapping.entry.present()),
         }
     }
-}
 
-impl PageTable {
     /// Retrieves the physical address of a mapping.
     ///
     /// # Parameters
@@ -1174,9 +1142,7 @@ impl PageTable {
             _ => Err(SvsmError::Mem),
         }
     }
-}
 
-impl<S: ActiveState> ActivePageTable<S> {
     /// Maps a region of memory using 4KB pages.
     ///
     /// # Parameters
