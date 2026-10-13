@@ -927,7 +927,6 @@ impl<S: ActiveState> ActivePageTable<S> {
     // does not write through `self`: the returned entry aliases page-table
     // memory reachable through `self` via the self-map, so exclusive access
     // must be held. clippy cannot see this alias.
-    #[expect(dead_code)]
     #[allow(clippy::needless_pass_by_ref_mut)]
     fn walk_addr_mut(&mut self, vaddr: VirtAddr) -> MappingMut<'_> {
         let (addr, level) = Self::walk(vaddr);
@@ -950,7 +949,9 @@ impl PageTable {
         let m = self.walk_addr_mut(vaddr);
         Self::alloc_intermediate_ptes(m, vaddr, size)
     }
+}
 
+impl<S: ActiveState> ActivePageTable<S> {
     /// Splits a 2MB page into 4KB pages.
     ///
     /// # Parameters
@@ -1051,7 +1052,9 @@ impl PageTable {
     pub fn set_encrypted_4k(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         self.set_pte_visibility_4k(vaddr, false)
     }
+}
 
+impl PageTable {
     /// Maps a 2MB page.
     ///
     /// # Parameters
