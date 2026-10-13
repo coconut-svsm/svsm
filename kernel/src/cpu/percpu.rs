@@ -32,7 +32,7 @@ use crate::locking::{
     WriteLockGuard, WriteLockGuardIrqSafe,
 };
 use crate::mm::page_visibility::SharedBox;
-use crate::mm::pagetable::{PTEntryFlags, PageTable};
+use crate::mm::pagetable::{ActivePageTable, PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
 use crate::mm::{
@@ -745,13 +745,16 @@ impl PerCpu {
     /// up an AP's `PerCpu`.)
     fn with_pgtable<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&PageTable) -> R,
+        F: FnOnce(&ActivePageTable) -> R,
     {
         if read_cr3().bits() == self.cr3.load(Ordering::Relaxed) {
-            f(self.get_pgtable())
+            // SAFETY: the active CR3 matches the per-CPU page table.
+            f(unsafe { self.get_pgtable().as_active() })
         } else {
             let task = self.runqueue().current_task();
-            f(&mut task.page_table.lock_read())
+            let pgtable = task.page_table.lock_read();
+            // SAFETY: if CR3 does not match, the current task page table is active.
+            f(unsafe { pgtable.as_active() })
         }
     }
 
@@ -761,13 +764,16 @@ impl PerCpu {
     /// AP's `PerCpu`.)
     fn with_pgtable_mut<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&mut PageTable) -> R,
+        F: FnOnce(&mut ActivePageTable) -> R,
     {
         if read_cr3().bits() == self.cr3.load(Ordering::Relaxed) {
-            f(self.get_pgtable())
+            // SAFETY: the active CR3 matches the per-CPU page table.
+            f(unsafe { self.get_pgtable().as_active_mut() })
         } else {
             let task = self.runqueue().current_task();
-            f(&mut task.page_table.lock_write())
+            let mut pgtable = task.page_table.lock_write();
+            // SAFETY: if CR3 does not match, the current task page table is active.
+            f(unsafe { pgtable.as_active_mut() })
         }
     }
 
@@ -1527,7 +1533,7 @@ pub fn current_task() -> TaskPointer {
 /// active page table.
 pub fn with_pgtable<F, R>(f: F) -> R
 where
-    F: FnOnce(&PageTable) -> R,
+    F: FnOnce(&ActivePageTable) -> R,
 {
     this_cpu().with_pgtable(f)
 }
@@ -1536,7 +1542,7 @@ where
 /// active page table.
 pub fn with_pgtable_mut<F, R>(f: F) -> R
 where
-    F: FnOnce(&mut PageTable) -> R,
+    F: FnOnce(&mut ActivePageTable) -> R,
 {
     this_cpu().with_pgtable_mut(f)
 }

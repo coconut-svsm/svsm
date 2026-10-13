@@ -21,7 +21,8 @@ use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use bitflags::bitflags;
 use core::cmp;
-use core::ops::{Index, IndexMut};
+use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::ptr::NonNull;
 use cpuarch::x86::CR0Flags;
 use cpuarch::x86::CR4Flags;
@@ -567,6 +568,44 @@ impl PageFrame {
     }
 }
 
+/// The self-map a given [`ActivePageTable`] is reachable through.
+pub trait ActiveState {
+    /// Top-level index of the self-map entry.
+    const SELFMAP_IDX: usize;
+}
+
+/// The page table currently loaded in CR3, reachable through its own self-map.
+#[derive(Debug)]
+pub struct Active;
+
+impl ActiveState for Active {
+    const SELFMAP_IDX: usize = PGTABLE_LVL3_IDX_PTE_SELFMAP;
+}
+
+/// A [`PageTable`] reachable through a self-map `S`. This allows walking the
+/// hierarchy without the direct map, which is only possible while the page
+/// table is mapped through the self-map.
+#[repr(transparent)]
+#[derive(Debug)]
+pub struct ActivePageTable<S: ActiveState = Active> {
+    inner: PageTable,
+    _state: PhantomData<S>,
+}
+
+impl<S: ActiveState> Deref for ActivePageTable<S> {
+    type Target = PageTable;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<S: ActiveState> DerefMut for ActivePageTable<S> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
 /// Page table structure containing a root page with multiple entries.
 #[repr(C)]
 #[derive(Debug, FromZeros)]
@@ -575,6 +614,33 @@ pub struct PageTable {
 }
 
 impl PageTable {
+    /// Reinterpret this page table as the active page table.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that this page table is currently loaded in CR3.
+    pub unsafe fn as_active(&self) -> &ActivePageTable<Active> {
+        // `PageTable` and `ActivePageTable` must have identical layouts.
+        const _: () = {
+            assert!(size_of::<ActivePageTable<Active>>() == size_of::<PageTable>());
+            assert!(align_of::<ActivePageTable<Active>>() == align_of::<PageTable>());
+        };
+        // SAFETY: `ActivePageTable` is a `repr(transparent)` wrapper over
+        // `PageTable`, so the cast is valid.
+        unsafe { &*core::ptr::from_ref(self).cast() }
+    }
+
+    /// Reinterpret this page table as the active page table.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that this page table is currently loaded in CR3.
+    pub unsafe fn as_active_mut(&mut self) -> &mut ActivePageTable<Active> {
+        // SAFETY: `ActivePageTable` is a `repr(transparent)` wrapper over
+        // `PageTable`, so the cast is valid.
+        unsafe { &mut *core::ptr::from_mut(self).cast() }
+    }
+
     /// Load the current page table into the CR3 register.
     ///
     /// # Safety
