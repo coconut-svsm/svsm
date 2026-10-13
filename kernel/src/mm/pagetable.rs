@@ -756,6 +756,250 @@ impl<S: ActiveState> ActivePageTable<S> {
     pub fn set_encrypted_4k(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         self.set_pte_visibility_4k(vaddr, false)
     }
+
+    /// Allocates a page table entry for the given virtual address and
+    /// the given page size.
+    ///
+    /// # Parameters
+    /// - `vaddr`: The virtual address for which to allocate the PTE.
+    ///
+    /// # Returns
+    /// A `MappingMut` representing the allocated or existing PTE for the address.
+    fn alloc_pte(&mut self, vaddr: VirtAddr, size: PageSize) -> MappingMut<'_> {
+        let m = self.walk_addr_mut(vaddr);
+        PageTable::alloc_intermediate_ptes(m, vaddr, size)
+    }
+
+    /// Maps a 2MB page.
+    ///
+    /// # Parameters
+    /// - `vaddr`: The virtual address to map.
+    /// - `paddr`: The physical address to map to.
+    /// - `flags`: The flags to apply to the mapping.
+    /// - `shared`: Indicates whether the mapping is shared.
+    ///
+    /// # Returns
+    /// A result indicating success or failure ([`SvsmError`]).
+    ///
+    /// # Panics
+    /// Panics if either `vaddr` or `paddr` is not aligned to a 2MB boundary.
+    pub fn map_2m(
+        &mut self,
+        vaddr: VirtAddr,
+        paddr: PhysAddr,
+        flags: PTEntryFlags,
+        shared: bool,
+    ) -> Result<(), SvsmError> {
+        assert!(vaddr.is_aligned(PAGE_SIZE_2M));
+        assert!(paddr.is_aligned(PAGE_SIZE_2M));
+
+        let mapping = self.alloc_pte(vaddr, PageSize::Huge);
+        let addr = if !shared {
+            make_private_address(paddr)
+        } else {
+            make_shared_address(paddr)
+        };
+
+        if mapping.level == 1 {
+            mapping.entry.set(addr, flags | PTEntryFlags::HUGE);
+            Ok(())
+        } else {
+            Err(SvsmError::Mem)
+        }
+    }
+
+    /// Unmaps a 2MB page.
+    ///
+    /// # Parameters
+    /// - `vaddr`: The virtual address of the mapping to unmap.
+    ///
+    /// # Panics
+    /// Panics if `vaddr` is not aligned to a 2MB boundary.
+    pub fn unmap_2m(&mut self, vaddr: VirtAddr) {
+        assert!(vaddr.is_aligned(PAGE_SIZE_2M));
+
+        let mapping = self.walk_addr_mut(vaddr);
+
+        match mapping.level {
+            1 => mapping.entry.clear(),
+            2 | 3 => assert!(!mapping.entry.present()),
+            _ => unreachable!(),
+        }
+    }
+
+    /// Maps a 4KB page.
+    ///
+    /// # Parameters
+    /// - `vaddr`: The virtual address to map.
+    /// - `paddr`: The physical address to map to.
+    /// - `flags`: The flags to apply to the mapping.
+    /// - `shared`: Indicates whether the mapping is shared.
+    ///
+    /// # Returns
+    /// A result indicating success or failure ([`SvsmError`]).
+    pub fn map_4k(
+        &mut self,
+        vaddr: VirtAddr,
+        paddr: PhysAddr,
+        flags: PTEntryFlags,
+        shared: bool,
+    ) -> Result<(), SvsmError> {
+        let mapping = self.alloc_pte(vaddr, PageSize::Regular);
+        let addr = if !shared {
+            make_private_address(paddr)
+        } else {
+            make_shared_address(paddr)
+        };
+
+        if mapping.level == 0 {
+            mapping.entry.set(addr, flags);
+            Ok(())
+        } else {
+            Err(SvsmError::Mem)
+        }
+    }
+
+    /// Unmaps a 4KB page.
+    ///
+    /// # Parameters
+    /// - `vaddr`: The virtual address of the mapping to unmap.
+    pub fn unmap_4k(&mut self, vaddr: VirtAddr) {
+        let mapping = self.walk_addr_mut(vaddr);
+
+        match mapping.level {
+            0 => mapping.entry.clear(),
+            _ => assert!(!mapping.entry.present()),
+        }
+    }
+
+    /// Maps a region of memory using 4KB pages.
+    ///
+    /// # Parameters
+    /// - `vregion`: The virtual memory region to map.
+    /// - `phys`: The starting physical address to map to.
+    /// - `flags`: The flags to apply to the mapping.
+    /// - `shared`: Indicates whether the mapping is shared.
+    ///
+    /// # Returns
+    /// A result indicating success or failure ([`SvsmError`]).
+    pub fn map_region_4k(
+        &mut self,
+        vregion: MemoryRegion<VirtAddr>,
+        phys: PhysAddr,
+        flags: PTEntryFlags,
+        shared: bool,
+    ) -> Result<(), SvsmError> {
+        for addr in vregion.iter_pages(PageSize::Regular) {
+            let offset = addr - vregion.start();
+            self.map_4k(addr, phys + offset, flags, shared)?;
+        }
+        Ok(())
+    }
+
+    /// Unmaps a region of memory using 4KB pages.
+    ///
+    /// # Parameters
+    /// - `vregion`: The virtual memory region to unmap.
+    pub fn unmap_region_4k(&mut self, vregion: MemoryRegion<VirtAddr>) {
+        for addr in vregion.iter_pages(PageSize::Regular) {
+            self.unmap_4k(addr);
+        }
+    }
+
+    /// Maps a region of memory using 2MB pages.
+    ///
+    /// # Parameters
+    /// - `vregion`: The virtual memory region to map.
+    /// - `phys`: The starting physical address to map to.
+    /// - `flags`: The flags to apply to the mapping.
+    /// - `shared`: Indicates whether the mapping is shared.
+    ///
+    /// # Returns
+    /// A result indicating success or failure ([`SvsmError`]).
+    pub fn map_region_2m(
+        &mut self,
+        vregion: MemoryRegion<VirtAddr>,
+        phys: PhysAddr,
+        flags: PTEntryFlags,
+        shared: bool,
+    ) -> Result<(), SvsmError> {
+        for addr in vregion.iter_pages(PageSize::Huge) {
+            let offset = addr - vregion.start();
+            self.map_2m(addr, phys + offset, flags, shared)?;
+        }
+        Ok(())
+    }
+
+    /// Unmaps a region `vregion` of 2MB pages. The region must be
+    /// 2MB-aligned and correspond to a set of huge mappings.
+    pub fn unmap_region_2m(&mut self, vregion: MemoryRegion<VirtAddr>) {
+        for addr in vregion.iter_pages(PageSize::Huge) {
+            self.unmap_2m(addr);
+        }
+    }
+
+    /// Maps a memory region to physical memory with specified flags.
+    ///
+    /// # Parameters
+    /// - `region`: The virtual memory region to map.
+    /// - `phys`: The starting physical address to map to.
+    /// - `flags`: The flags to apply to the page table entries.
+    ///
+    /// # Returns
+    /// A result indicating success (`Ok`) or failure (`Err`).
+    pub fn map_region(
+        &mut self,
+        region: MemoryRegion<VirtAddr>,
+        phys: PhysAddr,
+        flags: PTEntryFlags,
+    ) -> Result<(), SvsmError> {
+        let mut vaddr = region.start();
+        let end = region.end();
+        let mut paddr = phys;
+
+        while vaddr < end {
+            if vaddr.is_aligned(PAGE_SIZE_2M)
+                && paddr.is_aligned(PAGE_SIZE_2M)
+                && vaddr + PAGE_SIZE_2M <= end
+                && self.map_2m(vaddr, paddr, flags, false).is_ok()
+            {
+                vaddr = vaddr + PAGE_SIZE_2M;
+                paddr = paddr + PAGE_SIZE_2M;
+                continue;
+            }
+
+            self.map_4k(vaddr, paddr, flags, false)?;
+            vaddr = vaddr + PAGE_SIZE;
+            paddr = paddr + PAGE_SIZE;
+        }
+
+        Ok(())
+    }
+
+    /// Unmaps the virtual memory region `vregion`.
+    pub fn unmap_region(&mut self, vregion: MemoryRegion<VirtAddr>) {
+        let mut vaddr = vregion.start();
+        let end = vregion.end();
+
+        while vaddr < end {
+            let mapping = self.walk_addr_mut(vaddr);
+
+            match mapping.level {
+                0 => {
+                    mapping.entry.clear();
+                    vaddr = vaddr + PAGE_SIZE;
+                }
+                1 => {
+                    mapping.entry.clear();
+                    vaddr = vaddr + PAGE_SIZE_2M;
+                }
+                _ => {
+                    log::error!("Can't unmap - address not mapped {vaddr:#x}");
+                    vaddr = vaddr + PAGE_SIZE;
+                }
+            }
+        }
+    }
 }
 
 /// Page table structure containing a root page with multiple entries.
@@ -1032,121 +1276,6 @@ impl PageTable {
         MappingMut::new(entry, 0)
     }
 
-    /// Allocates a page table entry for the given virtual address and
-    /// the given page size.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address for which to allocate the PTE.
-    ///
-    /// # Returns
-    /// A `MappingMut` representing the allocated or existing PTE for the address.
-    fn alloc_pte(&mut self, vaddr: VirtAddr, size: PageSize) -> MappingMut<'_> {
-        let m = self.walk_addr_mut(vaddr);
-        Self::alloc_intermediate_ptes(m, vaddr, size)
-    }
-
-    /// Maps a 2MB page.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address to map.
-    /// - `paddr`: The physical address to map to.
-    /// - `flags`: The flags to apply to the mapping.
-    /// - `shared`: Indicates whether the mapping is shared.
-    ///
-    /// # Returns
-    /// A result indicating success or failure ([`SvsmError`]).
-    ///
-    /// # Panics
-    /// Panics if either `vaddr` or `paddr` is not aligned to a 2MB boundary.
-    pub fn map_2m(
-        &mut self,
-        vaddr: VirtAddr,
-        paddr: PhysAddr,
-        flags: PTEntryFlags,
-        shared: bool,
-    ) -> Result<(), SvsmError> {
-        assert!(vaddr.is_aligned(PAGE_SIZE_2M));
-        assert!(paddr.is_aligned(PAGE_SIZE_2M));
-
-        let mapping = self.alloc_pte(vaddr, PageSize::Huge);
-        let addr = if !shared {
-            make_private_address(paddr)
-        } else {
-            make_shared_address(paddr)
-        };
-
-        if mapping.level == 1 {
-            mapping.entry.set(addr, flags | PTEntryFlags::HUGE);
-            Ok(())
-        } else {
-            Err(SvsmError::Mem)
-        }
-    }
-
-    /// Unmaps a 2MB page.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address of the mapping to unmap.
-    ///
-    /// # Panics
-    /// Panics if `vaddr` is not aligned to a 2MB boundary.
-    pub fn unmap_2m(&mut self, vaddr: VirtAddr) {
-        assert!(vaddr.is_aligned(PAGE_SIZE_2M));
-
-        let mapping = self.walk_addr_mut(vaddr);
-
-        match mapping.level {
-            1 => mapping.entry.clear(),
-            2 | 3 => assert!(!mapping.entry.present()),
-            _ => unreachable!(),
-        }
-    }
-
-    /// Maps a 4KB page.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address to map.
-    /// - `paddr`: The physical address to map to.
-    /// - `flags`: The flags to apply to the mapping.
-    /// - `shared`: Indicates whether the mapping is shared.
-    ///
-    /// # Returns
-    /// A result indicating success or failure ([`SvsmError`]).
-    pub fn map_4k(
-        &mut self,
-        vaddr: VirtAddr,
-        paddr: PhysAddr,
-        flags: PTEntryFlags,
-        shared: bool,
-    ) -> Result<(), SvsmError> {
-        let mapping = self.alloc_pte(vaddr, PageSize::Regular);
-        let addr = if !shared {
-            make_private_address(paddr)
-        } else {
-            make_shared_address(paddr)
-        };
-
-        if mapping.level == 0 {
-            mapping.entry.set(addr, flags);
-            Ok(())
-        } else {
-            Err(SvsmError::Mem)
-        }
-    }
-
-    /// Unmaps a 4KB page.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address of the mapping to unmap.
-    pub fn unmap_4k(&mut self, vaddr: VirtAddr) {
-        let mapping = self.walk_addr_mut(vaddr);
-
-        match mapping.level {
-            0 => mapping.entry.clear(),
-            _ => assert!(!mapping.entry.present()),
-        }
-    }
-
     /// Retrieves the physical address of a mapping.
     ///
     /// # Parameters
@@ -1177,135 +1306,6 @@ impl PageTable {
                 Ok(entry.address() + offset)
             }
             _ => Err(SvsmError::Mem),
-        }
-    }
-
-    /// Maps a region of memory using 4KB pages.
-    ///
-    /// # Parameters
-    /// - `vregion`: The virtual memory region to map.
-    /// - `phys`: The starting physical address to map to.
-    /// - `flags`: The flags to apply to the mapping.
-    /// - `shared`: Indicates whether the mapping is shared.
-    ///
-    /// # Returns
-    /// A result indicating success or failure ([`SvsmError`]).
-    pub fn map_region_4k(
-        &mut self,
-        vregion: MemoryRegion<VirtAddr>,
-        phys: PhysAddr,
-        flags: PTEntryFlags,
-        shared: bool,
-    ) -> Result<(), SvsmError> {
-        for addr in vregion.iter_pages(PageSize::Regular) {
-            let offset = addr - vregion.start();
-            self.map_4k(addr, phys + offset, flags, shared)?;
-        }
-        Ok(())
-    }
-
-    /// Unmaps a region of memory using 4KB pages.
-    ///
-    /// # Parameters
-    /// - `vregion`: The virtual memory region to unmap.
-    pub fn unmap_region_4k(&mut self, vregion: MemoryRegion<VirtAddr>) {
-        for addr in vregion.iter_pages(PageSize::Regular) {
-            self.unmap_4k(addr);
-        }
-    }
-
-    /// Maps a region of memory using 2MB pages.
-    ///
-    /// # Parameters
-    /// - `vregion`: The virtual memory region to map.
-    /// - `phys`: The starting physical address to map to.
-    /// - `flags`: The flags to apply to the mapping.
-    /// - `shared`: Indicates whether the mapping is shared.
-    ///
-    /// # Returns
-    /// A result indicating success or failure ([`SvsmError`]).
-    pub fn map_region_2m(
-        &mut self,
-        vregion: MemoryRegion<VirtAddr>,
-        phys: PhysAddr,
-        flags: PTEntryFlags,
-        shared: bool,
-    ) -> Result<(), SvsmError> {
-        for addr in vregion.iter_pages(PageSize::Huge) {
-            let offset = addr - vregion.start();
-            self.map_2m(addr, phys + offset, flags, shared)?;
-        }
-        Ok(())
-    }
-
-    /// Unmaps a region `vregion` of 2MB pages. The region must be
-    /// 2MB-aligned and correspond to a set of huge mappings.
-    pub fn unmap_region_2m(&mut self, vregion: MemoryRegion<VirtAddr>) {
-        for addr in vregion.iter_pages(PageSize::Huge) {
-            self.unmap_2m(addr);
-        }
-    }
-
-    /// Maps a memory region to physical memory with specified flags.
-    ///
-    /// # Parameters
-    /// - `region`: The virtual memory region to map.
-    /// - `phys`: The starting physical address to map to.
-    /// - `flags`: The flags to apply to the page table entries.
-    ///
-    /// # Returns
-    /// A result indicating success (`Ok`) or failure (`Err`).
-    pub fn map_region(
-        &mut self,
-        region: MemoryRegion<VirtAddr>,
-        phys: PhysAddr,
-        flags: PTEntryFlags,
-    ) -> Result<(), SvsmError> {
-        let mut vaddr = region.start();
-        let end = region.end();
-        let mut paddr = phys;
-
-        while vaddr < end {
-            if vaddr.is_aligned(PAGE_SIZE_2M)
-                && paddr.is_aligned(PAGE_SIZE_2M)
-                && vaddr + PAGE_SIZE_2M <= end
-                && self.map_2m(vaddr, paddr, flags, false).is_ok()
-            {
-                vaddr = vaddr + PAGE_SIZE_2M;
-                paddr = paddr + PAGE_SIZE_2M;
-                continue;
-            }
-
-            self.map_4k(vaddr, paddr, flags, false)?;
-            vaddr = vaddr + PAGE_SIZE;
-            paddr = paddr + PAGE_SIZE;
-        }
-
-        Ok(())
-    }
-
-    /// Unmaps the virtual memory region `vregion`.
-    pub fn unmap_region(&mut self, vregion: MemoryRegion<VirtAddr>) {
-        let mut vaddr = vregion.start();
-        let end = vregion.end();
-
-        while vaddr < end {
-            let mapping = self.walk_addr_mut(vaddr);
-
-            match mapping.level {
-                0 => {
-                    mapping.entry.clear();
-                    vaddr = vaddr + PAGE_SIZE;
-                }
-                1 => {
-                    mapping.entry.clear();
-                    vaddr = vaddr + PAGE_SIZE_2M;
-                }
-                _ => {
-                    log::error!("Can't unmap - address not mapped {vaddr:#x}");
-                    vaddr = vaddr + PAGE_SIZE;
-                }
-            }
         }
     }
 
