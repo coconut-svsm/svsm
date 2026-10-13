@@ -934,9 +934,7 @@ impl<S: ActiveState> ActivePageTable<S> {
         // aliasing of the returned entry.
         MappingMut::new(unsafe { &mut *addr.as_mut_ptr() }, level)
     }
-}
 
-impl PageTable {
     /// Allocates a page table entry for the given virtual address and
     /// the given page size.
     ///
@@ -947,11 +945,9 @@ impl PageTable {
     /// A `MappingMut` representing the allocated or existing PTE for the address.
     fn alloc_pte(&mut self, vaddr: VirtAddr, size: PageSize) -> MappingMut<'_> {
         let m = self.walk_addr_mut(vaddr);
-        Self::alloc_intermediate_ptes(m, vaddr, size)
+        PageTable::alloc_intermediate_ptes(m, vaddr, size)
     }
-}
 
-impl<S: ActiveState> ActivePageTable<S> {
     /// Splits a 2MB page into 4KB pages.
     ///
     /// # Parameters
@@ -1052,9 +1048,7 @@ impl<S: ActiveState> ActivePageTable<S> {
     pub fn set_encrypted_4k(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         self.set_pte_visibility_4k(vaddr, false)
     }
-}
 
-impl PageTable {
     /// Maps a 2MB page.
     ///
     /// # Parameters
@@ -1156,7 +1150,9 @@ impl PageTable {
             _ => assert!(!mapping.entry.present()),
         }
     }
+}
 
+impl PageTable {
     /// Retrieves the physical address of a mapping.
     ///
     /// # Parameters
@@ -1189,7 +1185,9 @@ impl PageTable {
             _ => Err(SvsmError::Mem),
         }
     }
+}
 
+impl<S: ActiveState> ActivePageTable<S> {
     /// Maps a region of memory using 4KB pages.
     ///
     /// # Parameters
@@ -1318,7 +1316,9 @@ impl PageTable {
             }
         }
     }
+}
 
+impl PageTable {
     /// Populates this page table with the contents of the given subtree
     /// in `part`.
     ///
