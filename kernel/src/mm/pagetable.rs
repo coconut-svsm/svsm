@@ -994,16 +994,6 @@ impl PageTable {
         self.set_pte_visibility_4k(vaddr, false)
     }
 
-    /// Gets the physical address for a mapped `vaddr` or `None` if
-    /// no such mapping exists.
-    pub fn check_mapping(&self, vaddr: VirtAddr) -> Option<PhysAddr> {
-        let mapping = self.walk_addr(vaddr);
-        match mapping.level {
-            0 | 1 => Some(mapping.entry.address()),
-            _ => None,
-        }
-    }
-
     /// Maps a 2MB page.
     ///
     /// # Parameters
