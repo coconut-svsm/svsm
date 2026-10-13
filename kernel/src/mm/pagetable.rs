@@ -222,9 +222,9 @@ impl PTEntry {
         self.0.is_null()
     }
 
-    /// Clear the page table entry.
-    pub fn clear(&mut self) {
-        self.0 = PhysAddr::null();
+    /// Clear the page table entry, returning its previous value.
+    pub fn clear(&mut self) -> Self {
+        core::mem::replace(self, Self(PhysAddr::null()))
     }
 
     /// Check if the page table entry is present.
@@ -829,21 +829,24 @@ impl<S: ActiveState> ActivePageTable<S> {
         }
     }
 
-    /// Unmaps a 2MB page.
+    /// Unmaps a 2MB page, returning the previous entry if one was present.
     ///
     /// # Parameters
     /// - `vaddr`: The virtual address of the mapping to unmap.
     ///
     /// # Panics
     /// Panics if `vaddr` is not aligned to a 2MB boundary.
-    pub fn unmap_2m(&mut self, vaddr: VirtAddr) {
+    pub fn unmap_2m(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
         assert!(vaddr.is_aligned(PAGE_SIZE_2M));
 
         let mapping = self.walk_addr_mut(vaddr);
 
         match mapping.level {
-            1 => mapping.entry.clear(),
-            2 | 3 => assert!(!mapping.entry.present()),
+            1 => Some(mapping.entry.clear()),
+            2 | 3 => {
+                assert!(!mapping.entry.present());
+                None
+            }
             _ => unreachable!(),
         }
     }
@@ -880,16 +883,19 @@ impl<S: ActiveState> ActivePageTable<S> {
         }
     }
 
-    /// Unmaps a 4KB page.
+    /// Unmaps a 4KB page, returning the previous entry if one was present.
     ///
     /// # Parameters
     /// - `vaddr`: The virtual address of the mapping to unmap.
-    pub fn unmap_4k(&mut self, vaddr: VirtAddr) {
+    pub fn unmap_4k(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
         let mapping = self.walk_addr_mut(vaddr);
 
         match mapping.level {
-            0 => mapping.entry.clear(),
-            _ => assert!(!mapping.entry.present()),
+            0 => Some(mapping.entry.clear()),
+            _ => {
+                assert!(!mapping.entry.present());
+                None
+            }
         }
     }
 
