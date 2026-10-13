@@ -757,17 +757,6 @@ impl PageTable {
         Mapping::new(&page[idx], 0)
     }
 
-    /// Walk the virtual address and return the corresponding mapping.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address to find a mapping for.
-    ///
-    /// # Returns
-    /// A `MappingMut` representing the found mapping.
-    fn walk_addr_mut(&mut self, vaddr: VirtAddr) -> MappingMut<'_> {
-        Self::walk_addr_mut_at(&mut self.root, vaddr, 3)
-    }
-
     fn walk_addr(&self, vaddr: VirtAddr) -> Mapping<'_> {
         Self::walk_addr_at(&self.root, vaddr, 3)
     }
@@ -1337,7 +1326,9 @@ impl PageTable {
         entry.set(make_private_address(paddr), flags);
         prev != entry.raw()
     }
+}
 
+impl<S: ActiveState> ActivePageTable<S> {
     /// Makes the memory region pages read-only.
     /// This method is meant for global pages only.
     ///
