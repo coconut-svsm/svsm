@@ -461,17 +461,6 @@ impl PTPage {
         Some(unsafe { Self::from_vaddr(address) })
     }
 
-    fn from_entry(entry: PTEntry) -> Option<&'static Self> {
-        if !entry.present() || entry.huge() {
-            return None;
-        }
-
-        let address = phys_to_virt(entry.address());
-        // SAFETY: Every PTEntry points to a previously allocated page-table
-        // page, so this pointer dereference is safe.
-        Some(unsafe { &*address.as_ptr() })
-    }
-
     /// Generates a `PTPage` from a virtual address.
     /// # Safety
     /// The caller must ensure that the virtual address is a valid page table.
@@ -636,12 +625,44 @@ impl<S: ActiveState> ActivePageTable<S> {
         (pte_addr, 0)
     }
 
-    #[expect(dead_code)]
     fn walk_addr(&self, vaddr: VirtAddr) -> Mapping<'_> {
         let (addr, level) = Self::walk(vaddr);
         // SAFETY: the self-map address is valid for the active page table; the
         // shared borrow of `self` prevents concurrent mutation of the entry.
         Mapping::new(unsafe { &*addr.as_ptr() }, level)
+    }
+
+    /// Retrieves the physical address of a mapping.
+    ///
+    /// # Parameters
+    /// - `vaddr`: The virtual address to query.
+    ///
+    /// # Returns
+    /// The physical address of the mapping if present; otherwise, an error
+    /// ([`SvsmError`]).
+    pub fn phys_addr(&self, vaddr: VirtAddr) -> Result<PhysAddr, SvsmError> {
+        let mapping = self.walk_addr(vaddr);
+
+        match mapping.level {
+            0 => {
+                let entry = mapping.entry;
+                let offset = vaddr.page_offset();
+                if !entry.present() {
+                    return Err(SvsmError::Mem);
+                }
+                Ok(entry.address() + offset)
+            }
+            1 => {
+                let entry = mapping.entry;
+                let offset = vaddr.bits() & (PAGE_SIZE_2M - 1);
+                if !entry.present() || !entry.huge() {
+                    return Err(SvsmError::Mem);
+                }
+
+                Ok(entry.address() + offset)
+            }
+            _ => Err(SvsmError::Mem),
+        }
     }
 
     // The `&mut self` borrow is required for soundness even though the body
@@ -1181,24 +1202,6 @@ impl PageTable {
         MappingMut::new(&mut page[idx], 0)
     }
 
-    fn walk_addr_at(mut page: &PTPage, vaddr: VirtAddr, level: usize) -> Mapping<'_> {
-        for level in (1..=level).rev() {
-            let idx = Self::index_at(vaddr, level);
-            let entry = &page[idx];
-            match PTPage::from_entry(*entry) {
-                Some(p) => page = p,
-                None => return Mapping::new(entry, level),
-            }
-        }
-
-        let idx = Self::index::<0>(vaddr);
-        Mapping::new(&page[idx], 0)
-    }
-
-    fn walk_addr(&self, vaddr: VirtAddr) -> Mapping<'_> {
-        Self::walk_addr_at(&self.root, vaddr, 3)
-    }
-
     /// Calculate the virtual address of a PTE in the self-map, which maps a
     /// specified virtual address.
     ///
@@ -1309,39 +1312,6 @@ impl PageTable {
         }
 
         MappingMut::new(entry, 0)
-    }
-
-    /// Retrieves the physical address of a mapping.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address to query.
-    ///
-    /// # Returns
-    /// The physical address of the mapping if present; otherwise, an error
-    /// ([`SvsmError`]).
-    pub fn phys_addr(&self, vaddr: VirtAddr) -> Result<PhysAddr, SvsmError> {
-        let mapping = self.walk_addr(vaddr);
-
-        match mapping.level {
-            0 => {
-                let entry = mapping.entry;
-                let offset = vaddr.page_offset();
-                if !entry.present() {
-                    return Err(SvsmError::Mem);
-                }
-                Ok(entry.address() + offset)
-            }
-            1 => {
-                let entry = mapping.entry;
-                let offset = vaddr.bits() & (PAGE_SIZE_2M - 1);
-                if !entry.present() || !entry.huge() {
-                    return Err(SvsmError::Mem);
-                }
-
-                Ok(entry.address() + offset)
-            }
-            _ => Err(SvsmError::Mem),
-        }
     }
 
     /// Populates this page table with the contents of the given subtree
