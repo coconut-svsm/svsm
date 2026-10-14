@@ -4,7 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::gdt::GDTEntry;
+use super::gdt::{GDT, GDTEntry};
+use super::percpu::PerCpu;
 use crate::address::VirtAddr;
 use core::arch::asm;
 use core::mem::offset_of;
@@ -27,6 +28,58 @@ pub struct X86Tss {
 }
 
 pub const TSS_LIMIT: u64 = core::mem::size_of::<X86Tss>() as u64;
+
+percpu! {
+    static TSS: X86Tss = X86Tss::new();
+    static DOUBLE_FAULT_STACK: Option<VirtAddr>;
+}
+
+pub fn init_double_fault_stack(stack: Option<VirtAddr>) {
+    assert!(DOUBLE_FAULT_STACK.init(stack).is_ok());
+}
+
+pub fn double_fault_stack() -> Option<VirtAddr> {
+    DOUBLE_FAULT_STACK.with(|stack| *stack)
+}
+
+pub fn setup_tss(double_fault_stack: VirtAddr) {
+    TSS.with(|tss| {
+        // SAFETY: The stack pointer is known to be correct.
+        unsafe {
+            tss.set_ist_stack(IST_DF, double_fault_stack);
+        }
+    });
+}
+
+pub fn load_gdt_tss(init_gdt: bool) {
+    let mut gdt = GDT::new();
+    gdt.load();
+    TSS.with(|tss| {
+        // SAFETY: Linker-backed per-CPU values remain allocated for the
+        // lifetime of the CPU.
+        unsafe { gdt.load_tss(tss) };
+    });
+    if init_gdt {
+        gdt.load_selectors();
+    }
+}
+
+pub fn tss_address(percpu: &PerCpu) -> u64 {
+    TSS.ptr_for(percpu) as u64
+}
+
+/// # Safety
+/// No checks are performed on the stack address. The caller must ensure that
+/// the address is valid for stack usage.
+pub unsafe fn set_tss_rsp0(addr: VirtAddr) {
+    TSS.with(|tss| {
+        // SAFETY: The caller has guaranteed the correctness of the stack
+        // pointer.
+        unsafe {
+            tss.set_rsp0(addr);
+        }
+    });
+}
 
 impl X86Tss {
     pub const fn new() -> Self {
