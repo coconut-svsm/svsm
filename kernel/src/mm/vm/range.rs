@@ -224,12 +224,13 @@ impl VMR {
             let idx = PageTable::index::<3>(VirtAddr::from(vmm_start - rstart));
             if let Some(paddr) = mapping.map(offset) {
                 let pt_flags = self.pt_flags | mapping.pt_flags(offset) | PTEntryFlags::PRESENT;
+                let mut subtree = pgtbl_parts[idx].as_active()?;
                 match page_size {
                     PageSize::Regular => {
-                        pgtbl_parts[idx].map_4k(vmm_start + offset, paddr, pt_flags, shared)?
+                        subtree.map_4k(vmm_start + offset, paddr, pt_flags, shared)?
                     }
                     PageSize::Huge => {
-                        pgtbl_parts[idx].map_2m(vmm_start + offset, paddr, pt_flags, shared)?
+                        subtree.map_2m(vmm_start + offset, paddr, pt_flags, shared)?
                     }
                 }
             }
@@ -244,7 +245,7 @@ impl VMR {
     /// # Arguments
     ///
     /// - `vmm` - Reference to a [`VMM`] instance to unmap from the page-table
-    fn unmap_vmm(&self, vmm: &VMM) {
+    fn unmap_vmm(&self, vmm: &VMM) -> Result<(), SvsmError> {
         let rstart = self.virt_range().start();
         let (vmm_start, vmm_end) = vmm.range();
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
@@ -254,9 +255,14 @@ impl VMR {
 
         while vmm_start + offset < vmm_end {
             let idx = PageTable::index::<3>(VirtAddr::from(vmm_start - rstart));
+            let Some(subtree) = pgtbl_parts[idx].try_as_active() else {
+                offset += usize::from(page_size);
+                continue;
+            };
+            let mut subtree = subtree?;
             let result = match page_size {
-                PageSize::Regular => pgtbl_parts[idx].unmap_4k(vmm_start + offset),
-                PageSize::Huge => pgtbl_parts[idx].unmap_2m(vmm_start + offset),
+                PageSize::Regular => subtree.unmap_4k(vmm_start + offset),
+                PageSize::Huge => subtree.unmap_2m(vmm_start + offset),
             };
 
             if result.is_some() {
@@ -265,6 +271,8 @@ impl VMR {
 
             offset += usize::from(page_size);
         }
+
+        Ok(())
     }
 
     fn do_insert(
@@ -275,7 +283,7 @@ impl VMR {
     ) -> Result<(), SvsmError> {
         let vmm = Box::new(VMM::new(start_pfn, mapping));
         if let Err(e) = self.map_vmm(&vmm) {
-            self.unmap_vmm(&vmm);
+            self.unmap_vmm(&vmm)?;
             Err(e)
         } else {
             cursor.insert_before(vmm);
@@ -438,7 +446,7 @@ impl VMR {
 
         let mut cursor = tree.find_mut(&addr);
         let node = cursor.remove().ok_or(SvsmError::Mem)?;
-        self.unmap_vmm(&node);
+        let res = self.unmap_vmm(&node);
 
         let range = node.range();
         let region = MemoryRegion::from_addresses(range.0, range.1);
@@ -450,7 +458,7 @@ impl VMR {
             flush_tlb_global_sync_range(region, pgsize);
         }
 
-        Ok(node)
+        res.map(|_| node)
     }
 
     /// Dump all [`VMM`] mappings in the RBTree. This function is included for

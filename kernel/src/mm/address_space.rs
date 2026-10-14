@@ -256,6 +256,10 @@ const _: () = assert!(PGTABLE_LVL3_IDX_PTE_SELFMAP == bootimg::PGTABLE_LVL3_IDX_
 
 pub const SVSM_PTE_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PTE_SELFMAP);
 
+/// Top-level index of the temporary self-map, used to map an inactive page
+/// table subtree into the active address space.
+pub const PGTABLE_LVL3_IDX_TEMP_SELFMAP: usize = 492;
+
 //
 // User-space mapping constants
 //

@@ -7,22 +7,24 @@
 use crate::BIT_MASK;
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::control_regs::write_cr3;
-use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::idt::common::PageFaultError;
 use crate::cpu::registers::RFlags;
+use crate::cpu::{flush_tlb_global_percpu, flush_tlb_global_sync};
 use crate::error::SvsmError;
 use crate::mm::{
-    PGTABLE_LVL3_IDX_PTE_SELFMAP, PGTABLE_LVL3_IDX_SHARED, PageBox, SVSM_PTE_BASE, phys_to_virt,
-    virt_to_phys,
+    PGTABLE_LVL3_IDX_PTE_SELFMAP, PGTABLE_LVL3_IDX_SHARED, PGTABLE_LVL3_IDX_TEMP_SELFMAP, PageBox,
+    SVSM_PTE_BASE, free_page_phys, virt_from_idx, virt_to_phys,
 };
 use crate::platform::SvsmPlatform;
-use crate::types::{PAGE_SIZE, PAGE_SIZE_1G, PAGE_SIZE_2M, PageSize};
+use crate::types::{
+    PAGE_SHIFT, PAGE_SHIFT_1G, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_1G, PAGE_SIZE_2M, PageSize,
+};
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use bitflags::bitflags;
 use core::cmp;
-use core::ops::{Index, IndexMut};
-use core::ptr::NonNull;
+use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut, Index, IndexMut};
 use cpuarch::x86::CR0Flags;
 use cpuarch::x86::CR4Flags;
 use cpuarch::x86::EFERFlags;
@@ -221,9 +223,9 @@ impl PTEntry {
         self.0.is_null()
     }
 
-    /// Clear the page table entry.
-    pub fn clear(&mut self) {
-        self.0 = PhysAddr::null();
+    /// Clear the page table entry, returning its previous value.
+    pub fn clear(&mut self) -> Self {
+        core::mem::replace(self, Self(PhysAddr::null()))
     }
 
     /// Check if the page table entry is present.
@@ -433,44 +435,6 @@ impl PTPage {
         Ok((PageBox::leak(page), paddr))
     }
 
-    /// Frees a pagetable page.
-    ///
-    /// # Safety
-    ///
-    /// The given reference must correspond to a valid previously allocated
-    /// page table page.
-    unsafe fn free(page: &'static mut Self) {
-        // SAFETY: The page put into the PageBox is a previously allocated
-        // page table page.
-        unsafe {
-            let _ = PageBox::from_raw(NonNull::from(page));
-        }
-    }
-
-    /// Converts a pagetable entry to a mutable reference to a [`PTPage`],
-    /// if the entry is present and not huge.
-    fn from_entry_mut(entry: PTEntry) -> Option<&'static mut Self> {
-        if !entry.present() || entry.huge() {
-            return None;
-        }
-
-        let address = phys_to_virt(entry.address());
-        // SAFETY: Every PTEntry points to a previously allocated page-table
-        // page, so this pointer dereference is safe.
-        Some(unsafe { Self::from_vaddr(address) })
-    }
-
-    fn from_entry(entry: PTEntry) -> Option<&'static Self> {
-        if !entry.present() || entry.huge() {
-            return None;
-        }
-
-        let address = phys_to_virt(entry.address());
-        // SAFETY: Every PTEntry points to a previously allocated page-table
-        // page, so this pointer dereference is safe.
-        Some(unsafe { &*address.as_ptr() })
-    }
-
     /// Generates a `PTPage` from a virtual address.
     /// # Safety
     /// The caller must ensure that the virtual address is a valid page table.
@@ -567,264 +531,133 @@ impl PageFrame {
     }
 }
 
-/// Page table structure containing a root page with multiple entries.
-#[repr(C)]
-#[derive(Debug, FromZeros)]
-pub struct PageTable {
-    root: PTPage,
+/// The self-map a given [`ActivePageTable`] is reachable through.
+pub trait ActiveState {
+    /// Top-level index of the self-map entry.
+    const SELFMAP_IDX: usize;
 }
 
-impl PageTable {
-    /// Load the current page table into the CR3 register.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure to take other actions to make sure a memory safe
-    /// execution state is warranted (e.g. changing the stack and register state)
-    pub unsafe fn load(&self) {
-        // SAFETY: demanded to the caller
-        unsafe {
-            write_cr3(self.cr3_value());
-        }
+/// The page table currently loaded in CR3, reachable through its own self-map.
+#[derive(Debug)]
+pub struct Active;
+
+impl ActiveState for Active {
+    const SELFMAP_IDX: usize = PGTABLE_LVL3_IDX_PTE_SELFMAP;
+}
+
+/// An inactive page table subtree temporarily mapped through the temporary
+/// self-map (see [`SelfMapGuard`]).
+#[derive(Debug)]
+pub struct TempActive;
+
+impl ActiveState for TempActive {
+    const SELFMAP_IDX: usize = PGTABLE_LVL3_IDX_TEMP_SELFMAP;
+}
+
+/// A [`PageTable`] reachable through a self-map `S`. This allows walking the
+/// hierarchy without the direct map, which is only possible while the page
+/// table is mapped through the self-map.
+#[repr(transparent)]
+#[derive(Debug)]
+pub struct ActivePageTable<S: ActiveState = Active> {
+    inner: PageTable,
+    _state: PhantomData<S>,
+}
+
+impl<S: ActiveState> Deref for ActivePageTable<S> {
+    type Target = PageTable;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
+}
 
-    /// Get the CR3 register value for the current page table.
-    pub fn cr3_value(&self) -> PhysAddr {
-        let pgtable = VirtAddr::from(self as *const Self);
-        virt_to_phys(pgtable)
+impl<S: ActiveState> DerefMut for ActivePageTable<S> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
+}
 
-    /// Allocate a new page table root.
-    ///
-    /// # Errors
-    /// Returns [`SvsmError`] if the page cannot be allocated.
-    pub fn allocate_new() -> Result<PageBox<Self>, SvsmError> {
-        let mut pgtable: PageBox<Self> = PageBox::try_new_zeroed()?;
-        let paddr = virt_to_phys(pgtable.vaddr());
-
-        // Set the self-map entry.
-        let entry = &mut pgtable.root[PGTABLE_LVL3_IDX_PTE_SELFMAP];
-        let flags = PTEntryFlags::PRESENT
-            | PTEntryFlags::WRITABLE
-            | PTEntryFlags::ACCESSED
-            | PTEntryFlags::DIRTY
-            | PTEntryFlags::NX;
-        entry.set(make_private_address(paddr), flags);
-
-        Ok(pgtable)
-    }
-
-    /// Clone the shared part of the page table; excluding the private
-    /// parts.
-    ///
-    /// # Errors
-    /// Returns [`SvsmError`] if the page cannot be allocated.
-    pub fn clone_shared(&self) -> Result<PageBox<PageTable>, SvsmError> {
-        let mut pgtable = Self::allocate_new()?;
-        pgtable.root.entries[PGTABLE_LVL3_IDX_SHARED] = self.root.entries[PGTABLE_LVL3_IDX_SHARED];
-        Ok(pgtable)
-    }
-
-    /// Copy an entry `entry` from another [`PageTable`].
-    pub fn copy_entry(&mut self, other: &Self, entry: usize) {
-        self.root.entries[entry] = other.root.entries[entry];
-    }
-
-    /// Computes the index within a page table at the given level for a
-    /// virtual address `vaddr`.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address to compute the index for.
-    ///
-    /// # Returns
-    /// The index within the page table.
-    pub fn index<const L: usize>(vaddr: VirtAddr) -> usize {
-        vaddr.to_pgtbl_idx::<L>()
-        //vaddr.bits() >> (12 + L * 9) & 0x1ff
-    }
-
-    /// A non-const version of [`Self::index()`].
-    fn index_at(vaddr: VirtAddr, level: usize) -> usize {
-        vaddr.bits() >> (12 + level * 9) & 0x1ff
-    }
-
-    /// Walk the virtual address and return the corresponding mapping,
-    /// starting at the specified level in the hierarchy.
-    ///
-    /// # Parameters
-    /// - `page`: A mutable reference to the root page table.
-    /// - `vaddr`: The virtual address to find a mapping for.
-    /// - `level`: the level in the page table hierarchy at which to
-    ///   start the walk.
-    ///
-    /// # Returns
-    /// A `MappingMut` representing the found mapping.
-    fn walk_addr_mut_at(mut page: &mut PTPage, vaddr: VirtAddr, level: usize) -> MappingMut<'_> {
-        for level in (1..=level).rev() {
-            let idx = Self::index_at(vaddr, level);
-            let entry = &mut page[idx];
-            match PTPage::from_entry_mut(*entry) {
-                Some(p) => page = p,
-                None => return MappingMut::new(entry, level),
-            }
-        }
-
-        let idx = Self::index::<0>(vaddr);
-        MappingMut::new(&mut page[idx], 0)
-    }
-
-    fn walk_addr_at(mut page: &PTPage, vaddr: VirtAddr, level: usize) -> Mapping<'_> {
-        for level in (1..=level).rev() {
-            let idx = Self::index_at(vaddr, level);
-            let entry = &page[idx];
-            match PTPage::from_entry(*entry) {
-                Some(p) => page = p,
-                None => return Mapping::new(entry, level),
-            }
-        }
-
-        let idx = Self::index::<0>(vaddr);
-        Mapping::new(&page[idx], 0)
-    }
-
-    /// Walk the virtual address and return the corresponding mapping.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address to find a mapping for.
-    ///
-    /// # Returns
-    /// A `MappingMut` representing the found mapping.
-    fn walk_addr_mut(&mut self, vaddr: VirtAddr) -> MappingMut<'_> {
-        Self::walk_addr_mut_at(&mut self.root, vaddr, 3)
-    }
-
-    fn walk_addr(&self, vaddr: VirtAddr) -> Mapping<'_> {
-        Self::walk_addr_at(&self.root, vaddr, 3)
-    }
-
-    /// Calculate the virtual address of a PTE in the self-map, which maps a
-    /// specified virtual address.
-    ///
-    /// # Parameters
-    /// - `vaddr': The virtual address whose PTE should be located.
-    ///
-    /// # Returns
-    /// The virtual address of the PTE.
+impl<S: ActiveState> ActivePageTable<S> {
+    /// Self-map virtual address of the PTE that maps `vaddr`.
     fn get_pte_address(vaddr: VirtAddr) -> VirtAddr {
-        SVSM_PTE_BASE + ((usize::from(vaddr) & 0x0000_FFFF_FFFF_F000) >> 9)
+        virt_from_idx(S::SELFMAP_IDX) + ((usize::from(vaddr) & 0x0000_FFFF_FFFF_F000) >> 9)
     }
 
-    /// Perform a virtual to physical translation using the self-map.
-    ///
-    /// # Parameters
-    /// - `vaddr': The virtual address to translate.
-    ///
-    /// # Returns
-    /// Some(PageFrame) if the virtual address is valid.
-    /// None if the virtual address is not valid.
-    pub fn virt_to_frame(vaddr: VirtAddr) -> Option<PageFrame> {
-        // Calculate the virtual addresses of each level of the paging
-        // hierarchy in the self-map.
+    /// Walk the hierarchy through the self-map and return the self-map address
+    /// of the mapping for `vaddr` (the first non-present or huge entry, or the
+    /// leaf PTE) together with its level.
+    fn walk(vaddr: VirtAddr) -> (VirtAddr, usize) {
         let pte_addr = Self::get_pte_address(vaddr);
         let pde_addr = Self::get_pte_address(pte_addr);
         let pdpe_addr = Self::get_pte_address(pde_addr);
         let pml4e_addr = Self::get_pte_address(pdpe_addr);
 
-        // SAFETY: Check each entry in the paging hierarchy to determine
-        // whether this address is mapped.  Because the hierarchy is read from
-        // the top down using self-map addresses that were calculated
-        // correctly, the reads are safe to perform.
-        let pml4e = unsafe { PTEntry::read_pte(pml4e_addr) };
-        if !pml4e.present() {
-            return None;
-        }
-
-        // There is no need to check for a large page in the PML4E because
-        // the architecture does not support the large bit at the top-level
-        // entry.  If a large page is detected at a lower level of the
-        // hierarchy, the low bits from the virtual address must be combined
-        // with the physical address from the PDE/PDPE.
-
-        // SAFETY: The PML4E was checked to be present, so the PDPE exists and
-        // can be read safely.
-        let pdpe = unsafe { PTEntry::read_pte(pdpe_addr) };
-        if !pdpe.present() {
-            return None;
-        }
-        if pdpe.huge() {
-            let pa = pdpe.page_frame() + (usize::from(vaddr) & 0x3FFF_FFFF);
-            return Some(PageFrame::Size1G(pa));
-        }
-
-        // SAFETY: The PDPE was checked to be present and not to be a huge
-        // page. So the PDE exists and can be read safely.
-        let pde = unsafe { PTEntry::read_pte(pde_addr) };
-        if !pde.present() {
-            return None;
-        }
-        if pde.huge() {
-            let pa = pde.page_frame() + (usize::from(vaddr) & 0x001F_FFFF);
-            return Some(PageFrame::Size2M(pa));
-        }
-
-        // SAFETY: The PDE was checked to be present and not to be a huge
-        // page. So the PTE exists and can be read safely.
-        let pte = unsafe { PTEntry::read_pte(pte_addr) };
-        if pte.present() {
-            let pa = pte.page_frame() + (usize::from(vaddr) & 0xFFF);
-            Some(PageFrame::Size4K(pa))
-        } else {
-            None
-        }
-    }
-
-    /// In x86_64, effective permission = parent perm & children perm.
-    /// parent flags is constant: present, writable, user-accessible.
-    /// ACCESSED & DIRTY => prevent future hardware mutations.
-    fn parent_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT
-            | PTEntryFlags::WRITABLE
-            | PTEntryFlags::USER
-            | PTEntryFlags::ACCESSED
-            | PTEntryFlags::DIRTY
-    }
-
-    fn alloc_intermediate_ptes(
-        mapping: MappingMut<'_>,
-        vaddr: VirtAddr,
-        size: PageSize,
-    ) -> MappingMut<'_> {
-        let level = mapping.level;
-        let mut entry = mapping.entry;
-
-        for lvl in (1..=level).rev() {
-            if entry.present() || (lvl == 1 && size == PageSize::Huge) {
-                return MappingMut::new(entry, lvl);
+        let addrs = [pte_addr, pde_addr, pdpe_addr, pml4e_addr];
+        for (level, addr) in addrs.into_iter().enumerate().skip(1).rev() {
+            // SAFETY: the hierarchy is read top-down through correctly computed
+            // self-map addresses, so each present level guarantees the next can
+            // be read.
+            let entry = unsafe { PTEntry::read_pte(addr) };
+            let is_huge = (level == 1 || level == 2) && entry.huge();
+            if !entry.present() || is_huge {
+                return (addr, level);
             }
-
-            let Ok((page, paddr)) = PTPage::alloc() else {
-                return MappingMut::new(entry, lvl);
-            };
-
-            entry.set(make_private_address(paddr), Self::parent_flags());
-            let idx = Self::index_at(vaddr, lvl - 1);
-            entry = &mut page[idx];
         }
 
-        MappingMut::new(entry, 0)
+        (pte_addr, 0)
     }
 
-    /// Allocates a page table entry for the given virtual address and
-    /// the given page size.
+    fn walk_addr(&self, vaddr: VirtAddr) -> Mapping<'_> {
+        let (addr, level) = Self::walk(vaddr);
+        // SAFETY: the self-map address is valid for the active page table; the
+        // shared borrow of `self` prevents concurrent mutation of the entry.
+        Mapping::new(unsafe { &*addr.as_ptr() }, level)
+    }
+
+    /// Retrieves the physical address of a mapping.
     ///
     /// # Parameters
-    /// - `vaddr`: The virtual address for which to allocate the PTE.
+    /// - `vaddr`: The virtual address to query.
     ///
     /// # Returns
-    /// A `MappingMut` representing the allocated or existing PTE for the address.
-    fn alloc_pte(&mut self, vaddr: VirtAddr, size: PageSize) -> MappingMut<'_> {
-        let m = self.walk_addr_mut(vaddr);
-        Self::alloc_intermediate_ptes(m, vaddr, size)
+    /// The physical address of the mapping if present; otherwise, an error
+    /// ([`SvsmError`]).
+    pub fn phys_addr(&self, vaddr: VirtAddr) -> Result<PhysAddr, SvsmError> {
+        let mapping = self.walk_addr(vaddr);
+
+        match mapping.level {
+            0 => {
+                let entry = mapping.entry;
+                let offset = vaddr.page_offset();
+                if !entry.present() {
+                    return Err(SvsmError::Mem);
+                }
+                Ok(entry.address() + offset)
+            }
+            1 => {
+                let entry = mapping.entry;
+                let offset = vaddr.bits() & (PAGE_SIZE_2M - 1);
+                if !entry.present() || !entry.huge() {
+                    return Err(SvsmError::Mem);
+                }
+
+                Ok(entry.address() + offset)
+            }
+            _ => Err(SvsmError::Mem),
+        }
+    }
+
+    // The `&mut self` borrow is required for soundness even though the body
+    // does not write through `self`: the returned entry aliases page-table
+    // memory reachable through `self` via the self-map, so exclusive access
+    // must be held. clippy cannot see this alias.
+    #[allow(clippy::needless_pass_by_ref_mut)]
+    fn walk_addr_mut(&mut self, vaddr: VirtAddr) -> MappingMut<'_> {
+        let (addr, level) = Self::walk(vaddr);
+        // SAFETY: as in `walk_addr`; the exclusive borrow of `self` prevents
+        // aliasing of the returned entry.
+        MappingMut::new(unsafe { &mut *addr.as_mut_ptr() }, level)
     }
 
     /// Splits a 2MB page into 4KB pages.
@@ -928,14 +761,17 @@ impl PageTable {
         self.set_pte_visibility_4k(vaddr, false)
     }
 
-    /// Gets the physical address for a mapped `vaddr` or `None` if
-    /// no such mapping exists.
-    pub fn check_mapping(&self, vaddr: VirtAddr) -> Option<PhysAddr> {
-        let mapping = self.walk_addr(vaddr);
-        match mapping.level {
-            0 | 1 => Some(mapping.entry.address()),
-            _ => None,
-        }
+    /// Allocates a page table entry for the given virtual address and
+    /// the given page size.
+    ///
+    /// # Parameters
+    /// - `vaddr`: The virtual address for which to allocate the PTE.
+    ///
+    /// # Returns
+    /// A `MappingMut` representing the allocated or existing PTE for the address.
+    fn alloc_pte(&mut self, vaddr: VirtAddr, size: PageSize) -> MappingMut<'_> {
+        let m = self.walk_addr_mut(vaddr);
+        PageTable::alloc_intermediate_ptes(m, vaddr, size)
     }
 
     /// Maps a 2MB page.
@@ -976,21 +812,24 @@ impl PageTable {
         }
     }
 
-    /// Unmaps a 2MB page.
+    /// Unmaps a 2MB page, returning the previous entry if one was present.
     ///
     /// # Parameters
     /// - `vaddr`: The virtual address of the mapping to unmap.
     ///
     /// # Panics
     /// Panics if `vaddr` is not aligned to a 2MB boundary.
-    pub fn unmap_2m(&mut self, vaddr: VirtAddr) {
+    pub fn unmap_2m(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
         assert!(vaddr.is_aligned(PAGE_SIZE_2M));
 
         let mapping = self.walk_addr_mut(vaddr);
 
         match mapping.level {
-            1 => mapping.entry.clear(),
-            2 | 3 => assert!(!mapping.entry.present()),
+            1 => Some(mapping.entry.clear()),
+            2 | 3 => {
+                assert!(!mapping.entry.present());
+                None
+            }
             _ => unreachable!(),
         }
     }
@@ -1027,49 +866,19 @@ impl PageTable {
         }
     }
 
-    /// Unmaps a 4KB page.
+    /// Unmaps a 4KB page, returning the previous entry if one was present.
     ///
     /// # Parameters
     /// - `vaddr`: The virtual address of the mapping to unmap.
-    pub fn unmap_4k(&mut self, vaddr: VirtAddr) {
+    pub fn unmap_4k(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
         let mapping = self.walk_addr_mut(vaddr);
 
         match mapping.level {
-            0 => mapping.entry.clear(),
-            _ => assert!(!mapping.entry.present()),
-        }
-    }
-
-    /// Retrieves the physical address of a mapping.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address to query.
-    ///
-    /// # Returns
-    /// The physical address of the mapping if present; otherwise, an error
-    /// ([`SvsmError`]).
-    pub fn phys_addr(&self, vaddr: VirtAddr) -> Result<PhysAddr, SvsmError> {
-        let mapping = self.walk_addr(vaddr);
-
-        match mapping.level {
-            0 => {
-                let entry = mapping.entry;
-                let offset = vaddr.page_offset();
-                if !entry.present() {
-                    return Err(SvsmError::Mem);
-                }
-                Ok(entry.address() + offset)
+            0 => Some(mapping.entry.clear()),
+            _ => {
+                assert!(!mapping.entry.present());
+                None
             }
-            1 => {
-                let entry = mapping.entry;
-                let offset = vaddr.bits() & (PAGE_SIZE_2M - 1);
-                if !entry.present() || !entry.huge() {
-                    return Err(SvsmError::Mem);
-                }
-
-                Ok(entry.address() + offset)
-            }
-            _ => Err(SvsmError::Mem),
         }
     }
 
@@ -1202,25 +1011,6 @@ impl PageTable {
         }
     }
 
-    /// Populates this page table with the contents of the given subtree
-    /// in `part`.
-    ///
-    /// Returns `true` if the PTE contents were updated.
-    pub fn populate_pgtbl_part(&mut self, part: &PageTablePart) -> bool {
-        let Some(paddr) = part.address() else {
-            return false;
-        };
-        let idx = part.index();
-        let flags = PTEntryFlags::PRESENT
-            | PTEntryFlags::WRITABLE
-            | PTEntryFlags::USER
-            | PTEntryFlags::ACCESSED;
-        let entry = &mut self.root[idx];
-        let prev = entry.raw();
-        entry.set(make_private_address(paddr), flags);
-        prev != entry.raw()
-    }
-
     /// Makes the memory region pages read-only.
     /// This method is meant for global pages only.
     ///
@@ -1268,6 +1058,369 @@ impl PageTable {
     }
 }
 
+/// Virtual address of the active PML4 page, reachable through the canonical
+/// self-map as `[S, S, S, S, 0]`.
+fn active_pml4_vaddr() -> VirtAddr {
+    let s = PGTABLE_LVL3_IDX_PTE_SELFMAP;
+    VirtAddr::new((s << 39) | (s << 30) | (s << 21) | (s << 12))
+}
+
+/// An inactive PDP-level page table subtree temporarily mapped into the active
+/// address space through the temporary self-map.
+///
+/// The temporary mapping is torn down when the guard is dropped.
+#[derive(Debug)]
+pub struct SelfMapGuard<'a> {
+    root: &'a mut PTPage,
+    /// Temporary PML4 used to set up a recursive self-map.
+    _temp_pml4: PageBox<PTPage>,
+}
+
+impl<'a> SelfMapGuard<'a> {
+    /// Temporarily maps the PDP subtree rooted at `root`, populated at
+    /// top-level index `idx`, through the temporary self-map.
+    ///
+    /// # Safety
+    ///
+    /// `root` must be the root of a PDP-level page table subtree populated at
+    /// `idx`, and the currently active page table must have its canonical
+    /// self-map installed at [`PGTABLE_LVL3_IDX_PTE_SELFMAP`].
+    unsafe fn new(root: &'a mut PTPage, idx: usize) -> Result<Self, SvsmError> {
+        // Get access to the active PML4 via the real self-map
+        // SAFETY: the caller guarantees the canonical self-map is active, so
+        // this address points to the active PML4.
+        let active_pml4 = unsafe { &mut *active_pml4_vaddr().as_mut_ptr::<PTPage>() };
+        if active_pml4[TempActive::SELFMAP_IDX].present() {
+            log::error!("Attempted nested use of the temporary self-map");
+            return Err(SvsmError::Mem);
+        }
+
+        let root_phys = virt_to_phys(VirtAddr::from(core::ptr::from_mut(root)));
+
+        // Allocate the temporary PML4 pointing at the subtree, and set up its
+        // recursive self-map entry.
+        let mut temp_pml4 = PTPage::alloc_box()?;
+        let pml4_phys = virt_to_phys(temp_pml4.vaddr());
+        temp_pml4[idx].set(make_private_address(root_phys), PTEntryFlags::task_data());
+        temp_pml4[TempActive::SELFMAP_IDX]
+            .set(make_private_address(pml4_phys), PTEntryFlags::task_data());
+
+        // Install the temporary PML4 in the active page table.
+        active_pml4[TempActive::SELFMAP_IDX]
+            .set(make_private_address(pml4_phys), PTEntryFlags::task_data());
+        flush_tlb_global_percpu();
+
+        Ok(Self {
+            root,
+            _temp_pml4: temp_pml4,
+        })
+    }
+}
+
+impl Deref for SelfMapGuard<'_> {
+    type Target = ActivePageTable<TempActive>;
+
+    fn deref(&self) -> &Self::Target {
+        // `PTPage` and `ActivePageTable` must have identical layouts.
+        const _: () = {
+            assert!(size_of::<ActivePageTable<TempActive>>() == size_of::<PTPage>());
+            assert!(align_of::<ActivePageTable<TempActive>>() == align_of::<PTPage>());
+        };
+        // SAFETY: `ActivePageTable` is a `repr(transparent)` wrapper over
+        // `PageTable`, which has the same layout as `PTPage`.
+        unsafe { &*core::ptr::from_ref(self.root).cast() }
+    }
+}
+
+impl DerefMut for SelfMapGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: see `Deref`.
+        unsafe { &mut *core::ptr::from_mut(self.root).cast() }
+    }
+}
+
+impl Drop for SelfMapGuard<'_> {
+    fn drop(&mut self) {
+        // SAFETY: the canonical self-map is active (checked at construction),
+        // so this address points to the active PML4.
+        let active_pml4 = unsafe { &mut *active_pml4_vaddr().as_mut_ptr::<PTPage>() };
+        active_pml4[TempActive::SELFMAP_IDX].clear();
+        flush_tlb_global_percpu();
+    }
+}
+
+impl ActivePageTable<TempActive> {
+    /// Frees all level-0 page table pages referenced by a level-1 page.
+    fn free_lvl1(page: &PTPage) {
+        for entry in page.entries.iter() {
+            if entry.present() && !entry.huge() {
+                free_page_phys(entry.address());
+            }
+        }
+    }
+
+    /// Frees all level-1 and level-0 page table pages of this level-2 subtree,
+    /// which is populated at top-level index `idx`.
+    fn free_lvl2(&self, idx: usize) {
+        // A level-1 page under this subtree's PDPT entry `i` is reachable
+        // through the temporary self-map at `[S, S, idx, i, 0]`, where `S` is
+        // the temporary self-map index.
+        let s = TempActive::SELFMAP_IDX;
+        let base = virt_from_idx(s) + (s << PAGE_SHIFT_1G) + (idx << PAGE_SHIFT_2M);
+
+        for (i, entry) in self.root.entries.iter().enumerate() {
+            if entry.present() && !entry.huge() {
+                let l1_vaddr = base + (i << PAGE_SHIFT);
+                // SAFETY: the level-1 page is reachable through the temporary
+                // self-map at the computed address.
+                let l1_page = unsafe { &*l1_vaddr.as_ptr() };
+                Self::free_lvl1(l1_page);
+                free_page_phys(entry.address());
+            }
+        }
+    }
+}
+
+/// Page table structure containing a root page with multiple entries.
+#[repr(C)]
+#[derive(Debug, FromZeros)]
+pub struct PageTable {
+    root: PTPage,
+}
+
+impl PageTable {
+    /// Reinterpret this page table as the active page table.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that this page table is currently loaded in CR3.
+    pub unsafe fn as_active(&self) -> &ActivePageTable<Active> {
+        // `PageTable` and `ActivePageTable` must have identical layouts.
+        const _: () = {
+            assert!(size_of::<ActivePageTable<Active>>() == size_of::<PageTable>());
+            assert!(align_of::<ActivePageTable<Active>>() == align_of::<PageTable>());
+        };
+        // SAFETY: `ActivePageTable` is a `repr(transparent)` wrapper over
+        // `PageTable`, so the cast is valid.
+        unsafe { &*core::ptr::from_ref(self).cast() }
+    }
+
+    /// Reinterpret this page table as the active page table.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that this page table is currently loaded in CR3.
+    pub unsafe fn as_active_mut(&mut self) -> &mut ActivePageTable<Active> {
+        // SAFETY: `ActivePageTable` is a `repr(transparent)` wrapper over
+        // `PageTable`, so the cast is valid.
+        unsafe { &mut *core::ptr::from_mut(self).cast() }
+    }
+
+    /// Load the current page table into the CR3 register.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure to take other actions to make sure a memory safe
+    /// execution state is warranted (e.g. changing the stack and register state)
+    pub unsafe fn load(&self) {
+        // SAFETY: demanded to the caller
+        unsafe {
+            write_cr3(self.cr3_value());
+        }
+    }
+
+    /// Get the CR3 register value for the current page table.
+    pub fn cr3_value(&self) -> PhysAddr {
+        let pgtable = VirtAddr::from(self as *const Self);
+        virt_to_phys(pgtable)
+    }
+
+    /// Allocate a new page table root.
+    ///
+    /// # Errors
+    /// Returns [`SvsmError`] if the page cannot be allocated.
+    pub fn allocate_new() -> Result<PageBox<Self>, SvsmError> {
+        let mut pgtable: PageBox<Self> = PageBox::try_new_zeroed()?;
+        let paddr = virt_to_phys(pgtable.vaddr());
+
+        // Set the self-map entry.
+        let entry = &mut pgtable.root[PGTABLE_LVL3_IDX_PTE_SELFMAP];
+        let flags = PTEntryFlags::PRESENT
+            | PTEntryFlags::WRITABLE
+            | PTEntryFlags::ACCESSED
+            | PTEntryFlags::DIRTY
+            | PTEntryFlags::NX;
+        entry.set(make_private_address(paddr), flags);
+
+        Ok(pgtable)
+    }
+
+    /// Clone the shared part of the page table; excluding the private
+    /// parts.
+    ///
+    /// # Errors
+    /// Returns [`SvsmError`] if the page cannot be allocated.
+    pub fn clone_shared(&self) -> Result<PageBox<PageTable>, SvsmError> {
+        let mut pgtable = Self::allocate_new()?;
+        pgtable.root.entries[PGTABLE_LVL3_IDX_SHARED] = self.root.entries[PGTABLE_LVL3_IDX_SHARED];
+        Ok(pgtable)
+    }
+
+    /// Copy an entry `entry` from another [`PageTable`].
+    pub fn copy_entry(&mut self, other: &Self, entry: usize) {
+        self.root.entries[entry] = other.root.entries[entry];
+    }
+
+    /// Computes the index within a page table at the given level for a
+    /// virtual address `vaddr`.
+    ///
+    /// # Parameters
+    /// - `vaddr`: The virtual address to compute the index for.
+    ///
+    /// # Returns
+    /// The index within the page table.
+    pub fn index<const L: usize>(vaddr: VirtAddr) -> usize {
+        vaddr.to_pgtbl_idx::<L>()
+        //vaddr.bits() >> (12 + L * 9) & 0x1ff
+    }
+
+    /// A non-const version of [`Self::index()`].
+    fn index_at(vaddr: VirtAddr, level: usize) -> usize {
+        vaddr.bits() >> (12 + level * 9) & 0x1ff
+    }
+
+    /// Calculate the virtual address of a PTE in the self-map, which maps a
+    /// specified virtual address.
+    ///
+    /// # Parameters
+    /// - `vaddr': The virtual address whose PTE should be located.
+    ///
+    /// # Returns
+    /// The virtual address of the PTE.
+    fn get_pte_address(vaddr: VirtAddr) -> VirtAddr {
+        SVSM_PTE_BASE + ((usize::from(vaddr) & 0x0000_FFFF_FFFF_F000) >> 9)
+    }
+
+    /// Perform a virtual to physical translation using the self-map.
+    ///
+    /// # Parameters
+    /// - `vaddr': The virtual address to translate.
+    ///
+    /// # Returns
+    /// Some(PageFrame) if the virtual address is valid.
+    /// None if the virtual address is not valid.
+    pub fn virt_to_frame(vaddr: VirtAddr) -> Option<PageFrame> {
+        // Calculate the virtual addresses of each level of the paging
+        // hierarchy in the self-map.
+        let pte_addr = Self::get_pte_address(vaddr);
+        let pde_addr = Self::get_pte_address(pte_addr);
+        let pdpe_addr = Self::get_pte_address(pde_addr);
+        let pml4e_addr = Self::get_pte_address(pdpe_addr);
+
+        // SAFETY: Check each entry in the paging hierarchy to determine
+        // whether this address is mapped.  Because the hierarchy is read from
+        // the top down using self-map addresses that were calculated
+        // correctly, the reads are safe to perform.
+        let pml4e = unsafe { PTEntry::read_pte(pml4e_addr) };
+        if !pml4e.present() {
+            return None;
+        }
+
+        // There is no need to check for a large page in the PML4E because
+        // the architecture does not support the large bit at the top-level
+        // entry.  If a large page is detected at a lower level of the
+        // hierarchy, the low bits from the virtual address must be combined
+        // with the physical address from the PDE/PDPE.
+
+        // SAFETY: The PML4E was checked to be present, so the PDPE exists and
+        // can be read safely.
+        let pdpe = unsafe { PTEntry::read_pte(pdpe_addr) };
+        if !pdpe.present() {
+            return None;
+        }
+        if pdpe.huge() {
+            let pa = pdpe.page_frame() + (usize::from(vaddr) & 0x3FFF_FFFF);
+            return Some(PageFrame::Size1G(pa));
+        }
+
+        // SAFETY: The PDPE was checked to be present and not to be a huge
+        // page. So the PDE exists and can be read safely.
+        let pde = unsafe { PTEntry::read_pte(pde_addr) };
+        if !pde.present() {
+            return None;
+        }
+        if pde.huge() {
+            let pa = pde.page_frame() + (usize::from(vaddr) & 0x001F_FFFF);
+            return Some(PageFrame::Size2M(pa));
+        }
+
+        // SAFETY: The PDE was checked to be present and not to be a huge
+        // page. So the PTE exists and can be read safely.
+        let pte = unsafe { PTEntry::read_pte(pte_addr) };
+        if pte.present() {
+            let pa = pte.page_frame() + (usize::from(vaddr) & 0xFFF);
+            Some(PageFrame::Size4K(pa))
+        } else {
+            None
+        }
+    }
+
+    /// In x86_64, effective permission = parent perm & children perm.
+    /// parent flags is constant: present, writable, user-accessible.
+    /// ACCESSED & DIRTY => prevent future hardware mutations.
+    fn parent_flags() -> PTEntryFlags {
+        PTEntryFlags::PRESENT
+            | PTEntryFlags::WRITABLE
+            | PTEntryFlags::USER
+            | PTEntryFlags::ACCESSED
+            | PTEntryFlags::DIRTY
+    }
+
+    fn alloc_intermediate_ptes(
+        mapping: MappingMut<'_>,
+        vaddr: VirtAddr,
+        size: PageSize,
+    ) -> MappingMut<'_> {
+        let level = mapping.level;
+        let mut entry = mapping.entry;
+
+        for lvl in (1..=level).rev() {
+            if entry.present() || (lvl == 1 && size == PageSize::Huge) {
+                return MappingMut::new(entry, lvl);
+            }
+
+            let Ok((page, paddr)) = PTPage::alloc() else {
+                return MappingMut::new(entry, lvl);
+            };
+
+            entry.set(make_private_address(paddr), Self::parent_flags());
+            let idx = Self::index_at(vaddr, lvl - 1);
+            entry = &mut page[idx];
+        }
+
+        MappingMut::new(entry, 0)
+    }
+
+    /// Populates this page table with the contents of the given subtree
+    /// in `part`.
+    ///
+    /// Returns `true` if the PTE contents were updated.
+    pub fn populate_pgtbl_part(&mut self, part: &PageTablePart) -> bool {
+        let Some(paddr) = part.address() else {
+            return false;
+        };
+        let idx = part.index();
+        let flags = PTEntryFlags::PRESENT
+            | PTEntryFlags::WRITABLE
+            | PTEntryFlags::USER
+            | PTEntryFlags::ACCESSED;
+        let entry = &mut self.root[idx];
+        let prev = entry.raw();
+        entry.set(make_private_address(paddr), flags);
+        prev != entry.raw()
+    }
+}
+
 /// Represents a sub-tree of a page-table which can be mapped at a top-level index
 #[derive(Debug, FromZeros)]
 struct RawPageTablePart {
@@ -1275,200 +1428,9 @@ struct RawPageTablePart {
 }
 
 impl RawPageTablePart {
-    /// Frees a level 1 page table.
-    fn free_lvl1(page: &mut PTPage) {
-        for entry in page.entries.iter_mut() {
-            if let Some(page) = PTPage::from_entry_mut(*entry) {
-                // SAFETY: the page comes from an entry in the page table,
-                // which we allocated using `PTPage::alloc()`, so this is
-                // safe.
-                unsafe { PTPage::free(page) };
-            }
-        }
-    }
-
-    /// Frees a level 2 page table, including all level 1 tables beneath it.
-    fn free_lvl2(page: &mut PTPage) {
-        for entry in page.entries.iter_mut() {
-            if let Some(l1_page) = PTPage::from_entry_mut(*entry) {
-                Self::free_lvl1(l1_page);
-                // SAFETY: the page comes from an entry in the page table,
-                // which we allocated using `PTPage::alloc()`, so this is
-                // safe.
-                unsafe { PTPage::free(l1_page) };
-            }
-        }
-    }
-
-    /// Frees the resources associated with this page table part.
-    fn free(&mut self) {
-        RawPageTablePart::free_lvl2(&mut self.page);
-    }
-
     /// Returns the physical address of this page table part.
     fn address(&self) -> PhysAddr {
         virt_to_phys(VirtAddr::from(self as *const RawPageTablePart))
-    }
-
-    /// Walks the page table at level 3 to find the mapping for a given
-    /// virtual address.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address to find the mapping for.
-    ///
-    /// # Returns
-    /// The [`MappingMut`] for the given virtual address.
-    fn walk_addr_mut(&mut self, vaddr: VirtAddr) -> MappingMut<'_> {
-        PageTable::walk_addr_mut_at(&mut self.page, vaddr, 2)
-    }
-
-    /// Allocates a page table entry for a given virtual address and
-    /// the given page size.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address for which to allocate the PTE.
-    ///
-    /// # Returns
-    /// The [`MappingMut`] representing the allocated or existing PTE for the address.
-    ///
-    /// # Panics
-    /// Panics if a level 3 mapping is attempted in a [`RawPageTablePart`].
-    fn alloc_pte(&mut self, vaddr: VirtAddr, size: PageSize) -> MappingMut<'_> {
-        let m = self.walk_addr_mut(vaddr);
-        if m.level >= 3 {
-            panic!("PT level >= 3 not possible in PageTablePart");
-        }
-        PageTable::alloc_intermediate_ptes(m, vaddr, size)
-    }
-
-    /// Maps a 4KB page.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address to map.
-    /// - `paddr`: The physical address to map to.
-    /// - `flags`: The flags to apply to the mapping.
-    /// - `shared`: Indicates whether the mapping is shared.
-    ///
-    /// # Returns
-    /// A result indicating success (`Ok`) or failure (`Err`).
-    fn map_4k(
-        &mut self,
-        vaddr: VirtAddr,
-        paddr: PhysAddr,
-        flags: PTEntryFlags,
-        shared: bool,
-    ) -> Result<(), SvsmError> {
-        let mapping = self.alloc_pte(vaddr, PageSize::Regular);
-
-        let addr = if !shared {
-            make_private_address(paddr)
-        } else {
-            make_shared_address(paddr)
-        };
-
-        if mapping.level == 0 {
-            mapping.entry.set(addr, flags);
-            Ok(())
-        } else {
-            Err(SvsmError::Mem)
-        }
-    }
-
-    /// Unmaps a 4KB page.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address of the mapping to unmap.
-    ///
-    /// # Returns
-    /// An optional [`PTEntry`] representing the unmapped page table entry.
-    fn unmap_4k(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
-        let mapping = self.walk_addr_mut(vaddr);
-
-        match mapping.level {
-            0 => {
-                let e = *mapping.entry;
-                mapping.entry.clear();
-                Some(e)
-            }
-            _ => {
-                assert!(!mapping.entry.present());
-                None
-            }
-        }
-    }
-
-    /// Maps a 2MB page.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address to map.
-    /// - `paddr`: The physical address to map to.
-    /// - `flags`: The flags to apply to the mapping.
-    /// - `shared`: Indicates whether the mapping is shared
-    ///
-    /// # Returns
-    /// A result indicating success (`Ok`) or failure (`Err`).
-    ///
-    /// # Panics
-    ///
-    /// Panics if `vaddr` or `paddr` are not 2MB-aligned
-    fn map_2m(
-        &mut self,
-        vaddr: VirtAddr,
-        paddr: PhysAddr,
-        flags: PTEntryFlags,
-        shared: bool,
-    ) -> Result<(), SvsmError> {
-        assert!(vaddr.is_aligned(PAGE_SIZE_2M));
-        assert!(paddr.is_aligned(PAGE_SIZE_2M));
-
-        let mapping = self.alloc_pte(vaddr, PageSize::Huge);
-        let addr = if !shared {
-            make_private_address(paddr)
-        } else {
-            make_shared_address(paddr)
-        };
-
-        if mapping.level == 1 {
-            mapping.entry.set(addr, flags | PTEntryFlags::HUGE);
-            Ok(())
-        } else {
-            Err(SvsmError::Mem)
-        }
-    }
-
-    /// Unmaps a 2MB page.
-    ///
-    /// # Parameters
-    /// - `vaddr`: The virtual address of the mapping to unmap.
-    ///
-    /// # Returns
-    /// An optional [`PTEntry`] representing the unmapped page table entry.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `vaddr` is not memory aligned.
-    fn unmap_2m(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
-        assert!(vaddr.is_aligned(PAGE_SIZE_2M));
-
-        let mapping = self.walk_addr_mut(vaddr);
-
-        match mapping.level {
-            0 => None,
-            1 => {
-                mapping.entry.clear();
-                Some(*mapping.entry)
-            }
-            _ => {
-                assert!(!mapping.entry.present());
-                None
-            }
-        }
-    }
-}
-
-impl Drop for RawPageTablePart {
-    fn drop(&mut self) {
-        self.free();
     }
 }
 
@@ -1536,102 +1498,36 @@ impl PageTablePart {
         self.get().map(|p| p.address())
     }
 
-    /// Map a 4KiB page in the page table sub-tree
-    ///
-    /// # Arguments
-    ///
-    /// * `vaddr` - Virtual address to create the mapping. Must be aligned to 4KiB.
-    /// * `paddr` - Physical address to map. Must be aligned to 4KiB.
-    /// * `flags` - PTEntryFlags used for the mapping
-    /// * `shared` - Defines whether the page is mapped shared or private
-    ///
-    /// # Returns
-    ///
-    /// OK(()) on Success, Err(SvsmError::Mem) on error.
-    ///
-    /// This function can fail when there not enough memory to allocate pages for the mapping.
-    ///
-    /// # Panics
-    ///
-    /// This method panics when either `vaddr` or `paddr` are not aligned to 4KiB.
-    pub fn map_4k(
-        &mut self,
-        vaddr: VirtAddr,
-        paddr: PhysAddr,
-        flags: PTEntryFlags,
-        shared: bool,
-    ) -> Result<(), SvsmError> {
-        assert!(PageTable::index::<3>(vaddr) == self.idx);
-
-        self.get_or_init_mut().map_4k(vaddr, paddr, flags, shared)
+    /// Temporarily maps this subtree through the self-map so it can be
+    /// modified as an [`ActivePageTable`], allocating its root if needed.
+    pub fn as_active(&mut self) -> Result<SelfMapGuard<'_>, SvsmError> {
+        let idx = self.idx;
+        let root = self.get_or_init_mut();
+        // SAFETY: a `PageTablePart` always holds a level-2 subtree populated
+        // at `idx`.
+        unsafe { SelfMapGuard::new(&mut root.page, idx) }
     }
 
-    /// Unmaps a 4KiB page from the page table sub-tree
-    ///
-    /// # Arguments
-    ///
-    /// * `vaddr` - The virtual address to unmap. Must be aligned to 4KiB.
-    ///
-    /// # Returns
-    ///
-    /// Returns a copy of the PTEntry that mapped the virtual address, if any.
-    ///
-    /// # Panics
-    ///
-    /// This method panics when `vaddr` is not aligned to 4KiB.
-    pub fn unmap_4k(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
-        assert!(PageTable::index::<3>(vaddr) == self.idx);
-
-        self.get_mut().and_then(|r| r.unmap_4k(vaddr))
+    /// Like [`Self::as_active`], but returns `None` if the subtree has not been
+    /// allocated yet.
+    pub fn try_as_active(&mut self) -> Option<Result<SelfMapGuard<'_>, SvsmError>> {
+        let idx = self.idx;
+        let root = self.get_mut()?;
+        // SAFETY: as in [`Self::as_active`].
+        Some(unsafe { SelfMapGuard::new(&mut root.page, idx) })
     }
+}
 
-    /// Map a 2MiB page in the page table sub-tree
-    ///
-    /// # Arguments
-    ///
-    /// * `vaddr` - Virtual address to create the mapping. Must be aligned to 2MiB.
-    /// * `paddr` - Physical address to map. Must be aligned to 2MiB.
-    /// * `flags` - PTEntryFlags used for the mapping
-    /// * `shared` - Defines whether the page is mapped shared or private
-    ///
-    /// # Returns
-    ///
-    /// OK(()) on Success, Err(SvsmError::Mem) on error.
-    ///
-    /// This function can fail when there not enough memory to allocate pages for the mapping.
-    ///
-    /// # Panics
-    ///
-    /// This method panics when either `vaddr` or `paddr` are not aligned to 2MiB.
-    pub fn map_2m(
-        &mut self,
-        vaddr: VirtAddr,
-        paddr: PhysAddr,
-        flags: PTEntryFlags,
-        shared: bool,
-    ) -> Result<(), SvsmError> {
-        assert!(PageTable::index::<3>(vaddr) == self.idx);
-
-        self.get_or_init_mut().map_2m(vaddr, paddr, flags, shared)
-    }
-
-    /// Unmaps a 2MiB page from the page table sub-tree
-    ///
-    /// # Arguments
-    ///
-    /// * `vaddr` - The virtual address to unmap. Must be aligned to 2MiB.
-    ///
-    /// # Returns
-    ///
-    /// Returns a copy of the PTEntry that mapped the virtual address, if any.
-    ///
-    /// # Panics
-    ///
-    /// This method panics when `vaddr` is not aligned to 2MiB.
-    pub fn unmap_2m(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
-        assert!(PageTable::index::<3>(vaddr) == self.idx);
-
-        self.get_mut().and_then(|r| r.unmap_2m(vaddr))
+impl Drop for PageTablePart {
+    fn drop(&mut self) {
+        // Free the intermediate page table pages through the self-map; the root
+        // page itself is freed when the backing `PageBox` is dropped.
+        let idx = self.idx;
+        if let Some(Ok(subtree)) = self.try_as_active() {
+            subtree.free_lvl2(idx);
+        } else if self.raw.is_some() {
+            log::error!("PageTablePart::drop(): could not map subtree, leaking memory");
+        }
     }
 }
 
