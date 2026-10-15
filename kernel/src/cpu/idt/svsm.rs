@@ -13,9 +13,9 @@ use super::super::vc::handle_vc_exception;
 use super::super::x86::apic_eoi;
 use super::common::{
     AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR, DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR,
-    HV_VECTOR, IDT, INT_INJ_VECTOR, IPI_VECTOR, IdtEntry, IdtEventType, MCE_VECTOR, MF_VECTOR,
-    NMI_VECTOR, OF_VECTOR, PF_VECTOR, PageFaultError, SCHEDULE_VECTOR, SS_VECTOR, UD_VECTOR,
-    VC_VECTOR, VE_VECTOR, XF_VECTOR, user_mode,
+    HV_VECTOR, IDT, INT_INJ_VECTOR, IPI_VECTOR, IdtEntry, MCE_VECTOR, MF_VECTOR, NMI_VECTOR,
+    OF_VECTOR, PF_VECTOR, PageFaultError, SCHEDULE_VECTOR, SS_VECTOR, UD_VECTOR, VC_VECTOR,
+    VE_VECTOR, XF_VECTOR, user_mode,
 };
 use crate::address::VirtAddr;
 use crate::cpu::X86ExceptionContext;
@@ -76,7 +76,6 @@ unsafe extern "C" {
     fn asm_entry_cp();
     fn asm_entry_hv();
     fn asm_entry_vc();
-    fn asm_entry_int80();
     fn asm_entry_irq_int_inj();
     fn asm_entry_irq_ipi();
     fn asm_entry_irq_schedule();
@@ -152,7 +151,6 @@ pub unsafe fn idt_init(idt_vaddr: VirtAddr, platform: &dyn SvsmPlatform) -> Resu
 
     // Interupts
     idt.set_entry(INT_INJ_VECTOR, IdtEntry::entry(asm_entry_irq_int_inj));
-    idt.set_entry(0x80, IdtEntry::user_entry(asm_entry_int80));
     idt.set_entry(IPI_VECTOR, IdtEntry::entry(asm_entry_irq_ipi));
     idt.set_entry(SCHEDULE_VECTOR, IdtEntry::entry(asm_entry_irq_schedule));
 
@@ -457,25 +455,6 @@ extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vecto
             );
         }
     }
-}
-
-// System Call SoftIRQ handler
-#[unsafe(no_mangle)]
-extern "C" fn ex_handler_system_call(
-    ctxt: &mut X86ExceptionContext,
-    vector: usize,
-    event_type: IdtEventType,
-) {
-    // Ensure that this vector was not invoked as a hardware interrupt vector.
-    if event_type.is_external_interrupt(vector) {
-        panic!("Syscall handler invoked as external interrupt!");
-    }
-
-    if !user_mode(ctxt) {
-        panic!("Syscall handler called from kernel mode!");
-    }
-
-    handle_system_call(ctxt);
 }
 
 /// Dispatches a system call issued by user mode, with the system call
