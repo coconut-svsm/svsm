@@ -409,6 +409,16 @@ extern "C" fn ex_handler_system_call(
         panic!("Syscall handler called from kernel mode!");
     }
 
+    handle_system_call(ctxt);
+}
+
+/// Dispatches a system call issued by user mode, with the system call
+/// number in `rax`, and returns its result in `rax`.
+///
+/// # Arguments
+///
+/// * `ctxt` - The context of user mode at the system call.
+fn handle_system_call(ctxt: &mut X86ExceptionContext) {
     let Ok(input) = TryInto::<u64>::try_into(ctxt.regs.rax) else {
         ctxt.regs.rax = !0;
         return;
