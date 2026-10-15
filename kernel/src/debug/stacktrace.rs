@@ -4,7 +4,7 @@
 //
 // Author: Nicolai Stange <nstange@suse.de>
 
-use crate::task::current_stack;
+use crate::task::{context_switch_stack, current_stack};
 use crate::{
     address::{Address, VirtAddr},
     cpu::idt::common::{X86ExceptionContext, is_exception_handler_return_site},
@@ -59,10 +59,9 @@ impl StackUnwinder {
                  options(att_syntax));
         };
 
-        let stacks: StacksBounds = if let Some(cpu) = try_this_cpu() {
+        let stacks: StacksBounds = if try_this_cpu().is_some() {
             let current_stack = current_stack();
-            let cs_stack = cpu
-                .get_top_of_context_switch_stack()
+            let cs_stack = context_switch_stack()
                 .map_or(MemoryRegion::new(VirtAddr::null(), 0), |tos| {
                     MemoryRegion::from_addresses(tos - STACK_SIZE, tos)
                 });
