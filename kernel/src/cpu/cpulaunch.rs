@@ -24,6 +24,7 @@ pub struct CpuLaunch {
     percpu: &'static PerCpu,
     shared: &'static PerCpuShared,
     pgtable: PageBox<PageTable>,
+    context_switch_stack: VirtAddr,
     current_stack: MemoryRegion<VirtAddr>,
 }
 
@@ -32,12 +33,14 @@ impl CpuLaunch {
         percpu: &'static PerCpu,
         shared: &'static PerCpuShared,
         pgtable: PageBox<PageTable>,
+        context_switch_stack: VirtAddr,
         current_stack: MemoryRegion<VirtAddr>,
     ) -> Self {
         Self {
             percpu,
             shared,
             pgtable,
+            context_switch_stack,
             current_stack,
         }
     }
@@ -46,13 +49,15 @@ impl CpuLaunch {
         percpu: &'static PerCpu,
         shared: &'static PerCpuShared,
         pgtable: PageBox<PageTable>,
+        context_switch_stack: VirtAddr,
     ) -> Self {
-        let top_of_stack = percpu.get_top_of_context_switch_stack().unwrap();
         let current_stack = MemoryRegion::new(
-            top_of_stack.checked_sub(crate::mm::STACK_SIZE).unwrap(),
+            context_switch_stack
+                .checked_sub(crate::mm::STACK_SIZE)
+                .unwrap(),
             crate::mm::STACK_SIZE,
         );
-        Self::new(percpu, shared, pgtable, current_stack)
+        Self::new(percpu, shared, pgtable, context_switch_stack, current_stack)
     }
 
     pub fn percpu(&self) -> &'static PerCpu {
@@ -67,8 +72,13 @@ impl CpuLaunch {
         &self.pgtable
     }
 
+    pub fn context_switch_stack(&self) -> VirtAddr {
+        self.context_switch_stack
+    }
+
     pub fn get_initial_context(&self, start_rip: u64) -> hyperv::HvInitialVpContext {
-        self.percpu.get_initial_context(start_rip, &self.pgtable)
+        self.percpu
+            .get_initial_context(start_rip, &self.pgtable, self.context_switch_stack)
     }
 }
 
@@ -76,7 +86,7 @@ impl CpuLaunch {
 pub fn initialize_cpu(launch: CpuLaunch, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
     let percpu = launch.percpu;
     let pgtable = PageBox::leak(launch.pgtable);
-    percpu.setup_percpu_keys(launch.shared, pgtable);
+    percpu.setup_percpu_keys(launch.shared, pgtable, launch.context_switch_stack);
 
     // SAFETY: the per-CPU virtual range, stack, TSS, and ISST have been
     // populated in this page table before the CPU is allowed to use it.

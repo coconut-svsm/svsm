@@ -52,7 +52,7 @@ use crate::task::TaskPointer;
 use crate::task::schedule;
 use crate::task::scheduler_idle;
 use crate::task::wake_and_schedule_task;
-use crate::task::{init_current_stack, set_current_stack};
+use crate::task::{init_context_switch_stack, init_current_stack, set_current_stack};
 use crate::types::{PAGE_SIZE, SVSM_TR_ATTRIBUTES, SVSM_TSS};
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -67,7 +67,6 @@ use core::ptr::{self, NonNull};
 use core::slice::Iter;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::AtomicU32;
-use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use cpuarch::vmsa::VMSA;
 
@@ -376,11 +375,6 @@ impl PerCpuShared {
     }
 }
 
-percpu! {
-    #[percpu_asm_symbol("__svsm_percpu_context_switch_stack")]
-    static CONTEXT_SWITCH_STACK: AtomicUsize = AtomicUsize::new(0);
-}
-
 // Expose the offset of critical shared per-CPU fields to assembly.
 pub const PERCPU_SHARED_INDEX_OFFSET: usize = offset_of!(PerCpuShared, cpu_index);
 
@@ -412,9 +406,6 @@ where
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
     init_shadow_stack: ImmutAfterInitCell<VirtAddr>,
-    /// Stages the context-switch stack address until the target CPU can
-    /// initialize its linker-backed per-CPU key.
-    context_switch_stack: AtomicUsize,
     /// Stages IST stack addresses allocated by the boot CPU until the target
     /// CPU can initialize its linker-backed per-CPU keys through `%gs`.
     ist: IstStacks,
@@ -433,7 +424,6 @@ impl PerCpu {
             },
 
             init_shadow_stack: ImmutAfterInitCell::uninit(),
-            context_switch_stack: AtomicUsize::new(0),
             ist: IstStacks::new(),
         })
     }
@@ -448,11 +438,6 @@ impl PerCpu {
 
     pub fn shared(&self) -> &PerCpuShared {
         this_cpu_shared()
-    }
-
-    pub fn get_top_of_context_switch_stack(&self) -> Option<VirtAddr> {
-        let vaddr = self.context_switch_stack.load(Ordering::Relaxed);
-        if vaddr == 0 { None } else { Some(vaddr.into()) }
     }
 
     pub fn get_cpu_index(&self) -> usize {
@@ -501,12 +486,8 @@ impl PerCpu {
         Ok(())
     }
 
-    fn allocate_context_switch_stack(&self) -> Result<(), SvsmError> {
-        let stack = self.allocate_stack(SVSM_CONTEXT_SWITCH_STACK)?;
-        self.context_switch_stack
-            .compare_exchange(0, stack.into(), Ordering::Relaxed, Ordering::Relaxed)
-            .unwrap();
-        Ok(())
+    fn allocate_context_switch_stack(&self) -> Result<VirtAddr, SvsmError> {
+        self.allocate_stack(SVSM_CONTEXT_SWITCH_STACK)
     }
 
     fn allocate_context_switch_shadow_stack(&self) -> Result<(), SvsmError> {
@@ -560,7 +541,10 @@ impl PerCpu {
         self.vm_range.dump_ranges();
     }
 
-    pub fn setup(&self, mut pgtable: PageBox<PageTable>) -> Result<PageBox<PageTable>, SvsmError> {
+    pub fn setup(
+        &self,
+        mut pgtable: PageBox<PageTable>,
+    ) -> Result<(PageBox<PageTable>, VirtAddr), SvsmError> {
         self.init_page_table()?;
 
         // Map PerCpu data in own page-table
@@ -577,7 +561,7 @@ impl PerCpu {
         }
 
         // Allocate per-cpu context switch stack
-        self.allocate_context_switch_stack()?;
+        let context_switch_stack = self.allocate_context_switch_stack()?;
 
         if cpu_has_feat(Feature::CetSS) {
             self.allocate_context_switch_shadow_stack()?;
@@ -593,13 +577,14 @@ impl PerCpu {
 
         self.finish_page_table(&mut pgtable);
 
-        Ok(pgtable)
+        Ok((pgtable, context_switch_stack))
     }
 
     pub(in crate::cpu) fn setup_percpu_keys(
         &self,
         shared: &'static PerCpuShared,
         pgtable: &'static mut PageTable,
+        context_switch_stack: VirtAddr,
     ) {
         let initialize_keys = self.percpu_area.initialize();
         self.percpu_area.load();
@@ -612,12 +597,7 @@ impl PerCpu {
         // Publish values prepared by the boot CPU now that this CPU can
         // access its linker-backed per-CPU keys through %gs.
         init_percpu_pgtable(pgtable);
-        CONTEXT_SWITCH_STACK.with(|context_switch_stack| {
-            context_switch_stack.store(
-                self.context_switch_stack.load(Ordering::Relaxed),
-                Ordering::Relaxed,
-            );
-        });
+        init_context_switch_stack(context_switch_stack);
         init_current_stack();
         let init_shadow_stack = self.init_shadow_stack.try_get_inner().ok().copied();
         init_initial_shadow_stack(init_shadow_stack);
@@ -684,6 +664,7 @@ impl PerCpu {
         &self,
         start_rip: u64,
         pgtable: &PageTable,
+        context_switch_stack: VirtAddr,
     ) -> hyperv::HvInitialVpContext {
         let data_segment = svsm_data_segment();
         let mut gs_segment = data_segment;
@@ -697,9 +678,7 @@ impl PerCpu {
             // page table because it resides in the PerCpu virtual range.
             //
             // See switch_to() for details.
-            rsp: self
-                .get_top_of_context_switch_stack()
-                .unwrap()
+            rsp: context_switch_stack
                 .checked_sub(size_of::<*mut CpuLaunch>())
                 .unwrap()
                 .into(),

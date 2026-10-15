@@ -73,16 +73,19 @@ fn start_cpu(
     let start_rip: u64 = start_ap_entry as *const () as usize as u64;
     let percpu = PerCpu::alloc()?;
     let pgtable = new_pgtable()?;
-    let pgtable = percpu.setup(pgtable)?;
+    let (pgtable, context_switch_stack) = percpu.setup(pgtable)?;
 
-    let stack_slot = percpu
-        .get_top_of_context_switch_stack()
-        .unwrap()
+    let stack_slot = context_switch_stack
         .checked_sub(size_of::<*mut CpuLaunch>())
         .unwrap();
     let stack_slot_paddr = pgtable.phys_addr(stack_slot)?;
     let stack_slot_vaddr = phys_to_virt(stack_slot_paddr);
-    let launch = Box::new(CpuLaunch::new_application(percpu, percpu_shared, pgtable));
+    let launch = Box::new(CpuLaunch::new_application(
+        percpu,
+        percpu_shared,
+        pgtable,
+        context_switch_stack,
+    ));
     let initial_context = launch.get_initial_context(start_rip);
     let launch_ptr = Box::into_raw(launch);
 
