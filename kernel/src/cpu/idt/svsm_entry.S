@@ -473,7 +473,7 @@ default_entry_no_ist	name=of		handler=terminate		error_code=0	vector=4
 default_entry_no_ist	name=br		handler=terminate		error_code=0	vector=5
 
 // #UD Invalid-Opcode Exception (Vector 6)
-default_entry_no_ist	name=ud		handler=terminate		error_code=0	vector=6
+default_entry_no_ist	name=ud		handler=invalid_opcode		error_code=0	vector=6
 
 // #DF Double-Fault Exception (Vector 8)
 safe_entry		name=df		handler=double_fault		error_code=1	vector=8
