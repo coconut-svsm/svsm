@@ -18,7 +18,7 @@ use crate::cpu::IrqState;
 use crate::cpu::LocalApic;
 use crate::cpu::ShadowStackInit;
 use crate::cpu::control_regs::{read_cr0, read_cr3, read_cr4};
-use crate::cpu::efer::read_efer;
+use crate::cpu::efer::{disable_syscall_insn, read_efer};
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
@@ -915,6 +915,9 @@ impl PerCpu {
 
     // Setup code which needs to run on the target CPU
     pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
+        // System calls from user mode rely on the syscall instruction
+        // raising #UD, see ex_handler_invalid_opcode().
+        disable_syscall_insn();
         platform.setup_percpu_current(self)?;
         assert!(self.get_apic().id() == self.get_apic_id());
         Ok(())

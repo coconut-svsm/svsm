@@ -26,10 +26,13 @@ use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
 use crate::mm::PAGE_SIZE;
 use crate::mm::TryPtr;
+use crate::mm::guestmem::UserPtr;
+use crate::mm::{USER_MEM_END, USER_MEM_START};
 use crate::platform::PageValidateOp;
 use crate::platform::SvsmPlatform;
 use crate::task::{TaskExitStatus, is_task_fault, terminate};
 use crate::tdx::ve::handle_virtualization_exception;
+use crate::types::{SVSM_USER_CPL, SVSM_USER_CS};
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::arch::global_asm;
@@ -199,6 +202,58 @@ extern "C" fn ex_handler_terminate(ctx: &mut X86ExceptionContext, vector: usize)
         // Kernel-mode tasks should never cause a termination class exception,
         // so any such exception is grounds for panic.
         ex_handler_panic(ctx, vector);
+    }
+}
+
+/// Encoding of the `syscall` instruction.
+const SYSCALL_INSN: [u8; 2] = [0x0f, 0x05];
+
+/// Checks whether an exception was raised by a `syscall` instruction
+/// executed in 64-bit user mode.
+fn is_syscall_insn(ctxt: &X86ExceptionContext) -> bool {
+    if ctxt.frame.cs != usize::from(SVSM_USER_CS | SVSM_USER_CPL) {
+        return false;
+    }
+
+    // The instruction pointer is under user control: read the instruction
+    // through a user pointer, which checks the address and handles faults.
+    // An unreadable instruction is not a system call.
+    UserPtr::<[u8; 2]>::new(VirtAddr::from(ctxt.frame.rip))
+        .and_then(|insn| insn.read())
+        .is_ok_and(|insn| insn == SYSCALL_INSN)
+}
+
+/// Checks that user mode can resume after the `syscall` instruction at
+/// `rip`.
+///
+/// For an instruction at the very end of user space, the next address is
+/// the first non-canonical one, and returning to it with `iretq` would
+/// raise #GP in kernel mode.
+fn can_resume_after_syscall(rip: usize) -> bool {
+    rip < USER_MEM_END - USER_MEM_START - SYSCALL_INSN.len()
+}
+
+// Invalid-Opcode handler
+#[unsafe(no_mangle)]
+extern "C" fn ex_handler_invalid_opcode(ctxt: &mut X86ExceptionContext, vector: usize) {
+    // WORKAROUND: the SVSM has no entry code for the syscall
+    // instruction yet. Until that exists, the instruction is kept
+    // disabled, so that it raises #UD, and is emulated here.
+    if user_mode(ctxt) && is_syscall_insn(ctxt) && can_resume_after_syscall(ctxt.frame.rip) {
+        // Like the instruction, resume after it, with its address in rcx
+        // and the flags in r11. RF is set in the flags saved for the
+        // exception and must not suppress a debug exception on the next
+        // instruction.
+        let flags = ctxt.frame.flags & !RFlags::RF.bits();
+        let next_rip = ctxt.frame.rip + SYSCALL_INSN.len();
+        ctxt.frame.rip = next_rip;
+        ctxt.frame.flags = flags;
+        ctxt.regs.rcx = next_rip;
+        ctxt.regs.r11 = flags;
+
+        handle_system_call(ctxt);
+    } else {
+        ex_handler_terminate(ctxt, vector);
     }
 }
 
@@ -553,3 +608,21 @@ global_asm!(
     IS_CET_ENABLED = sym IS_CET_ENABLED,
     options(att_syntax)
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_can_resume_after_syscall() {
+        let end = USER_MEM_END - USER_MEM_START;
+
+        assert!(can_resume_after_syscall(0x1000));
+        // The last instruction that ends within user space.
+        assert!(can_resume_after_syscall(end - 3));
+        // The next address is the first one outside of user space.
+        assert!(!can_resume_after_syscall(end - 2));
+        assert!(!can_resume_after_syscall(end - 1));
+        assert!(!can_resume_after_syscall(usize::MAX));
+    }
+}
