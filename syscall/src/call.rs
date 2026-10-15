@@ -25,7 +25,7 @@ macro_rules! syscall {
                 // are valid.
                 unsafe {
                     asm!(
-                        "int 0x80",
+                        "syscall",
                         inout("rax") ret,
                         $(
                             in("rdi") $b,
