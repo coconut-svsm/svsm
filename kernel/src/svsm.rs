@@ -411,10 +411,6 @@ unsafe fn svsm_start(
         .env_setup_late(debug_serial_port)
         .expect("Late environment setup failed");
 
-    // it's important to make sure that idle task
-    // has been already created and console is
-    // initialized in env_setup_late() before this
-    switch_to_log_buffer();
     log::info!("CPU vendor: {:?}", platform.get_cpu_vendor());
     dump_cpuid_table();
 
@@ -545,6 +541,10 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     };
 
     start_secondary_cpus(&**SVSM_PLATFORM, &cpus, ap_start_context_ref.as_ref());
+
+    // Filesystem, log file, and console have already been initialized in `svsm_start()`.
+    // An idle task is now running on each CPU, so logging can be switched to the real log buffer.
+    switch_to_log_buffer();
 
     drop(ap_start_context_ref);
 
