@@ -79,7 +79,7 @@ fn test_syscall_insn_registers() {
         );
     }
 
-    assert_eq!(ret as i64, SysCallError::EINVAL as i64);
+    assert_eq!(ret as i64, SysCallError::ENOSYS as i64);
     // All registers other than rax, rcx and r11 are preserved.
     assert_eq!((rdi, rsi, rdx, r8, r9, r10), (1, 2, 3, 4, 5, 6));
 }
