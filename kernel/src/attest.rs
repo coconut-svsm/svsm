@@ -23,12 +23,13 @@ use alloc::{string::ToString, vec::Vec};
 use cocoon_tpm_crypto::{
     CryptoError,
     ecc::{EccKey, curve::Curve, ecdh::ecdh_c_1_1_cdh_compute_z},
+    hash::{HashInstance, hash_alg_digest_len},
 };
-use cocoon_tpm_tpm2_interface::{TpmEccCurve, TpmsEccPoint};
+use cocoon_tpm_tpm2_interface::{TpmEccCurve, TpmiAlgHash, TpmsEccPoint};
+use cocoon_tpm_utils_common::io_slices::{IoSlicesIterCommon as _, SingletonIoSlice};
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
-use sha2::{Digest, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
 #[cfg(feature = "attest-serial")]
@@ -288,7 +289,7 @@ pub enum AttestationError {
     AttestationDeserialize,
     // Unable to unwrap Content Encryption Key (CEK).
     CekUnwrap,
-    /// Unable to generate secure channel key.
+    /// Cryptographic operation failed.
     Crypto(CryptoError),
     /// Guest has failed attestation.
     Failed,
@@ -381,22 +382,29 @@ fn hash(
     n: &NegotiationResponse,
     pub_key: &TpmsEccPoint<'static>,
 ) -> Result<Vec<u8>, AttestationError> {
-    let mut sha = Sha512::new();
+    let mut sha =
+        HashInstance::new(TpmiAlgHash::Sha512).map_err(|e| AttestationError::Crypto(e.into()))?;
 
     for p in &n.params {
         match p {
             NegotiationParam::Challenge => {
-                sha.update(&n.challenge);
+                sha.update(SingletonIoSlice::new(&n.challenge).map_infallible_err())
+                    .map_err(AttestationError::Crypto)?;
             }
             #[allow(irrefutable_let_patterns)]
             NegotiationParam::EcPublicKeyBytes => {
-                sha.update(&*pub_key.x.buffer);
-                sha.update(&*pub_key.y.buffer);
+                sha.update(SingletonIoSlice::new(&pub_key.x.buffer).map_infallible_err())
+                    .map_err(AttestationError::Crypto)?;
+                sha.update(SingletonIoSlice::new(&pub_key.y.buffer).map_infallible_err())
+                    .map_err(AttestationError::Crypto)?;
             }
         }
     }
 
-    try_to_vec(&sha.finalize()).or(Err(AttestationError::VecAlloc))
+    let mut digest = [0u8; hash_alg_digest_len(TpmiAlgHash::Sha512) as usize];
+    sha.finalize_into(&mut digest)
+        .map_err(|e| AttestationError::Crypto(e.into()))?;
+    try_to_vec(&digest).or(Err(AttestationError::VecAlloc))
 }
 
 #[cfg(test)]
@@ -454,17 +462,20 @@ mod tests {
             let result_chal_first = hash(&response_chal_first, &pub_key).unwrap();
             let result_key_first = hash(&response_key_first, &pub_key).unwrap();
 
-            let mut sha = Sha512::new();
-            sha.update(&challenge);
-            sha.update(&x);
-            sha.update(&y);
-            assert_eq!(result_chal_first, sha.finalize().as_slice());
+            let mut expected = [0u8; hash_alg_digest_len(TpmiAlgHash::Sha512) as usize];
+            let input = [challenge.as_slice(), x.as_slice(), y.as_slice()].concat();
+            let mut sha = HashInstance::new(TpmiAlgHash::Sha512).unwrap();
+            sha.update(SingletonIoSlice::new(&input).map_infallible_err())
+                .unwrap();
+            sha.finalize_into(&mut expected).unwrap();
+            assert_eq!(result_chal_first, expected);
 
-            let mut sha = Sha512::new();
-            sha.update(&x);
-            sha.update(&y);
-            sha.update(&challenge);
-            assert_eq!(result_key_first, sha.finalize().as_slice());
+            let input = [x.as_slice(), y.as_slice(), challenge.as_slice()].concat();
+            let mut sha = HashInstance::new(TpmiAlgHash::Sha512).unwrap();
+            sha.update(SingletonIoSlice::new(&input).map_infallible_err())
+                .unwrap();
+            sha.finalize_into(&mut expected).unwrap();
+            assert_eq!(result_key_first, expected);
 
             assert_ne!(result_chal_first, result_key_first);
         }
