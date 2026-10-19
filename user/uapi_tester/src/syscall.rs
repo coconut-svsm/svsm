@@ -49,7 +49,7 @@ fn test_syscall_insn_dispatch() {
     // The first index after the last capability is invalid.
     assert_eq!(
         syscall_insn(SYS_CAPABILITIES, count + 1) as i64,
-        SysCallError::ENOTFOUND as i64
+        SysCallError::ENOENT as i64
     );
 }
 

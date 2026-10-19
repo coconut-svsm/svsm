@@ -56,7 +56,7 @@ pub fn sys_open(path: usize, mode: usize, flags: usize) -> Result<u64, SysCallEr
 
 pub fn sys_read(obj_id: u32, user_addr: usize, bytes: usize) -> Result<u64, SysCallError> {
     let fs_obj = obj_get(obj_id.into())?;
-    let fs_obj = fs_obj.as_fs().ok_or(ENOTSUPP)?;
+    let fs_obj = fs_obj.as_fs().ok_or(EOPNOTSUPP)?;
 
     let mut buffer = UserBuffer::new(VirtAddr::from(user_addr), bytes);
 
@@ -68,7 +68,7 @@ pub fn sys_read(obj_id: u32, user_addr: usize, bytes: usize) -> Result<u64, SysC
 
 pub fn sys_write(obj_id: u32, user_addr: usize, bytes: usize) -> Result<u64, SysCallError> {
     let fs_obj = obj_get(obj_id.into())?;
-    let fs_obj = fs_obj.as_fs().ok_or(ENOTSUPP)?;
+    let fs_obj = fs_obj.as_fs().ok_or(EOPNOTSUPP)?;
 
     let buffer = UserBuffer::new(VirtAddr::from(user_addr), bytes);
 
@@ -80,7 +80,7 @@ pub fn sys_write(obj_id: u32, user_addr: usize, bytes: usize) -> Result<u64, Sys
 
 pub fn sys_seek(obj_id: u32, offset: usize, raw_mode: usize) -> Result<u64, SysCallError> {
     let fs_obj = obj_get(obj_id.into())?;
-    let fs_obj = fs_obj.as_fs().ok_or(ENOTSUPP)?;
+    let fs_obj = fs_obj.as_fs().ok_or(EOPNOTSUPP)?;
     let mode = SeekMode::try_from(raw_mode).map_err(|_| SvsmError::FileSystem(FsError::inval()))?;
 
     let result = match mode {
@@ -94,7 +94,7 @@ pub fn sys_seek(obj_id: u32, offset: usize, raw_mode: usize) -> Result<u64, SysC
 
 pub fn sys_truncate(obj_id: u32, length: usize) -> Result<u64, SysCallError> {
     let fs_obj = obj_get(obj_id.into())?;
-    let fs_obj = fs_obj.as_fs().ok_or(ENOTSUPP)?;
+    let fs_obj = fs_obj.as_fs().ok_or(EOPNOTSUPP)?;
 
     fs_obj
         .truncate(length)
@@ -122,7 +122,7 @@ pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
 
 pub fn sys_readdir(obj_id: u32, dirents: usize, size: usize) -> Result<u64, SysCallError> {
     let fsobj = obj_get(obj_id.into())?;
-    let fsobj = fsobj.as_fs().ok_or(ENOTSUPP)?;
+    let fsobj = fsobj.as_fs().ok_or(EOPNOTSUPP)?;
     let user_dirents = UserPtr::<[DirEnt]>::new(VirtAddr::from(dirents), size)?;
 
     for i in 0..size {
