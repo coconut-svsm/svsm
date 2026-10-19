@@ -196,24 +196,33 @@ impl From<VsockError> for SvsmError {
 impl From<SvsmError> for SysCallError {
     fn from(err: SvsmError) -> Self {
         match err {
-            SvsmError::Alloc(AllocError::OutOfMemory) => SysCallError::ENOMEM,
-            SvsmError::FileSystem(FsError::FileExists) => SysCallError::EEXIST,
-            SvsmError::FileSystem(FsError::WriteOnly | FsError::ReadOnly) => SysCallError::EBADF,
+            SvsmError::Alloc(AllocError::OutOfMemory) | SvsmError::Mem => SysCallError::ENOMEM,
 
-            SvsmError::FileSystem(FsError::FileNotFound) | SvsmError::Obj(ObjError::NotFound) => {
-                SysCallError::ENOENT
-            }
+            SvsmError::FileSystem(fs_err) => match fs_err {
+                FsError::Inval => SysCallError::EINVAL,
+                FsError::FileExists => SysCallError::EEXIST,
+                FsError::FileNotFound => SysCallError::ENOENT,
+                FsError::NotSupported => SysCallError::EOPNOTSUPP,
+                // Linux reports access through a file descriptor that was
+                // not opened for it as a bad file descriptor.
+                FsError::BadHandle | FsError::ReadOnly | FsError::WriteOnly => SysCallError::EBADF,
+                FsError::Busy => SysCallError::EBUSY,
+                FsError::NotEmpty => SysCallError::ENOTEMPTY,
+                FsError::IsFile => SysCallError::ENOTDIR,
+                FsError::IsDir => SysCallError::EISDIR,
+                FsError::PackIt(_) => SysCallError::EIO,
+            },
+
+            SvsmError::Obj(ObjError::InvalidHandle | ObjError::NotFound) => SysCallError::EBADF,
+            SvsmError::Obj(ObjError::Busy) => SysCallError::EBUSY,
 
             SvsmError::NotSupported => SysCallError::EOPNOTSUPP,
 
-            SvsmError::FileSystem(FsError::Inval)
-            | SvsmError::Obj(ObjError::InvalidHandle)
-            | SvsmError::Mem
-            | SvsmError::InvalidAddress
-            | SvsmError::InvalidBytes
-            | SvsmError::InvalidUtf8 => SysCallError::EINVAL,
+            SvsmError::InvalidAddress | SvsmError::Fault => SysCallError::EFAULT,
 
-            SvsmError::Fault => SysCallError::EFAULT,
+            SvsmError::InvalidBytes | SvsmError::InvalidUtf8 | SvsmError::InvalidParameter => {
+                SysCallError::EINVAL
+            }
 
             _ => SysCallError::EIO,
         }
