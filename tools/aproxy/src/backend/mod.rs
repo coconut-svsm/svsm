@@ -8,8 +8,8 @@
 mod kbs;
 
 use crate::ArgsBackend;
-use anyhow::{Context, anyhow};
-use kbs::KbsProtocol;
+use anyhow::Context;
+use kbs::{KbsProtocol, SampleKbs, TrusteeKbs};
 use libaproxy::*;
 use reqwest::{blocking::Client, cookie::Jar};
 use std::sync::Arc;
@@ -35,14 +35,18 @@ impl HttpClient {
     pub fn negotiation(&mut self, req: NegotiationRequest) -> anyhow::Result<NegotiationResponse> {
         // Depending on the underlying protocol of the attestation server, gather negotiation
         // parameters accordingly.
-        match self.protocol {
-            Protocol::Kbs(mut kbs) => kbs.negotiation(self, req),
+        let mut protocol = self.protocol;
+        match &mut protocol {
+            Protocol::SampleKbs(kbs) => kbs.negotiation(self, req),
+            Protocol::TrusteeKbs(kbs) => kbs.negotiation(self, req),
         }
     }
 
     pub fn attestation(&mut self, req: AttestationRequest) -> anyhow::Result<AttestationResponse> {
-        match self.protocol {
-            Protocol::Kbs(mut kbs) => kbs.attestation(self, req),
+        let mut protocol = self.protocol;
+        match &mut protocol {
+            Protocol::SampleKbs(kbs) => kbs.attestation(self, req),
+            Protocol::TrusteeKbs(kbs) => kbs.attestation(self, req),
         }
     }
 }
@@ -50,13 +54,15 @@ impl HttpClient {
 /// Attestation Protocol identifier.
 #[derive(Clone, Copy, Debug)]
 pub enum Protocol {
-    Kbs(KbsProtocol),
+    SampleKbs(KbsProtocol<SampleKbs>),
+    TrusteeKbs(KbsProtocol<TrusteeKbs>),
 }
 
 impl From<ArgsBackend> for Protocol {
     fn from(value: ArgsBackend) -> Self {
         match value {
-            ArgsBackend::Kbs => Self::Kbs(KbsProtocol),
+            ArgsBackend::SampleKbs => Self::SampleKbs(KbsProtocol::new(SampleKbs)),
+            ArgsBackend::TrusteeKbs => Self::TrusteeKbs(KbsProtocol::new(TrusteeKbs)),
         }
     }
 }

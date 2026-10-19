@@ -34,6 +34,7 @@ nav:
     - Contributing to COCONUT-SVSM: 'developer/CONTRIBUTING.md'
     - Formal Verification: 'developer/VERIFICATION.md'
     - Attestation: 'developer/ATTESTATION.md'
+    - Attestation with Trustee KBS: 'developer/KBS-SVSM.md'
     - Persistence: 'developer/PERSISTENCE.md'
     - GitHub Workflows: 'developer/GH_WORKFLOWS.md'
     - 'developer/AI-AGENTS.md'
