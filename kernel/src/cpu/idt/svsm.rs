@@ -484,7 +484,7 @@ fn handle_system_call(ctxt: &mut X86ExceptionContext) {
         SYS_RMDIR => sys_rmdir(ctxt.regs.rdi),
         // Class 3 SysCalls.
         SYS_CAPABILITIES => sys_capabilities(ctxt.regs.rdi as u32),
-        _ => Err(SysCallError::EINVAL),
+        _ => Err(SysCallError::ENOSYS),
     }
     .map_or_else(|e| e as usize, |v| v as usize);
 }
