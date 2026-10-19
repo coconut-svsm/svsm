@@ -30,6 +30,8 @@ pub mod boot_params;
 pub mod console;
 #[macro_use]
 pub mod cpu;
+#[cfg(feature = "vtpm")]
+pub mod crt;
 pub mod crypto;
 pub mod debug;
 pub mod error;
