@@ -107,8 +107,11 @@ syscall_errors! {
     EFAULT = -14,
     EBUSY = -16,
     EEXIST = -17,
+    ENOTDIR = -20,
+    EISDIR = -21,
     EINVAL = -22,
     ENOSYS = -38,
+    ENOTEMPTY = -39,
     EOPNOTSUPP = -95,
 }
 
