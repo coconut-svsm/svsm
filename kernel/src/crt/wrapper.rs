@@ -4,10 +4,8 @@
 //
 // Author: Claudio Carvalho <cclaudio@linux.ibm.com>
 
-//! Implement functions required to build the TPM 2.0 Reference Implementation
-//! libraries.
-//! All these functionalities are owned by the SVSM Rust code,
-//! so we just need to create wrappers for them.
+//! `#[no_mangle]` C-ABI wrappers for functions declared as `extern` in
+//! libcrt headers: memory allocation, console output, and file I/O.
 
 use crate::{
     console::_print,
@@ -27,7 +25,7 @@ extern crate alloc;
 use alloc::alloc::{alloc, alloc_zeroed, dealloc, realloc as _realloc};
 use alloc::boxed::Box;
 
-use super::persistence::CFile;
+use super::cfile::CFile;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn malloc(size: c_ulong) -> *mut c_void {

@@ -7,10 +7,6 @@
 //! This crate implements the virtual TPM interfaces for the TPM 2.0
 //! Reference Implementation (by Microsoft)
 
-/// Functions required to build the TPM 2.0 Reference Implementation libraries
-#[cfg(target_os = "none")]
-mod wrapper;
-
 mod persistence;
 use persistence::{ManufacturedMarker, Marker as _};
 
