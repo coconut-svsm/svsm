@@ -120,8 +120,13 @@ mod tests {
     extern crate alloc;
     use super::*;
 
+    /// Length in bytes of the SHA-256 sum.
+    const SHA256_DIGEST_LEN: usize = cocoon_tpm_crypto::hash::hash_alg_digest_len(
+        cocoon_tpm_tpm2_interface::TpmiAlgHash::Sha256,
+    ) as usize;
+
     /// Get the sha256 sum of the disk image from the host (see `scripts/test-in-svsm.sh`)
-    fn get_image_hash_from_host() -> Option<[u8; 32]> {
+    fn get_image_hash_from_host() -> Option<[u8; SHA256_DIGEST_LEN]> {
         use crate::serial::Terminal;
         use crate::testing::{IORequest, svsm_test_io};
 
@@ -129,7 +134,7 @@ mod tests {
 
         sp.put_byte(IORequest::GetStateImageSha256 as u8);
 
-        let mut expected_measurement = [0u8; 32];
+        let mut expected_measurement = [0u8; SHA256_DIGEST_LEN];
         for byte in &mut expected_measurement {
             *byte = sp.get_byte();
         }
@@ -174,7 +179,9 @@ mod tests {
     /// sums of the read data and the image as seen on the host.
     fn virtio_read(sectors_at_once: usize) {
         use alloc::vec;
-        use sha2::{Digest, Sha256};
+        use cocoon_tpm_crypto::hash::HashInstance;
+        use cocoon_tpm_tpm2_interface::TpmiAlgHash;
+        use cocoon_tpm_utils_common::io_slices::{IoSlicesIterCommon as _, SingletonIoSlice};
         assert!(sectors_at_once > 0);
 
         let blk = BLOCK_DEVICE
@@ -186,7 +193,7 @@ mod tests {
         let n_sectors = blk.size() / SECTOR_SIZE;
         let mut buffer = vec![0u8; sectors_at_once * SECTOR_SIZE];
 
-        let mut hasher = Sha256::new();
+        let mut hasher = HashInstance::new(TpmiAlgHash::Sha256).unwrap();
         for (pos, sectors) in (0..n_sectors)
             .step_by(sectors_at_once)
             .map(|pos| (pos, min(sectors_at_once, n_sectors - pos)))
@@ -194,11 +201,14 @@ mod tests {
             buffer.truncate(sectors * SECTOR_SIZE);
 
             blk.read_blocks(pos, &mut buffer).unwrap();
-            hasher.update(&buffer);
+            hasher
+                .update(SingletonIoSlice::new(&buffer).map_infallible_err())
+                .unwrap();
         }
 
-        let hash = hasher.finalize();
-        assert_eq!(expected_hash, *hash);
+        let mut hash = [0u8; SHA256_DIGEST_LEN];
+        hasher.finalize_into(&mut hash).unwrap();
+        assert_eq!(expected_hash, hash);
     }
 
     #[test]
@@ -239,7 +249,9 @@ mod tests {
     /// on the host.
     fn virtio_write(sectors_at_once: usize) {
         use alloc::vec;
-        use sha2::{Digest, Sha256};
+        use cocoon_tpm_crypto::hash::HashInstance;
+        use cocoon_tpm_tpm2_interface::TpmiAlgHash;
+        use cocoon_tpm_utils_common::io_slices::{IoSlicesIterCommon as _, SingletonIoSlice};
 
         assert!(sectors_at_once > 0);
 
@@ -250,7 +262,7 @@ mod tests {
         let n_sectors = blk.size() / SECTOR_SIZE;
         let mut buffer = vec![0u8; sectors_at_once * SECTOR_SIZE];
 
-        let mut hasher = Sha256::new();
+        let mut hasher = HashInstance::new(TpmiAlgHash::Sha256).unwrap();
 
         let mut generator = (0u64..).flat_map(|x| x.to_le_bytes());
 
@@ -264,12 +276,15 @@ mod tests {
 
             blk.write_blocks(pos, &buffer).unwrap();
             blk.flush().unwrap();
-            hasher.update(&buffer);
+            hasher
+                .update(SingletonIoSlice::new(&buffer).map_infallible_err())
+                .unwrap();
         }
 
-        let hash = hasher.finalize();
+        let mut hash = [0u8; SHA256_DIGEST_LEN];
+        hasher.finalize_into(&mut hash).unwrap();
         let expected_hash = get_image_hash_from_host().unwrap();
 
-        assert_eq!(expected_hash, *hash);
+        assert_eq!(expected_hash, hash);
     }
 }
