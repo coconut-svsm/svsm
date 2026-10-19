@@ -118,9 +118,6 @@ uefivars = ["dep:virtfw-varstore", "dep:virtfw-libefi"]
 secureboot = ["uefivars"]
 enable-console-log = []
 
-[dev-dependencies]
-sha2 = { workspace = true, features = ["force-soft"] }
-
 [package.metadata.verus]
 verify = true
 
