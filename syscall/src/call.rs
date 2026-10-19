@@ -74,12 +74,12 @@ pub enum SysCallError {
     EPERM = -4,
     EFAULT = -5,
     EBUSY = -6,
-    ENOTFOUND = -7,
-    ENOTSUPP = -8,
+    ENOENT = -7,
+    EOPNOTSUPP = -8,
     EEXIST = -9,
     ERDONLY = -10,
     EWRONLY = -11,
-    UNKNOWN = -128,
+    EIO = -128,
 }
 
 impl From<i32> for SysCallError {
@@ -91,12 +91,12 @@ impl From<i32> for SysCallError {
             -4 => SysCallError::EPERM,
             -5 => SysCallError::EFAULT,
             -6 => SysCallError::EBUSY,
-            -7 => SysCallError::ENOTFOUND,
-            -8 => SysCallError::ENOTSUPP,
+            -7 => SysCallError::ENOENT,
+            -8 => SysCallError::EOPNOTSUPP,
             -9 => SysCallError::EEXIST,
             -10 => SysCallError::ERDONLY,
             -11 => SysCallError::EWRONLY,
-            _ => SysCallError::UNKNOWN,
+            _ => SysCallError::EIO,
         }
     }
 }

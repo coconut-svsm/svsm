@@ -202,10 +202,10 @@ impl From<SvsmError> for SysCallError {
             SvsmError::FileSystem(FsError::ReadOnly) => SysCallError::ERDONLY,
 
             SvsmError::FileSystem(FsError::FileNotFound) | SvsmError::Obj(ObjError::NotFound) => {
-                SysCallError::ENOTFOUND
+                SysCallError::ENOENT
             }
 
-            SvsmError::NotSupported => SysCallError::ENOTSUPP,
+            SvsmError::NotSupported => SysCallError::EOPNOTSUPP,
 
             SvsmError::FileSystem(FsError::Inval)
             | SvsmError::Obj(ObjError::InvalidHandle)
@@ -216,7 +216,7 @@ impl From<SvsmError> for SysCallError {
 
             SvsmError::Fault => SysCallError::EFAULT,
 
-            _ => SysCallError::UNKNOWN,
+            _ => SysCallError::EIO,
         }
     }
 }
