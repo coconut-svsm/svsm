@@ -239,10 +239,6 @@ pub trait SvsmPlatform: Sync {
     /// Queries the state of APIC registration on this system.
     fn query_apic_registration_state(&self) -> bool;
 
-    /// Determines whether a given interrupt vector was invoked as an external
-    /// interrupt.
-    fn is_external_interrupt(&self, vector: usize) -> bool;
-
     /// Start an additional processor.
     fn start_cpu(
         &self,
