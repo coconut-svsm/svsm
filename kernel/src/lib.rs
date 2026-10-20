@@ -29,6 +29,8 @@ pub mod block;
 pub mod boot_params;
 pub mod console;
 pub mod cpu;
+#[cfg(any(feature = "openssl", feature = "vtpm"))]
+pub mod crt;
 pub mod crypto;
 pub mod debug;
 pub mod error;
