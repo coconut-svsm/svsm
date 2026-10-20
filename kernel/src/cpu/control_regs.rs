@@ -37,6 +37,10 @@ pub fn cr4_init() {
 
     cr4.insert(CR4Flags::PGE); // Enable Global Pages
 
+    if cpu_has_feat(Feature::Pcid) {
+        cr4.insert(CR4Flags::PCIDE);
+    }
+
     if !cfg!(feature = "nosmep") {
         assert!(cpu_has_feat(Feature::Smep), "CPU does not support SMEP");
         cr4.insert(CR4Flags::SMEP);
