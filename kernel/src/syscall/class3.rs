@@ -12,7 +12,7 @@ pub fn sys_capabilities(index: u32) -> Result<u64, SysCallError> {
     let cap = match index {
         0 => Cap::NrCaps,
         i if i <= Cap::NrCaps as u32 => (i - 1).try_into().unwrap(),
-        _ => return Err(SysCallError::ENOTFOUND),
+        _ => return Err(SysCallError::ENOENT),
     };
     Ok(CAPS.get(cap))
 }

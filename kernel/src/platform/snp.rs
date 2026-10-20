@@ -395,15 +395,6 @@ impl SvsmPlatform for SnpPlatform {
         APIC_EMULATION_REG_COUNT.load(Ordering::Relaxed) > 0
     }
 
-    fn is_external_interrupt(&self, _vector: usize) -> bool {
-        // When restricted injection is active, the event disposition is
-        // already known to the caller and thus need not be examined.  When
-        // restricted injection is not active, the hypervisor must be trusted
-        // with all event delivery, so all events are assumed not to be
-        // external interrupts.
-        false
-    }
-
     fn start_cpu(
         &self,
         cpu: &PerCpu,

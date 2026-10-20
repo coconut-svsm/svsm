@@ -17,7 +17,7 @@ use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::ApStartContextRef;
 use crate::cpu::smp::set_ap_start_context;
-use crate::cpu::x86::{apic_in_service, apic_initialize, apic_sw_enable};
+use crate::cpu::x86::{apic_initialize, apic_sw_enable};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::hyperv_start_cpu;
@@ -217,10 +217,6 @@ impl SvsmPlatform for TdpPlatform {
 
     fn query_apic_registration_state(&self) -> bool {
         false
-    }
-
-    fn is_external_interrupt(&self, vector: usize) -> bool {
-        apic_in_service(vector)
     }
 
     fn start_cpu(

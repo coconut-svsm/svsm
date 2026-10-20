@@ -283,11 +283,6 @@ impl IdtEntry {
         IdtEntry::create(target, SVSM_CS, IDT_TYPE_INT, 0, 0)
     }
 
-    pub fn user_entry(handler: unsafe extern "C" fn()) -> Self {
-        let target = VirtAddr::from(handler as *const ());
-        IdtEntry::create(target, SVSM_CS, IDT_TYPE_INT, 3, 0)
-    }
-
     pub fn ist_entry(handler: unsafe extern "C" fn(), ist: u8) -> Self {
         let target = VirtAddr::from(handler as *const ());
         IdtEntry::create(target, SVSM_CS, IDT_TYPE_INT, 0, ist)
@@ -416,22 +411,4 @@ pub fn is_exception_handler_return_site(rip: VirtAddr) -> bool {
     let start = VirtAddr::from(&raw const entry_code_start);
     let end = VirtAddr::from(&raw const entry_code_end);
     (start..end).contains(&rip)
-}
-
-#[repr(u32)]
-#[derive(Debug, Clone, Copy)]
-pub enum IdtEventType {
-    Unknown = 0,
-    External,
-    Software,
-}
-
-impl IdtEventType {
-    pub fn is_external_interrupt(&self, vector: usize) -> bool {
-        match self {
-            Self::External => true,
-            Self::Software => false,
-            Self::Unknown => SVSM_PLATFORM.is_external_interrupt(vector),
-        }
-    }
 }
