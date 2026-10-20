@@ -658,11 +658,16 @@ impl GHCB {
 
                 self.pepare_buffer();
 
-                if let Err(mut e) = self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0) {
-                    if let Err(err) = self.get_exit_info_2_valid() {
-                        e = err;
-                    }
+                // PSC reports operation errors in SW_EXITINFO2.
+                let result = self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0);
+                let info2 = self.get_exit_info_2_valid()?;
+                let error = match result {
+                    Err(e) => Some(e),
+                    Ok(()) if info2 != 0 => Some(GhcbError::VmgexitError(0, info2)),
+                    Ok(()) => None,
+                };
 
+                if let Some(e) = error {
                     if let GhcbError::VmgexitError(_, info2) = e {
                         let info_high: u32 = (info2 >> 32) as u32;
                         let info_low: u32 = (info2 & 0xffff_ffffu64) as u32;
