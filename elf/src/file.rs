@@ -31,6 +31,8 @@ pub struct Elf64File<'a> {
     pub symtab: Option<Elf64Symtab<'a>>,
     pub strtab: Option<Elf64Strtab<'a>>,
     pub dynamic: Option<Elf64Dynamic>,
+    /// The virtual address range covered by the PT_GNU_RELRO segment, if any.
+    pub relro_vaddr_range: Option<Elf64AddrRange>,
 }
 
 impl<'a> Elf64File<'a> {
@@ -83,6 +85,7 @@ impl<'a> Elf64File<'a> {
         let mut load_segments = Elf64LoadSegments::new();
         let mut max_load_segment_align = 0;
         let mut dynamic_file_range: Option<Elf64FileRange> = None;
+        let mut relro_vaddr_range: Option<Elf64AddrRange> = None;
         for i in 0..elf_hdr.e_phnum {
             let phdr = Self::read_verified_phdr(elf_file_buf, &elf_hdr, i)?;
             if phdr.p_type == Elf64Phdr::PT_LOAD {
@@ -99,6 +102,15 @@ impl<'a> Elf64File<'a> {
                     return Err(ElfError::DynamicPhdrConflict);
                 }
                 dynamic_file_range = Some(phdr.file_range());
+            } else if phdr.p_type == Elf64Phdr::PT_GNU_RELRO {
+                if relro_vaddr_range.is_some() {
+                    return Err(ElfError::RelroPhdrConflict);
+                }
+                let vaddr_range = phdr.vaddr_range();
+                if vaddr_range.is_empty() {
+                    return Err(ElfError::InvalidSegmentSize);
+                }
+                relro_vaddr_range = Some(vaddr_range);
             }
         }
 
@@ -152,6 +164,7 @@ impl<'a> Elf64File<'a> {
             symtab,
             strtab,
             dynamic,
+            relro_vaddr_range,
         })
     }
 
@@ -724,5 +737,27 @@ impl<'a> Elf64File<'a> {
         self.elf_hdr
             .e_entry
             .wrapping_add(self.load_base(image_load_addr))
+    }
+
+    /// Retrieves the virtual address range to be made read-only after
+    /// relocations have been applied, as described by the PT_GNU_RELRO
+    /// program header, if any.
+    ///
+    /// The returned range is adjusted for the actual image load address.
+    ///
+    /// # Arguments
+    ///
+    /// * `image_load_addr` - The virtual address where the ELF image is loaded in memory.
+    ///
+    /// # Returns
+    ///
+    /// The adjusted RELRO virtual address range, or [`None`] if the ELF file
+    /// does not contain a PT_GNU_RELRO program header.
+    pub fn image_relro_vaddr_range(&self, image_load_addr: Elf64Addr) -> Option<Elf64AddrRange> {
+        let load_base = self.load_base(image_load_addr);
+        self.relro_vaddr_range.map(|range| Elf64AddrRange {
+            vaddr_begin: range.vaddr_begin.wrapping_add(load_base),
+            vaddr_end: range.vaddr_end.wrapping_add(load_base),
+        })
     }
 }
