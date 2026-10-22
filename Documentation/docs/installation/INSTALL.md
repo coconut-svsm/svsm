@@ -420,6 +420,8 @@ The script supports a number of other options described in the table below
 | `--aproxy [path]`      | N/A      | not set               | Connect COM3 serial to a Unix socket for the attestation proxy.              |
 | `--snapshot [on\|off]` | SNAPSHOT | on                    | Control QEMU disk snapshot mode.                                             |
 | `--vsock [cid]`        | N/A      | not set               | Attach a vhost-vsock device with the given guest CID.                        |
+| `--comport [1-4]`      | N/A      | 1                     | SVSM console COM port. Passed as `CONSOLEPORT=` on the IGVM command line.    |
+| `--attestport [port]`  | N/A      | 1995                  | Host vsock port of the attestation proxy (`ATTESTATIONPORT=`).               |
 
 Debugging using GDB
 -------------------
