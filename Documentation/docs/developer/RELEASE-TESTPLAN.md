@@ -231,7 +231,7 @@ cargo run -- --measurement $MEASUREMENT --secret $HEX_SECRET
 Start the proxy in another terminal:
 
 ```
-bin/aproxy --protocol kbs --url http://0.0.0.0:8080 --vsock
+bin/aproxy --protocol sample-kbs --url http://0.0.0.0:8080 --vsock
 ```
 
 #### Automatically mount encrypted rootfs with a stateful TPM
