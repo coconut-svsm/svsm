@@ -18,11 +18,13 @@ use crate::mm::alloc::AllocError;
 use crate::mm::page_visibility::SharedBox;
 use crate::{
     BIT,
-    cpu::percpu::current_ghcb,
     error::SvsmError,
     greq::msg::{SnpGuestRequestExtData, SnpGuestRequestMsg, SnpGuestRequestMsgType},
     locking::SpinLock,
-    sev::{ghcb::GhcbError, secrets_page, secrets_page_mut},
+    sev::{
+        ghcb::{GhcbError, with_current_ghcb},
+        secrets_page, secrets_page_mut,
+    },
     types::PAGE_SHIFT,
     utils::page_align_up,
 };
@@ -127,14 +129,14 @@ impl SnpGuestRequestDriver {
         let req_page = self.request.addr();
         let resp_page = self.response.addr();
         let data_pages = self.ext_data.addr();
-        let ghcb = current_ghcb();
-
-        if req_class == SnpGuestRequestClass::Extended {
-            let num_user_pages = (page_align_up(self.user_extdata_size) >> PAGE_SHIFT) as u64;
-            ghcb.guest_ext_request(req_page, resp_page, data_pages, num_user_pages)?;
-        } else {
-            ghcb.guest_request(req_page, resp_page)?;
-        }
+        with_current_ghcb(|ghcb| {
+            if req_class == SnpGuestRequestClass::Extended {
+                let num_user_pages = (page_align_up(self.user_extdata_size) >> PAGE_SHIFT) as u64;
+                ghcb.guest_ext_request(req_page, resp_page, data_pages, num_user_pages)
+            } else {
+                ghcb.guest_request(req_page, resp_page)
+            }
+        })?;
 
         self.seqno_add_two();
 

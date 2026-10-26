@@ -90,10 +90,6 @@ impl SvsmPlatform for TdpPlatform {
         CpuVendor::Intel
     }
 
-    fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        Ok(())
-    }
-
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
         apic_initialize(&TDX_APIC_ACCESSOR);
         // apic_enable() is not needed as both KVM and Hyper-V hosts initialize
