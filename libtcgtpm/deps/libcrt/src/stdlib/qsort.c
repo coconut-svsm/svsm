@@ -72,6 +72,7 @@ static inline void shl(size_t p[2], int n)
 		n -= 8 * sizeof(size_t);
 		p[1] = p[0];
 		p[0] = 0;
+		if (!n) return;
 	}
 	p[1] <<= n;
 	p[1] |= p[0] >> (sizeof(size_t) * 8 - n);
@@ -84,6 +85,7 @@ static inline void shr(size_t p[2], int n)
 		n -= 8 * sizeof(size_t);
 		p[0] = p[1];
 		p[1] = 0;
+		if (!n) return;
 	}
 	p[0] >>= n;
 	p[0] |= p[1] << (sizeof(size_t) * 8 - n);
