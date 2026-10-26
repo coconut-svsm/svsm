@@ -6,14 +6,14 @@
 
 extern crate alloc;
 
-use super::features::{Feature, cpu_has_feat};
-use super::ipi::IpiState;
-use super::isst::{
+use super::super::features::{Feature, cpu_has_feat};
+use super::super::ipi::IpiState;
+use super::super::isst::{
     double_fault_shadow_stack, init_double_fault_shadow_stack, init_isst, load_isst,
 };
-use super::shadow_stack::{init_initial_shadow_stack, init_shadow_stack, is_cet_ss_enabled};
-use super::smp::init_percpu_shared;
-use super::tss::{double_fault_stack, init_double_fault_stack, setup_tss, tss_address};
+use super::super::shadow_stack::{init_initial_shadow_stack, init_shadow_stack, is_cet_ss_enabled};
+use super::super::smp::init_percpu_shared;
+use super::super::tss::{double_fault_stack, init_double_fault_stack, setup_tss, tss_address};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::ShadowStackInit;
 use crate::cpu::apic::init_apic_emulation;
@@ -69,13 +69,7 @@ use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering;
 use cpuarch::vmsa::VMSA;
 
-#[macro_use]
-mod key;
-
-use key::PerCpuArea;
-pub use key::PerCpuKey;
-#[doc(hidden)]
-pub use key::PerCpuStorage;
+use super::key::PerCpuArea;
 
 // PERCPU areas virtual addresses into shared memory
 pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
@@ -412,7 +406,7 @@ where
     Self: Sync,
 {
     /// Linker-defined CPU-local variables accessed through `%GS`.
-    percpu_area: PerCpuArea,
+    pub(super) percpu_area: PerCpuArea,
 
     /// Reference to the `PerCpuShared` that is valid in the global, shared
     /// address space.
@@ -664,7 +658,7 @@ impl PerCpu {
         Ok(())
     }
 
-    pub(super) fn setup_percpu_keys(&self) {
+    pub(in crate::cpu) fn setup_percpu_keys(&self) {
         let initialize_keys = self.percpu_area.initialize();
         self.percpu_area.load();
         if !initialize_keys {
@@ -739,7 +733,7 @@ impl PerCpu {
         // SAFETY: along with the page table we are also uploading the right
         // TSS and ISST to ensure a memory safe execution state
         unsafe { self.get_pgtable().load() };
-        super::tss::load_gdt_tss(false);
+        super::super::tss::load_gdt_tss(false);
         if is_cet_ss_enabled() {
             load_isst();
         }
