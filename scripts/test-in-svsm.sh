@@ -58,6 +58,12 @@ test_io(){
             "03")
               python3 "$SCRIPT_DIR/test_vsock_server.py" "$TEST_VSOCK_PORT" "$PIPE_IN"
               ;;
+            # 0x04: Attestation test: tell SVSM whether the attestation
+            #       servers were started (1 byte, 01 if they were). This
+            #       script does not start them, so always reply 00.
+            "04")
+              echo 00 | xxd -r -p > "$PIPE_IN"
+              ;;
             "")
                 # skip EOF
                 ;;

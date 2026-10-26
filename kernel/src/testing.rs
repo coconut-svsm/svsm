@@ -49,6 +49,9 @@ pub enum IORequest {
     GetStateImageSha256 = 0x02,
     /// Virtio-vsock tests: Ask host to start a vsock server
     StartVsockServer = 0x03,
+    /// Attestation test: ask the host whether it started the attestation
+    /// servers (1 byte, non-zero if it did)
+    GetAttestationEnabled = 0x04,
 }
 
 /// Return the serial port to communicate with the host for a given request
@@ -88,6 +91,20 @@ pub fn launch_measurement() -> [u8; LAUNCH_MEASUREMENT_SIZE] {
     }
 
     measurement
+}
+
+/// Ask the host whether it started the servers the attestation test needs.
+///
+/// See [`IORequest::GetAttestationEnabled`] and `test_io()` in
+/// scripts/test-in-svsm.sh. Callers must make sure the host implements the
+/// test I/O requests, see
+/// [`has_test_iorequests()`](crate::testutils::has_test_iorequests).
+pub fn attestation_enabled() -> bool {
+    let sp = svsm_test_io().unwrap();
+
+    sp.put_byte(IORequest::GetAttestationEnabled as u8);
+
+    sp.get_byte() != 0
 }
 
 pub fn svsm_kernel_test_runner(test_cases: &[&test::TestDescAndFn]) {
