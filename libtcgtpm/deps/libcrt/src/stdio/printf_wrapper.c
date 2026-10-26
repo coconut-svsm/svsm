@@ -210,16 +210,19 @@ int vsnprints(char *str, size_t size, const char *format, va_list ap)
 				break;
 			case 'd':
 				signed_format = true;
+				__attribute__((fallthrough));
 			case 'z':
 				// handle %zu
 				if (*(format+1) && *(format+1) == 'u' )
 					format++;
+				__attribute__((fallthrough));
 			case 'u':
 				cur = format_base10(cur, end, width, signed_format, ap);
 				convert = false;
 				break;
 			case 'p':
 				width = LEN_MOD_LONG;
+				__attribute__((fallthrough));
 			case 'x':
 				cur = format_base16(cur, end, width, ap);
 				convert = false;
@@ -258,8 +261,8 @@ int vprints(const char *format, va_list ap)
 
 	ret = vsnprints(buffer, sizeof(buffer), format, ap);
 
-	if (ret >= sizeof(buffer)) {
-        	ret = PRINT_STR_MAX;
+	if (ret >= (int)sizeof(buffer)) {
+		ret = PRINT_STR_MAX;
 		buffer[PRINT_STR_MAX - 1] = '\0';
 	}
 
