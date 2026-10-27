@@ -233,17 +233,6 @@ checksum = "1e4b40c7323adcfc0a41c4b88143ed58346ff65a288fc144329c5c45e05d70c6"
 
 [[package]]
 name = "bitfield-struct"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8769c4854c5ada2852ddf6fd09d15cf43d4c2aaeccb4de6432f5402f08a6003b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "bitfield-struct"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ca6739863c590881f038d033a146c51ddae239186a4327014839fd864f44ed5"
@@ -341,7 +330,7 @@ dependencies = [
 name = "cbit"
 version = "0.1.0"
 dependencies = [
- "bitfield-struct 0.13.0",
+ "bitfield-struct",
 ]
 
 [[package]]
@@ -606,7 +595,7 @@ dependencies = [
 name = "cpuarch"
 version = "0.1.0"
 dependencies = [
- "bitfield-struct 0.13.0",
+ "bitfield-struct",
  "bitflags 2.13.0",
  "zerocopy",
 ]
@@ -1312,7 +1301,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59f77675c910030e49a3e66db299a53982893695a5cc2938d053605fc0923a94"
 dependencies = [
- "bitfield-struct 0.13.0",
+ "bitfield-struct",
  "crc32fast",
  "hex",
  "igvm_defs",
@@ -1330,7 +1319,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b08f88b4ca58693b1fae4e9ea923eeff031e01c0d33730b6ff73a1f1abe8bfba"
 dependencies = [
- "bitfield-struct 0.13.0",
+ "bitfield-struct",
  "open-enum",
  "static_assertions",
  "zerocopy",
@@ -2225,7 +2214,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "aes-kw",
- "bitfield-struct 0.13.0",
+ "bitfield-struct",
  "bitflags 2.13.0",
  "bootdefs",
  "bootimg",
@@ -2706,11 +2695,11 @@ dependencies = [
 
 [[package]]
 name = "virtfw-libefi"
-version = "0.6.0"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bfe5a2adf2b20c1cdb1f24614c3f07a94398995ab6c2c2562f97d1b2f0d9fb7"
+checksum = "5899a30f1f64a1ab6b476be1c24487cba9b37b19df70d5aeb9552d5d96300d4c"
 dependencies = [
- "bitfield-struct 0.12.1",
+ "bitfield-struct",
  "byteorder",
  "der",
  "log",
