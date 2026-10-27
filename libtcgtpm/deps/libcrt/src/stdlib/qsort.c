@@ -34,11 +34,11 @@
 
 typedef int (*cmpfun)(const void *, const void *, void *);
 
+/* returns index of first bit set, excluding the low bit assumed to always
+ * be set, starting from low bit of p[0] up through high bit of p[1] */
 static inline int pntz(size_t p[2]) {
-	int r = ntz(p[0] - 1);
-	if(r != 0 || (r = 8*sizeof(size_t) + ntz(p[1])) != 8*sizeof(size_t)) {
-		return r;
-	}
+	if (p[0] != 1) return ntz(p[0] - 1);
+	if (p[1]) return 8*sizeof(size_t) + ntz(p[1]);
 	return 0;
 }
 
