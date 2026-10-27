@@ -93,7 +93,7 @@ intrusive-collections = "0.10.0"
 kbs-types = { version = "0.14.0", default-features = false }
 libfuzzer-sys = "0.4"
 log = "0.4.17"
-p384 = { version = "0.13.0" }
+p384 = { version = "0.14.0" }
 rustc-demangle = { version = "0.1.26" }
 safe-mmio = { version = "0.3.1", features = ["custom-mmio"] }
 serde = { version = "1.0.215", default-features = false }
