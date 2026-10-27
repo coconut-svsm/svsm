@@ -14,7 +14,7 @@ use igvm_defs::{
 use p384::ecdsa::signature::Signer;
 use p384::ecdsa::{Signature, SigningKey};
 use p384::elliptic_curve::bigint::ArrayEncoding;
-use p384::{EncodedPoint, SecretKey};
+use p384::{Sec1Point, SecretKey};
 use zerocopy::{FromZeros, Immutable, IntoBytes};
 
 use crate::igvm_measure::IgvmMeasure;
@@ -90,7 +90,7 @@ impl SevIdBlockBuilder {
         key_file: &String,
     ) -> Result<Box<IGVM_VHS_SNP_ID_BLOCK_PUBLIC_KEY>, Box<dyn Error>> {
         let secret_key = Self::secret_key(key_file)?;
-        let ep = EncodedPoint::from(secret_key.public_key());
+        let ep = Sec1Point::from(secret_key.public_key());
         let mut x = *ep.x().unwrap();
         let mut y = *ep.y().unwrap();
         x.reverse();
