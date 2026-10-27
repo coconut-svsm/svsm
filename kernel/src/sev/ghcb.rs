@@ -507,6 +507,67 @@ impl GHCB {
         Ok(())
     }
 
+    fn psc_read_header(&self) -> PageStateChangeHeader {
+        let bytes = core::array::from_fn(|i| self.buffer[i].load(Ordering::Relaxed));
+        let header = u64::from_le_bytes(bytes);
+        PageStateChangeHeader {
+            cur_entry: header as u16,
+            end_entry: (header >> 16) as u16,
+            reserved: (header >> 32) as u32,
+        }
+    }
+
+    /// Retry incomplete PSC batches while preserving hypervisor-updated progress.
+    fn psc_run_batch(&self, end_entry: u16) -> Result<(), SvsmError> {
+        let mut last_cur = 0u16;
+
+        loop {
+            let result = match self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0) {
+                Err(mut e) => {
+                    if let Err(err) = self.get_exit_info_2_valid() {
+                        e = err;
+                    }
+                    Err(e)
+                }
+                Ok(()) => {
+                    let hdr = self.psc_read_header();
+
+                    if hdr.reserved != 0
+                        || hdr.end_entry != end_entry
+                        || hdr.cur_entry < last_cur
+                        || hdr.cur_entry > end_entry + 1
+                    {
+                        return Err(GhcbError::VmgexitInvalid.into());
+                    }
+
+                    if hdr.cur_entry > end_entry {
+                        return Ok(());
+                    }
+
+                    // PSC errors use SW_EXITINFO2 even when SW_EXITINFO1 is zero.
+                    let info2 = self.get_exit_info_2_valid()?;
+                    if info2 != 0 {
+                        Err(GhcbError::VmgexitError(0, info2))
+                    } else {
+                        last_cur = hdr.cur_entry;
+                        Ok(())
+                    }
+                }
+            };
+
+            if let Err(e) = result {
+                if let GhcbError::VmgexitError(_, info2) = e {
+                    let info_high: u32 = (info2 >> 32) as u32;
+                    let info_low: u32 = (info2 & 0xffff_ffffu64) as u32;
+                    log::error!(
+                        "GHCB SnpPageStateChange failed err_high: {info_high:#x} err_low: {info_low:#x}"
+                    );
+                }
+                return Err(e.into());
+            }
+        }
+    }
+
     pub fn ioio_in(&self, port: u16, size: GHCBIOSize) -> Result<u64, SvsmError> {
         self.clear();
 
@@ -670,30 +731,15 @@ impl GHCB {
             paddr = paddr + pgsize;
 
             if entries == max_entries || paddr >= end {
+                let end_entry = entries - 1;
                 let header = PageStateChangeHeader {
                     cur_entry: 0,
-                    end_entry: entries - 1,
+                    end_entry,
                     reserved: 0,
                 };
                 self.write_buffer(&header, 0)?;
-
                 self.pepare_buffer();
-
-                if let Err(mut e) = self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0) {
-                    if let Err(err) = self.get_exit_info_2_valid() {
-                        e = err;
-                    }
-
-                    if let GhcbError::VmgexitError(_, info2) = e {
-                        let info_high: u32 = (info2 >> 32) as u32;
-                        let info_low: u32 = (info2 & 0xffff_ffffu64) as u32;
-                        log::error!(
-                            "GHCB SnpPageStateChange failed err_high: {info_high:#x} err_low: {info_low:#x}"
-                        );
-                    }
-                    return Err(e.into());
-                }
-
+                self.psc_run_batch(end_entry)?;
                 entries = 0;
             }
         }
