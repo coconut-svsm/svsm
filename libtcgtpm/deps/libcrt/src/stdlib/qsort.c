@@ -93,10 +93,16 @@ static inline void shr(size_t p[2], int n)
 	p[1] >>= n;
 }
 
+/* power-of-two length for working array so that we can mask indices and
+ * not depend on any invariant of the algorithm for spatial memory safety.
+ * the original size was just 14*sizeof(size_t)+1 */
+#define AR_LEN  (16 * sizeof(size_t))
+#define AR_MASK (AR_LEN - 1)
+
 static void sift(unsigned char *head, size_t width, cmpfun cmp, void *arg, int pshift, size_t lp[])
 {
 	unsigned char *rt, *lf;
-	unsigned char *ar[14 * sizeof(size_t) + 1];
+	unsigned char *ar[AR_LEN];
 	int i = 1;
 
 	ar[0] = head;
@@ -108,16 +114,16 @@ static void sift(unsigned char *head, size_t width, cmpfun cmp, void *arg, int p
 			break;
 		}
 		if(cmp(lf, rt, arg) >= 0) {
-			ar[i++] = lf;
+			ar[i++ & AR_MASK] = lf;
 			head = lf;
 			pshift -= 1;
 		} else {
-			ar[i++] = rt;
+			ar[i++ & AR_MASK] = rt;
 			head = rt;
 			pshift -= 2;
 		}
 	}
-	cycle(width, ar, i);
+	cycle(width, ar, i & AR_MASK);
 }
 
 static void trinkle(unsigned char *head, size_t width, cmpfun cmp, void *arg, size_t pp[2], int pshift, int trusty, size_t lp[])
@@ -125,7 +131,7 @@ static void trinkle(unsigned char *head, size_t width, cmpfun cmp, void *arg, si
 	unsigned char *stepson,
 	              *rt, *lf;
 	size_t p[2];
-	unsigned char *ar[14 * sizeof(size_t) + 1];
+	unsigned char *ar[AR_LEN];
 	int i = 1;
 	int trail;
 
@@ -146,7 +152,7 @@ static void trinkle(unsigned char *head, size_t width, cmpfun cmp, void *arg, si
 			}
 		}
 
-		ar[i++] = stepson;
+		ar[i++ & AR_MASK] = stepson;
 		head = stepson;
 		trail = pntz(p);
 		shr(p, trail);
@@ -154,7 +160,7 @@ static void trinkle(unsigned char *head, size_t width, cmpfun cmp, void *arg, si
 		trusty = 0;
 	}
 	if(!trusty) {
-		cycle(width, ar, i);
+		cycle(width, ar, i & AR_MASK);
 		sift(head, width, cmp, arg, pshift, lp);
 	}
 }
