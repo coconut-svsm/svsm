@@ -2,6 +2,7 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
+mod buildinfo;
 mod cargo;
 mod features;
 mod fs;
@@ -9,11 +10,12 @@ mod fw;
 mod helpers;
 mod igvm;
 mod kernel;
+mod remap;
 mod version;
 
 use crate::{
-    features::Features, fs::FsConfig, fw::FirmwareConfig, helpers::HELPERS, igvm::IgvmConfig,
-    kernel::KernelConfig, version::generate_release_file,
+    buildinfo::BuildInfo, features::Features, fs::FsConfig, fw::FirmwareConfig, helpers::HELPERS,
+    igvm::IgvmConfig, kernel::KernelConfig, version::generate_release_file,
 };
 use clap::Parser;
 use serde::Deserialize;
@@ -97,6 +99,15 @@ impl BuildTarget {
         match self {
             Self::X8664UnknownNone => Some("x86_64-unknown-none"),
             Self::Host => None,
+        }
+    }
+
+    /// Append `--target` and, for bare-metal targets, the path remapping
+    /// config to `cmd`.
+    fn apply(&self, cmd: &mut Command) {
+        if let Some(triple) = self.as_str() {
+            cmd.args(["--target", triple]);
+            cmd.args(["--config", &remap::cargo_config(triple)]);
         }
     }
 }
@@ -222,8 +233,8 @@ impl ComponentConfig {
             if self.binary { "--bin" } else { "--package" },
             pkg,
         ]);
+        target.apply(&mut cmd);
         if let Some(triple) = target.as_str() {
-            cmd.args(["--target", triple]);
             bin.push(triple);
         };
         self.apply_features(&mut cmd, args, pkg, cmd_feats);
@@ -272,9 +283,7 @@ impl ComponentConfig {
             "--package",
             pkg,
         ]);
-        if let Some(triple) = target.as_str() {
-            cmd.args(["--target", triple]);
-        }
+        target.apply(&mut cmd);
         self.apply_features(&mut cmd, args, pkg, cmd_feats);
         if let Some(manifest) = self.manifest.as_ref() {
             cmd.args(["--manifest-path".as_ref(), manifest.as_os_str()]);
@@ -377,8 +386,14 @@ impl Recipe {
         Ok(parts)
     }
 
-    /// Builds all the components for this recipe
-    fn build(&self, args: &Args, cmd_feats: &mut Features) -> BuildResult<()> {
+    /// Builds all the components for this recipe, which was read from
+    /// `path`. Returns the build info of every image the recipe produced.
+    fn build(
+        &self,
+        args: &Args,
+        path: &Path,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<Vec<BuildInfo>> {
         // Build kernel, guest firmware and guest filesystem
         let mut parts = self.build_kernel(args, cmd_feats)?;
         if let Some(fw) = self.firmware.build(args)? {
@@ -390,8 +405,28 @@ impl Recipe {
 
         // Check that we have all pieces and build the IGVM file
         let parts = parts.build()?;
-        self.igvm.build(args, &parts, cmd_feats)?;
-        Ok(())
+        let images = self.igvm.build(args, &parts, cmd_feats)?;
+
+        let mut infos = Vec::with_capacity(images.len());
+        for image in images {
+            let info = BuildInfo::collect(
+                args,
+                path,
+                &parts,
+                &image.path,
+                image.launch_digest,
+                image.measure,
+            )?;
+            // A verification run must not overwrite the file it is
+            // checked against, which may be this very one.
+            if args.verify.is_none() {
+                let info_path = BuildInfo::path_for(&image.path);
+                info.write(&info_path)?;
+                println!("Wrote build info to {}", info_path.display());
+            }
+            infos.push(info);
+        }
+        Ok(infos)
     }
 }
 
@@ -482,9 +517,86 @@ struct Args {
     /// Print each recipe before building (default: false)
     #[clap(short, long, value_parser)]
     print_config: bool,
+    /// Build the recipe and check that the result matches the given build
+    /// info file. Exits with an error if it does not.
+    #[clap(long, value_name = "BUILDINFO")]
+    verify: Option<PathBuf>,
     // Path to the JSON build recipe(s)
     #[clap(required(true))]
     recipes: Vec<PathBuf>,
+}
+
+/// Build the recipes in `args` and return the build info of every image.
+fn build_all(args: &Args, features: &mut Features) -> BuildResult<Vec<BuildInfo>> {
+    let mut infos = Vec::new();
+    for filename in args.recipes.iter() {
+        let f = File::open(filename)?;
+        let recipe = serde_json::from_reader::<_, Recipe>(f)?;
+        if args.print_config {
+            println!("{}: {recipe:#?}", filename.display());
+        }
+        infos.append(&mut recipe.build(args, filename, features)?);
+    }
+    Ok(infos)
+}
+
+/// Build the recipe in `args` and compare the result with the build info
+/// file at `path`. The file is only compared against; the recipe and the
+/// build options come from the command line.
+fn verify(args: Args, path: &Path) -> BuildResult<()> {
+    let expected = BuildInfo::read(path)?;
+    let [recipe] = args.recipes.as_slice() else {
+        return Err("--verify takes exactly one recipe".into());
+    };
+    let recipe = buildinfo::Artifact::new(recipe)?;
+    if recipe.sha256 != expected.recipe.sha256 {
+        return Err(format!(
+            "{} is not the recipe recorded in {} (sha256 {} vs {})",
+            recipe.path.display(),
+            path.display(),
+            recipe.sha256,
+            expected.recipe.sha256
+        )
+        .into());
+    }
+
+    let source = buildinfo::Source::current();
+    if source.commit != expected.source.commit {
+        eprintln!(
+            "WARNING: building commit {} but the build info was made from {}",
+            source.commit.as_deref().unwrap_or("none"),
+            expected.source.commit.as_deref().unwrap_or("none"),
+        );
+    }
+    if source.dirty {
+        eprintln!("WARNING: the source tree has uncommitted changes");
+    }
+
+    let mut features = Features::create_from_args(&args);
+    let built = build_all(&args, &mut features)?;
+    features.print_unused_features();
+
+    let image = built
+        .iter()
+        .find(|p| p.image.path == expected.image.path)
+        .ok_or_else(|| {
+            format!(
+                "the recipe did not produce {}, which the build info describes",
+                expected.image.path.display()
+            )
+        })?;
+
+    println!(
+        "\nVerifying {} against {}",
+        image.image.path.display(),
+        path.display()
+    );
+    if image.verify(&expected) {
+        println!("\nThe image matches the build info.");
+        Ok(())
+    } else {
+        Err("the image does not match the build info".into())
+    }
 }
 
 fn check_root_path() -> BuildResult<()> {
@@ -505,21 +617,16 @@ fn main() -> BuildResult<()> {
     check_root_path()?;
 
     let args = Args::parse();
-    let mut features = Features::create_from_args(&args);
-
-    features.print_empty_features();
-
+    remap::check_env();
     generate_release_file();
 
-    for filename in args.recipes.iter() {
-        let f = File::open(filename)?;
-        let recipe = serde_json::from_reader::<_, Recipe>(f)?;
-        if args.print_config {
-            println!("{}: {recipe:#?}", filename.display());
-        }
-        recipe.build(&args, &mut features)?;
+    if let Some(path) = args.verify.clone() {
+        return verify(args, &path);
     }
 
+    let mut features = Features::create_from_args(&args);
+    features.print_empty_features();
+    build_all(&args, &mut features)?;
     features.print_unused_features();
 
     Ok(())

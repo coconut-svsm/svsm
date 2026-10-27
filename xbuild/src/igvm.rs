@@ -2,11 +2,20 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
+use crate::buildinfo::Measure;
 use crate::{Args, BuildResult, HELPERS, RecipeParts, features::Features, run_cmd_checked};
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::process::Command;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+
+/// An IGVM image that was built and measured.
+#[derive(Debug)]
+pub struct BuiltImage {
+    pub path: PathBuf,
+    pub launch_digest: String,
+    pub measure: Measure,
+}
 
 /// Platform flags supported by `igvmbuilder`.
 #[derive(Debug, Deserialize, Clone, Copy)]
@@ -154,7 +163,13 @@ impl IgvmTargetConfig {
         Ok(output)
     }
 
-    fn igvmmeasure(&self, args: &Args, bin: PathBuf, cmd_feats: &mut Features) -> BuildResult<()> {
+    /// Measure the image and return the launch digest.
+    fn igvmmeasure(
+        &self,
+        args: &Args,
+        bin: &Path,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<String> {
         let mut cmd = Command::new(HELPERS.igvmmeasure(args, cmd_feats));
         if self.check_kvm {
             cmd.arg("--check-kvm");
@@ -162,8 +177,22 @@ impl IgvmTargetConfig {
         if self.measure_native_zeroes {
             cmd.arg("--native-zero");
         }
-        cmd.arg(bin).arg(self.measure.as_arg());
-        run_cmd_checked(cmd, args)
+        cmd.arg(bin).arg(self.measure.as_arg()).arg("--bare");
+        if args.verbose {
+            println!("{cmd:?}");
+        }
+        let output = cmd.stderr(Stdio::inherit()).output()?;
+        if !output.status.success() {
+            return Err(format!("igvmmeasure failed for {}", bin.display()).into());
+        }
+        let digest = String::from_utf8(output.stdout)?.trim().to_string();
+        if digest.is_empty() || !digest.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(
+                format!("igvmmeasure printed no launch digest for {}", bin.display()).into(),
+            );
+        }
+        println!("Launch Digest ({}): {digest}", bin.display());
+        Ok(digest)
     }
 
     fn build(
@@ -172,10 +201,18 @@ impl IgvmTargetConfig {
         target: IgvmTarget,
         parts: &RecipeParts,
         cmd_feats: &mut Features,
-    ) -> BuildResult<()> {
+    ) -> BuildResult<BuiltImage> {
         let bin = self.igvmbuild(args, target, parts, cmd_feats)?;
-        self.igvmmeasure(args, bin, cmd_feats)?;
-        Ok(())
+        let launch_digest = self.igvmmeasure(args, &bin, cmd_feats)?;
+        Ok(BuiltImage {
+            path: bin,
+            launch_digest,
+            measure: Measure {
+                platform: "sev-snp".to_string(),
+                native_zero: self.measure_native_zeroes,
+                check_kvm: self.check_kvm,
+            },
+        })
     }
 }
 
@@ -193,10 +230,10 @@ impl IgvmConfig {
         args: &Args,
         parts: &RecipeParts,
         cmd_feats: &mut Features,
-    ) -> BuildResult<()> {
-        for (target, config) in self.targets.iter() {
-            config.build(args, *target, parts, cmd_feats)?;
-        }
-        Ok(())
+    ) -> BuildResult<Vec<BuiltImage>> {
+        self.targets
+            .iter()
+            .map(|(target, config)| config.build(args, *target, parts, cmd_feats))
+            .collect()
     }
 }

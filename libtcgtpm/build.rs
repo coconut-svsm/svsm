@@ -12,10 +12,16 @@ use std::process::Stdio;
 fn main() {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
-    // Build libtcgtpm.
+    // Build libtcgtpm. Set RELEASE explicitly from the cargo profile, so a
+    // top-level `make RELEASE=1` cannot leak it in through MAKEFLAGS.
     let mut cmd = Command::new("make");
     if target_os != "none" {
         cmd.arg("USE_LIBCRT=0");
+    }
+    if std::env::var("PROFILE").as_deref() == Ok("release") {
+        cmd.arg("RELEASE=1");
+    } else {
+        cmd.arg("RELEASE=");
     }
     let status = cmd
         .stdout(Stdio::inherit())

@@ -14,7 +14,7 @@ const RELEASE_FILE: &str = "release/src/git_version.rs";
 
 fn git_version() -> Result<String, ()> {
     let output = Command::new("git")
-        .args(["describe", "--always", "--dirty=+"])
+        .args(["describe", "--always", "--dirty=+", "--abbrev=12"])
         .output()
         .map_err(|_| ())?;
     if !output.status.success() {
