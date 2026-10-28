@@ -33,7 +33,7 @@ use crate::cpu::sse::xsave_area_size;
 use crate::cpu::tlb::flush_tlb_pcid_sync;
 use crate::cpu::{X86ExceptionContext, X86InterruptFrame};
 use crate::error::SvsmError;
-use crate::fs::{Directory, FileHandle, opendir, stdout_open};
+use crate::fs::{Directory, FileHandle, opendir, stdin_open, stdout_open};
 use crate::locking::RWLock;
 use crate::locking::SpinLockIrqSafe;
 use crate::mm::pagetable::{PTEntryFlags, PageTable, new_pgtable};
@@ -46,6 +46,7 @@ use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CPL, SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::{MemoryRegion, is_aligned};
 use intrusive_collections::{LinkedList, LinkedListAtomicLink, intrusive_adapter};
+use syscall::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 
 use super::exec::exec;
 use super::pcid::{TaskPcid, pcid_supported};
@@ -1104,11 +1105,16 @@ impl Task {
             &self.name
         };
 
+        // Like on Linux, descriptor 0 is standard input, which is empty, and
+        // the log is standard output and standard error. Attaching an object
+        // to 0 also keeps it from being handed out for another object.
+        self.add_obj_at(stdin_open(), ObjHandle::new(STDIN_FILENO))
+            .expect("Failed to attach stdin");
         let fh_log = stdout_open(name);
-
-        let oh_log = ObjHandle::new(0);
-        self.add_obj_at(fh_log, oh_log)
-            .expect("Failed to attach log");
+        for fd in [STDOUT_FILENO, STDERR_FILENO] {
+            self.add_obj_at(fh_log.clone(), ObjHandle::new(fd))
+                .expect("Failed to attach log");
+        }
     }
 }
 

@@ -38,6 +38,15 @@ pub const PATH_MAX: usize = 4096;
 /// Maximum length of file name in bytes
 pub const F_NAME_SIZE: usize = 256;
 
+/// File descriptor of the standard input of a task, which is empty
+pub const STDIN_FILENO: u32 = 0;
+
+/// File descriptor of the standard output of a task, which is the log
+pub const STDOUT_FILENO: u32 = 1;
+
+/// File descriptor of the standard error of a task, which is the log
+pub const STDERR_FILENO: u32 = 2;
+
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, IntoBytes)]
 pub enum FileType {
