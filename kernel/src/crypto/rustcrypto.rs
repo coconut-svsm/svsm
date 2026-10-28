@@ -12,8 +12,10 @@ use aes_gcm::{
     Aes256Gcm, Key, KeyInit, Nonce,
     aead::{Aead, Payload},
 };
-use alloc::vec::Vec;
-use sha2::{Digest, Sha512};
+use alloc::{vec, vec::Vec};
+use cocoon_tpm_crypto::hash::{HashInstance, hash_alg_digest_len};
+use cocoon_tpm_tpm2_interface::TpmiAlgHash;
+use cocoon_tpm_utils_common::io_slices::{IoSlicesIterCommon as _, SingletonIoSlice};
 
 use crate::error::SvsmError;
 use crate::{
@@ -83,6 +85,13 @@ impl CryptoAes256GcmTrait for CryptoAes256Gcm {
 
 impl CryptoHashTrait for CryptoSha512 {
     fn digest(input: &[u8]) -> Vec<u8> {
-        Sha512::digest(input).to_vec()
+        let mut sha = HashInstance::new(TpmiAlgHash::Sha512).expect("SHA-512 not supported");
+        // Hashing a single in-memory slice cannot fail.
+        sha.update(SingletonIoSlice::new(input).map_infallible_err())
+            .expect("SHA-512 update failed");
+        let mut digest = vec![0u8; hash_alg_digest_len(TpmiAlgHash::Sha512) as usize];
+        sha.finalize_into(&mut digest)
+            .expect("SHA-512 finalize failed");
+        digest
     }
 }
