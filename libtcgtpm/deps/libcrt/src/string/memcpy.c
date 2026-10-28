@@ -119,8 +119,8 @@ void *memcpy(void *restrict dest, const void *restrict src, size_t n)
 		*d = *s;
 	}
 	return dest;
-#endif
-
+#else
 	for (; n; n--) *d++ = *s++;
 	return dest;
+#endif
 }
