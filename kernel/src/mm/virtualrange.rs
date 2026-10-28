@@ -13,10 +13,7 @@ use crate::utils::MemoryRegion;
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 use core::fmt::Debug;
 
-use super::{
-    SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
-    SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_TEMP_SIZE_2M, SVSM_PERCPU_TEMP_SIZE_4K,
-};
+use super::{PERCPU_TEMP_2M, PERCPU_TEMP_4K};
 
 pub const VIRT_ALIGN_4K: usize = PAGE_SHIFT - 12;
 pub const VIRT_ALIGN_2M: usize = PAGE_SHIFT_2M - 12;
@@ -35,24 +32,24 @@ percpu! {
 }
 
 pub(crate) fn init_vrange_4k() {
-    const PAGE_COUNT: usize = SVSM_PERCPU_TEMP_SIZE_4K / PAGE_SIZE;
+    const PAGE_COUNT: usize = PERCPU_TEMP_4K.size() / PAGE_SIZE;
     const { assert!(PAGE_COUNT < VirtualRange::CAPACITY) };
 
     VRANGE_4K.with(|vrange| {
         vrange
             .write_noblock()
-            .init(SVSM_PERCPU_TEMP_BASE_4K, PAGE_COUNT, PAGE_SHIFT);
+            .init(PERCPU_TEMP_4K.base(), PAGE_COUNT, PAGE_SHIFT);
     });
 }
 
 pub(crate) fn init_vrange_2m() {
-    const PAGE_COUNT: usize = SVSM_PERCPU_TEMP_SIZE_2M / PAGE_SIZE_2M;
+    const PAGE_COUNT: usize = PERCPU_TEMP_2M.size() / PAGE_SIZE_2M;
     const { assert!(PAGE_COUNT < VirtualRange::CAPACITY) };
 
     VRANGE_2M.with(|vrange| {
         vrange
             .write_noblock()
-            .init(SVSM_PERCPU_TEMP_BASE_2M, PAGE_COUNT, PAGE_SHIFT_2M);
+            .init(PERCPU_TEMP_2M.base(), PAGE_COUNT, PAGE_SHIFT_2M);
     });
 }
 
@@ -95,10 +92,8 @@ impl VirtualRange {
 }
 
 pub fn virt_log_usage() {
-    let page_count4k = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
-    let page_count2m = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
-    let unused_cap_4k = BitmapAllocator1024::CAPACITY - page_count4k;
-    let unused_cap_2m = BitmapAllocator1024::CAPACITY - page_count2m;
+    let unused_cap_4k = BitmapAllocator1024::CAPACITY - PERCPU_TEMP_4K.size() / PAGE_SIZE;
+    let unused_cap_2m = BitmapAllocator1024::CAPACITY - PERCPU_TEMP_2M.size() / PAGE_SIZE_2M;
 
     log::info!(
         "[CPU {}] Virtual memory pages used: {} * 4K, {} * 2M",
