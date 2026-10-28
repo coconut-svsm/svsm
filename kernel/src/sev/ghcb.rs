@@ -581,7 +581,7 @@ impl GHCB {
         Ok(())
     }
 
-    fn pepare_buffer(&self) {
+    fn prepare_buffer(&self) {
         let buffer_va = VirtAddr::from(self.buffer.as_ptr());
         let buffer_pa = u64::from(virt_to_phys(buffer_va));
         self.set_sw_scratch_valid(buffer_pa);
@@ -596,7 +596,7 @@ impl GHCB {
     pub unsafe fn mmio_write(&self, pa: PhysAddr, value: &[u8]) -> Result<(), SvsmError> {
         self.clear();
         self.write_buffer_slice(value, 0)?;
-        self.pepare_buffer();
+        self.prepare_buffer();
         self.vmgexit(GHCBExitCode::MMIO_WRITE, u64::from(pa), value.len() as u64)?;
         Ok(())
     }
@@ -613,7 +613,7 @@ impl GHCB {
         value: &mut [MaybeUninit<u8>],
     ) -> Result<(), SvsmError> {
         self.clear();
-        self.pepare_buffer();
+        self.prepare_buffer();
         self.vmgexit(GHCBExitCode::MMIO_READ, u64::from(pa), value.len() as u64)?;
         self.read_buffer_slice(value, 0)?;
         Ok(())
@@ -677,7 +677,7 @@ impl GHCB {
                 };
                 self.write_buffer(&header, 0)?;
 
-                self.pepare_buffer();
+                self.prepare_buffer();
 
                 if let Err(mut e) = self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0) {
                     if let Err(err) = self.get_exit_info_2_valid() {
