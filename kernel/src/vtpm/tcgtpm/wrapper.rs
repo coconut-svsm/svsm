@@ -12,7 +12,6 @@
 use crate::{
     console::_print,
     mm::alloc::{layout_from_ptr, layout_from_size},
-    sev::msr_protocol::request_termination_msr,
 };
 
 use core::{
@@ -124,7 +123,7 @@ pub unsafe extern "C" fn serial_out(s: *const c_char, size: c_int) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abort() -> ! {
-    request_termination_msr();
+    panic!("abort()");
 }
 
 #[unsafe(no_mangle)]
