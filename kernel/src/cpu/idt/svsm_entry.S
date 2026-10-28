@@ -85,7 +85,6 @@ asm_entry_\name:
 	swapgs_if_needed save_state=1
 	movl	$\vector, %esi
 	movq	%rsp, %rdi
-	xorl	%edx, %edx
 	call	ex_handler_\handler
 	cli
 	jmp	return_all_paths
@@ -107,7 +106,6 @@ asm_entry_\name:
 L\@:
 	movl	$\vector, %esi
 	movq	%rsp, %rdi
-	xorl	%edx, %edx
 	call	ex_handler_\handler
 	jmp	default_return
 .endm
@@ -473,7 +471,7 @@ default_entry_no_ist	name=of		handler=terminate		error_code=0	vector=4
 default_entry_no_ist	name=br		handler=terminate		error_code=0	vector=5
 
 // #UD Invalid-Opcode Exception (Vector 6)
-default_entry_no_ist	name=ud		handler=terminate		error_code=0	vector=6
+default_entry_no_ist	name=ud		handler=invalid_opcode		error_code=0	vector=6
 
 // #DF Double-Fault Exception (Vector 8)
 safe_entry		name=df		handler=double_fault		error_code=1	vector=8
@@ -517,9 +515,6 @@ default_entry_no_ist	name=vc		handler=vmm_communication	error_code=1	vector=29
 
 // Scheduler vector
 irq_entry 	name=schedule	vector=0x20
-
-// INT 0x80 system call handler
-default_entry_no_ist	name=int80	handler=system_call		error_code=0	vector=0x80
 
 // Interrupt injection vector
 irq_entry	name=int_inj	vector=0x50

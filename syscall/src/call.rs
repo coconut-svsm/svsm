@@ -25,7 +25,7 @@ macro_rules! syscall {
                 // are valid.
                 unsafe {
                     asm!(
-                        "int 0x80",
+                        "syscall",
                         inout("rax") ret,
                         $(
                             in("rdi") $b,
@@ -49,7 +49,7 @@ macro_rules! syscall {
                 }
 
                 if ret > (u64::MAX - u64::from(u16::MAX)) {
-                    return Err(SysCallError::from(ret as i32));
+                    return Err(SysCallError::from(ret as i64));
                 }
                 Ok(ret)
             }
@@ -66,37 +66,67 @@ syscall! {
     syscall5(a, b, c, d, e, f,);
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum SysCallError {
-    EINVAL = -1,
-    ENOSYS = -2,
-    ENOMEM = -3,
-    EPERM = -4,
-    EFAULT = -5,
-    EBUSY = -6,
-    ENOTFOUND = -7,
-    ENOTSUPP = -8,
-    EEXIST = -9,
-    ERDONLY = -10,
-    EWRONLY = -11,
-    UNKNOWN = -128,
+/// Defines [`SysCallError`] and the conversion from its numbers.
+macro_rules! syscall_errors {
+    ($($name:ident = $val:literal,)+) => {
+        /// An error returned by a system call.
+        ///
+        /// The values are the negated Linux error numbers, which is how
+        /// system calls return errors.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum SysCallError {
+            $($name = $val,)+
+            /// An error number this type does not have. It is the last
+            /// number of the range Linux reserves for errors, which Linux
+            /// does not assign.
+            UNKNOWN = -4095,
+        }
+
+        impl SysCallError {
+            #[cfg(test)]
+            const ALL: &[Self] = &[$(Self::$name,)+];
+        }
+
+        impl From<i64> for SysCallError {
+            fn from(number: i64) -> Self {
+                match number {
+                    $($val => Self::$name,)+
+                    _ => Self::UNKNOWN,
+                }
+            }
+        }
+    };
 }
 
-impl From<i32> for SysCallError {
-    fn from(e: i32) -> SysCallError {
-        match e {
-            -1 => SysCallError::EINVAL,
-            -2 => SysCallError::ENOSYS,
-            -3 => SysCallError::ENOMEM,
-            -4 => SysCallError::EPERM,
-            -5 => SysCallError::EFAULT,
-            -6 => SysCallError::EBUSY,
-            -7 => SysCallError::ENOTFOUND,
-            -8 => SysCallError::ENOTSUPP,
-            -9 => SysCallError::EEXIST,
-            -10 => SysCallError::ERDONLY,
-            -11 => SysCallError::EWRONLY,
-            _ => SysCallError::UNKNOWN,
+syscall_errors! {
+    EPERM = -1,
+    ENOENT = -2,
+    EIO = -5,
+    EBADF = -9,
+    ENOMEM = -12,
+    EFAULT = -14,
+    EBUSY = -16,
+    EEXIST = -17,
+    ENOTDIR = -20,
+    EISDIR = -21,
+    EINVAL = -22,
+    ENOSYS = -38,
+    ENOTEMPTY = -39,
+    EOPNOTSUPP = -95,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_roundtrip() {
+        for &err in SysCallError::ALL {
+            assert_eq!(SysCallError::from(err as i64), err);
         }
+        assert_eq!(SysCallError::ENOSYS as i64, -38);
+        // Numbers that are not errors this type has.
+        assert_eq!(SysCallError::from(0), SysCallError::UNKNOWN);
+        assert_eq!(SysCallError::from(-4095), SysCallError::UNKNOWN);
     }
 }
