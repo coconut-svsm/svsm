@@ -87,8 +87,8 @@ concat-kdf = "0.1.0"
 gdbstub = { version = "0.7.10", default-features = false }
 gdbstub_arch = { version = "0.3.3" }
 fdt = { version = "0.1.5" }
-igvm = { version = "0.4.0", default-features = false }
-igvm_defs = { version = "0.4.0", default-features = false }
+igvm = { version = "0.5.0", default-features = false }
+igvm_defs = { version = "0.5.0", default-features = false }
 intrusive-collections = "0.10.0"
 kbs-types = { version = "0.14.0", default-features = false }
 libfuzzer-sys = "0.4"
@@ -100,7 +100,7 @@ serde = { version = "1.0.215", default-features = false }
 serde_json = { version = "1.0", default-features = false }
 sha2 = { version = "0.10.8", default-features = false }
 uuid = { version = "1.6.1", default-features = false }
-virtfw-libefi = { version = "0.6" }
+virtfw-libefi = { version = "0.6.5" }
 virtfw-varstore = { version = "0.6.1" }
 # We can pull virtio-drivers from crates.io once the vsock connection manager
 # changes have been released.
