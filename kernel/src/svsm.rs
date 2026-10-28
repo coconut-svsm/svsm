@@ -42,7 +42,7 @@ use svsm::fs::{initialize_fs, initialize_log_buffer, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
 use svsm::kernel_region::expand_kernel_heap;
 use svsm::kernel_region::new_kernel_region;
-use svsm::log_buffer::install_buffer_logger;
+use svsm::log_buffer::{install_early_logger, switch_to_log_buffer};
 use svsm::mm::FixedAddressMappingRange;
 use svsm::mm::PageBox;
 use svsm::mm::alloc::{free_multiple_pages, memory_info, print_memory_info, root_mem_init};
@@ -302,6 +302,9 @@ unsafe fn svsm_start(
     let mut launch_info = unsafe { ScopedMut::<KernelLaunchInfo>::new(li).unwrap() };
     init_platform_type(platform_type);
 
+    // Capture startup messages before the regular log buffer is available.
+    install_early_logger();
+
     GLOBAL_GDT.load_selectors();
 
     let mut early_idt = [IdtEntry::default(); EARLY_IDT_ENTRIES];
@@ -412,10 +415,6 @@ unsafe fn svsm_start(
         .env_setup_late(debug_serial_port)
         .expect("Late environment setup failed");
 
-    // it's important to make sure that idle task
-    // has been already created and console is
-    // initialized in env_setup_late() before this
-    install_buffer_logger();
     log::info!("CPU vendor: {:?}", platform.get_cpu_vendor());
     dump_cpuid_table();
 
@@ -546,6 +545,10 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     };
 
     start_secondary_cpus(&**SVSM_PLATFORM, &cpus, ap_start_context_ref.as_ref());
+
+    // Filesystem, log file, and console have already been initialized in `svsm_start()`.
+    // An idle task is now running on each CPU, so logging can be switched to the real log buffer.
+    switch_to_log_buffer();
 
     drop(ap_start_context_ref);
 
