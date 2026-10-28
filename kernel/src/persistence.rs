@@ -7,17 +7,25 @@
 extern crate alloc;
 use alloc::{boxed::Box, vec::Vec};
 
-use core::{fmt::Debug, future::Future, ops, pin, task};
+use core::{
+    fmt::Debug,
+    future::Future,
+    mem,
+    ops::{self, Range, RangeInclusive},
+    pin, task,
+};
 
+use cocoon_tpm_crypto::rng;
 use cocoon_tpm_storage::{
     blkdev::{
         NvBlkDev, NvBlkDevFuture, NvBlkDevIoError, NvBlkDevReadRequest, NvBlkDevWriteRequest,
     },
     fs::{
-        NvFs, NvFsError, NvFsFuture, NvFsIoError, TransactionCommitError,
+        NvFs, NvFsEnumerateCursor, NvFsError, NvFsFuture, NvFsIoError, NvFsReadContext,
+        NvFsUnlinkCursor, TransactionCommitError,
         cocoonfs::{self, CocoonFs},
     },
-    nvblkdev_err_internal,
+    nvblkdev_err_internal, nvfs_err_internal,
 };
 use cocoon_tpm_utils_async::sync_types;
 use cocoon_tpm_utils_common::{
@@ -821,6 +829,19 @@ pub fn persistence_available() -> bool {
     SVSM_COCOONFS_INSTANCE.try_get_inner().is_ok()
 }
 
+/// Instantiate a [`CocoonFs::StartReadSequenceFut`].
+///
+/// The [`CocoonFs::StartReadSequenceFut`] is not exactly small -- by instantiating it in an
+/// `inline(never)` function and `Box`ing it right after, the stack allocations required for the
+/// moves are hopefully getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_start_read_sequence_fut(
+    fs_instance: &pin::Pin<SvsmCocoonFsSyncRcPtrRefType<'_>>,
+) -> Result<Box<<SvsmCocoonFsType as NvFs>::StartReadSequenceFut>, NvFsError> {
+    let start_read_sequence_fut = SvsmCocoonFsType::start_read_sequence(fs_instance);
+    box_try_new(start_read_sequence_fut).map_err(NvFsError::from)
+}
+
 /// Instantiate a [`CocoonFs::StartTransactionFut`].
 ///
 /// The [`CocoonFs::StartTransactionFut`] is not exactly small -- by instantiating it in an
@@ -881,6 +902,54 @@ fn instantiate_cocoonfs_read_inode_fut(
     box_try_new(read_inode_fut).map_err(NvFsError::from)
 }
 
+/// Instantiate a [`CocoonFs::EnumerateCursor::NextFut`](NvFsEnumerateCursor::NextFut).
+///
+/// The [`CocoonFs::EnumerateCursor::NextFut`](NvFsEnumerateCursor::NextFut) is not exactly small
+/// -- by instantiating it in an `inline(never)` function and `Box`ing it right after, the stack
+/// allocations required for the moves are hopefully getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_enumerate_cursor_next_fut(
+    cursor: <SvsmCocoonFsType as NvFs>::EnumerateCursor,
+) -> Result<
+        Box<<<SvsmCocoonFsType as NvFs>::EnumerateCursor as NvFsEnumerateCursor<SvsmCocoonFsType>>::NextFut>,
+        NvFsError,
+>{
+    let next_fut = cursor.next();
+    box_try_new(next_fut).map_err(NvFsError::from)
+}
+
+/// Instantiate a [`CocoonFs::UnlinkCursor::NextFut`](NvFsUnlinkCursor::NextFut).
+///
+/// The [`CocoonFs::UnlinkCursor::NextFut`](NvFsUnlinkCursor::NextFut) is not exactly small -- by
+/// instantiating it in an `inline(never)` function and `Box`ing it right after, the stack
+/// allocations required for the moves are hopefully getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_unlink_cursor_next_fut(
+    cursor: <SvsmCocoonFsType as NvFs>::UnlinkCursor,
+) -> Result<
+    Box<<<SvsmCocoonFsType as NvFs>::UnlinkCursor as NvFsUnlinkCursor<SvsmCocoonFsType>>::NextFut>,
+    NvFsError,
+> {
+    let next_fut = cursor.next();
+    box_try_new(next_fut).map_err(NvFsError::from)
+}
+
+/// Instantiate a [`CocoonFs::UnlinkCursor::UnlinkInodeFut`](NvFsUnlinkCursor::UnlinkInodeFut).
+///
+/// The [`CocoonFs::UnlinkCursor::UnlinkInodeFut`](NvFsUnlinkCursor::UnlinkInodeFut) is not exactly small --
+/// by instantiating it in an `inline(never)` function and `Box`ing it right after, the stack
+/// allocations required for the moves are hopefully getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_unlink_cursor_unlink_inode_fut(
+    cursor: <SvsmCocoonFsType as NvFs>::UnlinkCursor,
+) -> Result<
+        Box<<<SvsmCocoonFsType as NvFs>::UnlinkCursor as NvFsUnlinkCursor<SvsmCocoonFsType>>::UnlinkInodeFut>,
+        NvFsError,
+>{
+    let unlink_inode_fut = cursor.unlink_current_inode();
+    box_try_new(unlink_inode_fut).map_err(NvFsError::from)
+}
+
 /// Synchronously write data to an inode on persistent storage.
 ///
 /// If the `inode` does not exist yet, it will get created. All of the inode's contents will get
@@ -904,6 +973,10 @@ fn instantiate_cocoonfs_read_inode_fut(
 /// * `data` - The data to write to `inode`.
 /// * `issue_sync` - Whether or not to issue a sync request to the underlying storage after the
 ///   write has completed. That's best effort though and relies on the host to behave well.
+///
+/// # See also:
+///
+/// * [`PersistenceMultiOp`].
 #[allow(unused)]
 pub fn persistence_write_inode_sync(
     inode: u64,
@@ -1070,6 +1143,1344 @@ pub fn persistence_read_inode_sync(inode: u64) -> Result<Option<Zeroizing<Vec<u8
             Ok((_, Err(e))) | Err(e) => {
                 log::error!("persistence read: failed to read inode data: {e:?}");
                 break Err(nvfs_error_to_svsm_error(e));
+            }
+        }
+    }
+}
+
+/// Synchronously unlink an inode from persistent storage.
+///
+/// If the `inode` does not exist on storage, the operation will complete with success.
+///
+/// Any error propagated back to the caller indicates an actual problem -- in particular requests to
+/// retry received from the backing filesystem implementation are handled transparently within
+/// `persistence_unlink_inode_sync()` itself.
+///
+/// # Arguments:
+///
+/// * `inode` - Number of the inode to unlink.
+/// * `issue_sync` - Whether or not to issue a sync request to the underlying storage after the
+///   write has completed. That's best effort though and relies on the host to behave well.
+///
+/// # See also:
+///
+/// * [`PersistenceMultiOp`].
+#[allow(unused)]
+pub fn persistence_unlink_inode_sync(inode: u64, issue_sync: bool) -> Result<(), SvsmError> {
+    let fs_instance = match SVSM_COCOONFS_INSTANCE.try_get_inner().ok() {
+        Some(fs_instance) => <pin::Pin<SvsmCocoonFsSyncRcPtrType> as sync_types::SyncRcPtr<
+            SvsmCocoonFsType,
+        >>::as_ref(fs_instance),
+        None => {
+            return Err(SvsmError::FileSystem(FsError::NotSupported));
+        }
+    };
+
+    let mut rng = match get_svsm_rng() {
+        Ok(rng) => rng,
+        Err(e) => {
+            log::error!("persistence write: failed to get rng instance: {e:?}");
+            return Err(nvfs_error_to_svsm_error(NvFsError::from(e)));
+        }
+    };
+
+    loop {
+        let mut transaction = match instantiate_cocoonfs_start_transaction_fut(&fs_instance)
+            .and_then(|mut start_transaction_fut| {
+                task_busypoll_to_completion(|cx| {
+                    NvFsFuture::poll(
+                        pin::Pin::new(&mut *start_transaction_fut),
+                        &fs_instance,
+                        &mut rng,
+                        cx,
+                    )
+                })
+            }) {
+            Ok(transaction) => transaction,
+            Err(NvFsError::Retry) => continue,
+            Err(e) => {
+                log::error!("persistence inode unlinking: failed to start transaction: {e:?}");
+                return Err(nvfs_error_to_svsm_error(e));
+            }
+        };
+
+        let cursor = match CocoonFs::unlink_cursor(&fs_instance, transaction, inode..=inode) {
+            Ok(Ok(cursor)) => cursor,
+            Err(e) | Ok(Err((_, e))) => {
+                if e == NvFsError::Retry {
+                    continue;
+                }
+
+                log::error!("persistence inode unlinking: failed to instantiate cursor: {e:?}");
+                return Err(nvfs_error_to_svsm_error(e));
+            }
+        };
+
+        // Advance the cursor to the first and only inode in the range.
+        let (cursor, inode) =
+            match instantiate_cocoonfs_unlink_cursor_next_fut(cursor).and_then(|mut next_fut| {
+                match task_busypoll_to_completion(|cx| {
+                    NvFsFuture::poll(pin::Pin::new(&mut *next_fut), &fs_instance, &mut rng, cx)
+                }) {
+                    Ok((cursor, Ok(inode))) => Ok((cursor, inode)),
+                    Err(e) | Ok((_, Err(e))) => Err(e),
+                }
+            }) {
+                Ok((cursor, inode)) => (cursor, inode),
+                Err(NvFsError::Retry) => continue,
+                Err(e) => {
+                    log::error!("persistence inode unlinking: failed to advance cursor: {e:?}");
+                    return Err(nvfs_error_to_svsm_error(e));
+                }
+            };
+
+        if inode.is_none() {
+            // No such inode exists.
+            return Ok(());
+        }
+
+        // Unlink the inode, which the cursor is pointing to, and obtain the transaction back.
+        let transaction = match instantiate_cocoonfs_unlink_cursor_unlink_inode_fut(cursor)
+            .and_then(|mut unlink_inode_fut| {
+                match task_busypoll_to_completion(|cx| {
+                    NvFsFuture::poll(
+                        pin::Pin::new(&mut *unlink_inode_fut),
+                        &fs_instance,
+                        &mut rng,
+                        cx,
+                    )
+                }) {
+                    Ok((cursor, Ok(()))) => Ok(cursor),
+                    Err(e) | Ok((_, Err(e))) => Err(e),
+                }
+            })
+            .and_then(|cursor| cursor.into_transaction())
+        {
+            Ok(transaction) => transaction,
+            Err(NvFsError::Retry) => continue,
+            Err(e) => {
+                log::error!("persistence inode unlinking: failed to unlink inode: {e:?}");
+                return Err(nvfs_error_to_svsm_error(e));
+            }
+        };
+
+        if let Err(e) =
+            instantiate_cocoonfs_commit_transaction_fut(&fs_instance, transaction, issue_sync)
+                .and_then(|mut commit_transaction_fut| {
+                    task_busypoll_to_completion(|cx| {
+                        NvFsFuture::poll(
+                            pin::Pin::new(&mut *commit_transaction_fut),
+                            &fs_instance,
+                            &mut rng,
+                            cx,
+                        )
+                    })
+                    .map_err(|e| match e {
+                        TransactionCommitError::LogStateClean { reason } => reason,
+                        TransactionCommitError::LogStateIndeterminate { reason } => reason,
+                    })
+                })
+        {
+            if e == NvFsError::Retry {
+                continue;
+            }
+
+            log::error!("persistence inode unlinking: failed to commit transaction: {e:?}");
+            return Err(nvfs_error_to_svsm_error(e));
+        }
+
+        break;
+    }
+
+    Ok(())
+}
+
+/// Error returned by various [`PersistenceMultiOp`] primitives.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct PersistenceMultiOpMemoryAllocationFailure;
+
+impl From<PersistenceMultiOpMemoryAllocationFailure> for SvsmError {
+    fn from(_value: PersistenceMultiOpMemoryAllocationFailure) -> Self {
+        SvsmError::Alloc(AllocError::OutOfMemory)
+    }
+}
+
+/// Staged sequence of persistent storage operations to commit atomically.
+///
+/// A sequence of inode [write](Self::stage_inode_write) and/or
+/// [unlinking](Self::stage_inode_range_unlinking) may get staged at a [`PersistenceMultiOp`]
+/// instance for eventual [commit](persistence_commit_multi_op_sync) to storage in one atomic step.
+///
+/// # See also:
+///
+/// * [`persistence_commit_multi_op_sync()`].
+#[derive(Debug)]
+pub struct PersistenceMultiOp {
+    /// Inode ranges staged for unlinking.
+    ///
+    /// The following invariants are held:
+    /// - The list contains no empty inode range.
+    /// - The inode ranges are all disjunct.
+    /// - The list is sorted by inode numbers.
+    ///
+    /// Furthermore, no entry from [`inode_writes`](Self::inode_writes) is contained in any of the
+    /// `inode_unlink_ranges` entries.
+    inode_unlink_ranges: Vec<RangeInclusive<u64>>,
+
+    /// Pairs of inode numbers and associated data to write to each respectively.
+    ///
+    /// The following invariants are held:
+    /// - The inode numers are all distinct.
+    /// - The list is sorted by inode numbers.
+    ///
+    /// Furthermore, no entry from `inode_writes` is contained in any of the
+    /// [`inode_unlink_ranges](Self::inode_unlink_ranges)` entries.
+    inode_writes: Vec<(u64, Zeroizing<Vec<u8>>)>,
+}
+
+impl PersistenceMultiOp {
+    /// Instantiate an empty [`PersistenceMultiOp`].
+    pub fn new() -> Self {
+        Self {
+            inode_unlink_ranges: Vec::new(),
+            inode_writes: Vec::new(),
+        }
+    }
+
+    /// Find the [`inode_unlink_ranges`](Self::inode_unlink_ranges) entries overlapping with a specified range.
+    ///
+    /// Find the index range into (sorted) [`inode_unlink_ranges`](Self::inode_unlink_ranges) that
+    /// spans any elements overlapping with the specified `query_inode_range`. In case an
+    /// [empty](Range::is_empty) index range is returned, there is no overlapping element and the
+    /// returned [`Range::start`] denotes the insertion point for `query_inode_range`.
+    ///
+    /// # Arguments:
+    ///
+    /// * `query_inode_range` - The inode range to search for. It must be non-empty.
+    fn inode_unlink_ranges_find_overlapping(
+        &self,
+        query_inode_range: &RangeInclusive<u64>,
+    ) -> Range<usize> {
+        debug_assert!(!query_inode_range.is_empty());
+        // Find the first entry in the sorted self.inode_unlink_ranges[] that possibly overlaps with the
+        // query range, if any. It is the first entry that has an end >= query_inode_range.start().
+        let b = self
+            .inode_unlink_ranges
+            .partition_point(|inode_unlink_range| {
+                inode_unlink_range.end() < query_inode_range.start()
+            });
+        // Find the first entry in the sorted self.inode_unlink_ranges[b..] that does not overlap with
+        // the query range, if any. It is the first entry that has a start > query_inode_range.end().
+        let e = b + self.inode_unlink_ranges[b..].partition_point(|inode_unlink_range| {
+            inode_unlink_range.start() <= query_inode_range.end()
+        });
+
+        b..e
+    }
+
+    /// Insert an inode range into [`inode_unlink_ranges`](Self::inode_unlink_ranges).
+    ///
+    /// Insert `inode_unlink_range` into [`inode_unlink_ranges`](Self::inode_unlink_ranges), merging
+    /// with preexisting entries as is required for maintaining the documented invariants.
+    ///
+    /// # Arguments:
+    ///
+    /// * `inode_unlink_range` - The inode range to insert.
+    fn inode_unlink_ranges_insert(
+        &mut self,
+        inode_unlink_range: &RangeInclusive<u64>,
+    ) -> Result<(), PersistenceMultiOpMemoryAllocationFailure> {
+        if inode_unlink_range.is_empty() {
+            return Ok(());
+        }
+
+        let mut overlapping = self.inode_unlink_ranges_find_overlapping(inode_unlink_range);
+        // Extend the overlapping index range to include direct neighbors of inode_unlink_range in
+        // order to enable merging. The .end() + 1 increments below cannot overflow, because the
+        // respective preconditions ensure that some subsequent range value exists.
+        if overlapping.start != 0
+            && self.inode_unlink_ranges[overlapping.start - 1].end() + 1
+                == *inode_unlink_range.start()
+        {
+            overlapping.start -= 1;
+        }
+        if overlapping.end != self.inode_unlink_ranges.len()
+            && inode_unlink_range.end() + 1 == *self.inode_unlink_ranges[overlapping.end].start()
+        {
+            overlapping.end += 1;
+        }
+
+        if overlapping.is_empty() {
+            // No overlapping preexisting entry, insert at the indicated position.
+            if self.inode_unlink_ranges.try_reserve(1).is_err() {
+                return Err(PersistenceMultiOpMemoryAllocationFailure);
+            }
+            let insertion_pos = overlapping.start;
+            self.inode_unlink_ranges
+                .insert(insertion_pos, inode_unlink_range.clone());
+        } else {
+            // Replace the preexisting overlapping entries by the union.
+            let inode_unlink_range = RangeInclusive::new(
+                *inode_unlink_range
+                    .start()
+                    .min(self.inode_unlink_ranges[overlapping.start].start()),
+                *inode_unlink_range
+                    .end()
+                    .max(self.inode_unlink_ranges[overlapping.end - 1].end()),
+            );
+            self.inode_unlink_ranges[overlapping.start] = inode_unlink_range;
+            self.inode_unlink_ranges
+                .drain(overlapping.start + 1..overlapping.end);
+        }
+
+        Ok(())
+    }
+
+    /// Remove an inode range from [`inode_unlink_ranges`](Self::inode_unlink_ranges).
+    ///
+    /// Remove any overlap with `inode_range` from
+    /// [`inode_unlink_ranges`](Self::inode_unlink_ranges), trimming any existing entries as is
+    /// required for maintaining the documented invariants.
+    ///
+    /// # Arguments:
+    ///
+    /// * `inode_range` - The inode range to remove.
+    fn inode_unlink_ranges_remove(
+        &mut self,
+        inode_range: &RangeInclusive<u64>,
+    ) -> Result<(), PersistenceMultiOpMemoryAllocationFailure> {
+        if inode_range.is_empty() {
+            return Ok(());
+        }
+
+        let mut overlapping = self.inode_unlink_ranges_find_overlapping(inode_range);
+        if overlapping.is_empty() {
+            return Ok(());
+        }
+
+        if overlapping.end == overlapping.start + 1
+            && self.inode_unlink_ranges[overlapping.start].start() < inode_range.start()
+            && self.inode_unlink_ranges[overlapping.start].end() > inode_range.end()
+        {
+            // The inode_range is contained properly in a single inode_unlink_ranges[] entry that
+            // must get split.
+            if self.inode_unlink_ranges.try_reserve(1).is_err() {
+                return Err(PersistenceMultiOpMemoryAllocationFailure);
+            }
+            self.inode_unlink_ranges.insert(
+                overlapping.end,
+                RangeInclusive::new(
+                    *inode_range.end() + 1,
+                    *self.inode_unlink_ranges[overlapping.start].end(),
+                ),
+            );
+            self.inode_unlink_ranges[overlapping.start] = RangeInclusive::new(
+                *self.inode_unlink_ranges[overlapping.start].start(),
+                *inode_range.start() - 1,
+            );
+        } else {
+            // Possibly trim the overlapping preexisting head and tail entries, if the remaining
+            // parts are non-trivial, and remove the ones contained fully in the inode_range.
+            if self.inode_unlink_ranges[overlapping.start].start() < inode_range.start() {
+                self.inode_unlink_ranges[overlapping.start] = RangeInclusive::new(
+                    *self.inode_unlink_ranges[overlapping.start].start(),
+                    *inode_range.start() - 1,
+                );
+                overlapping.start += 1;
+            }
+            if self.inode_unlink_ranges[overlapping.end - 1].end() > inode_range.end() {
+                self.inode_unlink_ranges[overlapping.end - 1] = RangeInclusive::new(
+                    *inode_range.end() + 1,
+                    *self.inode_unlink_ranges[overlapping.end - 1].end(),
+                );
+                overlapping.end -= 1;
+            }
+            // A split would have been handled in the other branch above.
+            debug_assert!(overlapping.start <= overlapping.end);
+            self.inode_unlink_ranges.drain(overlapping);
+        }
+
+        Ok(())
+    }
+
+    /// Find the [`inode_writes`](Self::inode_writes) entries contained within a specified range.
+    ///
+    /// Find the index range into (sorted) [`inode_writes`](Self::inode_writes) that
+    /// spans any elements contained within the specified `query_inode_range`.
+    ///
+    /// # Arguments:
+    ///
+    /// * `query_inode_range` - The inode range to search for. It must be non-empty.
+    fn inode_writes_find_overlapping(
+        &self,
+        query_inode_range: &RangeInclusive<u64>,
+    ) -> Range<usize> {
+        let b = self
+            .inode_writes
+            .partition_point(|inode_write| inode_write.0 < *query_inode_range.start());
+        let e = b + self.inode_writes[b..]
+            .partition_point(|inode_write| inode_write.0 <= *query_inode_range.end());
+        b..e
+    }
+
+    /// Stage an inode unlinking operation.
+    ///
+    /// Register all inodes in the `inode_unlink_range` for unlinking. Any previously [staged
+    /// writes](Self::stage_inode_write) to inodes in that range will be dismissed.
+    ///
+    /// # Arguments:
+    ///
+    /// * `inode_unlink_range` - The range of inodes to unlink.
+    pub fn stage_inode_range_unlinking(
+        &mut self,
+        inode_unlink_range: RangeInclusive<u64>,
+    ) -> Result<(), PersistenceMultiOpMemoryAllocationFailure> {
+        if inode_unlink_range.is_empty() {
+            return Ok(());
+        }
+
+        self.inode_unlink_ranges_insert(&inode_unlink_range)?;
+
+        // Remove any overlapping inode_writes entries.
+        self.inode_writes
+            .drain(self.inode_writes_find_overlapping(&inode_unlink_range));
+        Ok(())
+    }
+
+    /// Stage an inode data write operation.
+    ///
+    /// Setup a write of `data` to the inode identified by `inode`. Partial writes are not supported
+    /// and all if the `inode`'s` data on storage will get replaced with `data`. Any previously
+    /// [stage unlinking operation](Self::stage_inode_range_unlinking) for `inode` will get
+    /// dismissed. If the `inode` does not exist yet, it will get created at
+    /// commit time.
+    ///
+    /// # Arguments:
+    ///
+    /// * `inode` - The inode to write to.
+    /// * `data` - The data to write to `inode`.
+    pub fn stage_inode_write(
+        &mut self,
+        inode: u64,
+        data: Zeroizing<Vec<u8>>,
+    ) -> Result<(), PersistenceMultiOpMemoryAllocationFailure> {
+        let insertion_pos = match self
+            .inode_writes
+            .binary_search_by(|inode_write| inode_write.0.cmp(&inode))
+        {
+            Ok(matching_pos) => {
+                // Update the matching preexisting entry and return.
+                self.inode_writes[matching_pos].1 = data;
+                return Ok(());
+            }
+            Err(insertion_pos) => insertion_pos,
+        };
+
+        // Do the memory allocation before removing any matching unlinking entry, so that a failure
+        // will leave self in the original state.
+        if self.inode_writes.try_reserve(1).is_err() {
+            return Err(PersistenceMultiOpMemoryAllocationFailure);
+        }
+
+        self.inode_unlink_ranges_remove(&(inode..=inode))?;
+        self.inode_writes.insert(insertion_pos, (inode, data));
+
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn check_invariants(&self) {
+        let mut last_inode_unlink_range: Option<&RangeInclusive<u64>> = None;
+        for cur_inode_unlink_range in self.inode_unlink_ranges.iter() {
+            assert!(!cur_inode_unlink_range.is_empty());
+            if let Some(last_inode_unlink_range) = last_inode_unlink_range {
+                assert!(
+                    last_inode_unlink_range.end() < cur_inode_unlink_range.start()
+                        && last_inode_unlink_range.end() + 1 != *cur_inode_unlink_range.start()
+                );
+            }
+            last_inode_unlink_range = Some(cur_inode_unlink_range);
+            for cur_inode_write in self.inode_writes.iter() {
+                assert!(!cur_inode_unlink_range.contains(&cur_inode_write.0));
+            }
+        }
+
+        for i in 1..self.inode_writes.len() {
+            assert!(self.inode_writes[i - 1].0 < self.inode_writes[i].0);
+        }
+    }
+}
+
+impl Default for PersistenceMultiOp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[test]
+fn test_multi_op_stage_unlink_separate() {
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(0..=1).unwrap();
+    ops.stage_inode_range_unlinking(3..=3).unwrap();
+    ops.check_invariants();
+    ops.stage_inode_range_unlinking(5..=6).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [0..=1, 3..=3, 5..=6]);
+
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(5..=6).unwrap();
+    ops.stage_inode_range_unlinking(3..=3).unwrap();
+    ops.check_invariants();
+    ops.stage_inode_range_unlinking(0..=1).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [0..=1, 3..=3, 5..=6]);
+
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(0..=1).unwrap();
+    ops.stage_inode_range_unlinking(5..=6).unwrap();
+    ops.check_invariants();
+    ops.stage_inode_range_unlinking(3..=3).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [0..=1, 3..=3, 5..=6]);
+}
+
+#[test]
+fn test_multi_op_stage_unlink_neighbors() {
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(0..=1).unwrap();
+    ops.stage_inode_range_unlinking(2..=2).unwrap();
+    ops.check_invariants();
+    ops.stage_inode_range_unlinking(3..=4).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [0..=4]);
+
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(3..=4).unwrap();
+    ops.stage_inode_range_unlinking(2..=2).unwrap();
+    ops.check_invariants();
+    ops.stage_inode_range_unlinking(0..=1).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [0..=4]);
+
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(0..=1).unwrap();
+    ops.stage_inode_range_unlinking(3..=4).unwrap();
+    ops.check_invariants();
+    ops.stage_inode_range_unlinking(2..=2).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [0..=4]);
+}
+
+#[test]
+fn test_multi_op_stage_unlink_overlapping() {
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(0..=0).unwrap();
+    ops.stage_inode_range_unlinking(2..=3).unwrap();
+    ops.stage_inode_range_unlinking(5..=6).unwrap();
+    ops.stage_inode_range_unlinking(8..=8).unwrap();
+    ops.check_invariants();
+    ops.stage_inode_range_unlinking(3..=5).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [0..=0, 2..=6, 8..=8]);
+
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(0..=0).unwrap();
+    ops.stage_inode_range_unlinking(2..=3).unwrap();
+    ops.stage_inode_range_unlinking(5..=6).unwrap();
+    ops.stage_inode_range_unlinking(8..=8).unwrap();
+    ops.check_invariants();
+    ops.stage_inode_range_unlinking(3..=4).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [0..=0, 2..=6, 8..=8]);
+
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(0..=0).unwrap();
+    ops.stage_inode_range_unlinking(2..=3).unwrap();
+    ops.stage_inode_range_unlinking(5..=6).unwrap();
+    ops.stage_inode_range_unlinking(8..=8).unwrap();
+    ops.check_invariants();
+    ops.stage_inode_range_unlinking(4..=5).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [0..=0, 2..=6, 8..=8]);
+
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(0..=0).unwrap();
+    ops.stage_inode_range_unlinking(2..=3).unwrap();
+    ops.stage_inode_range_unlinking(5..=6).unwrap();
+    ops.stage_inode_range_unlinking(8..=8).unwrap();
+    ops.check_invariants();
+    ops.stage_inode_range_unlinking(2..=6).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [0..=0, 2..=6, 8..=8]);
+}
+
+#[test]
+fn test_multi_op_stage_write_unlinked() {
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(1..=3).unwrap();
+    ops.stage_inode_write(1, Zeroizing::new(Vec::new()))
+        .unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [2..=3]);
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [1],
+    );
+    ops.stage_inode_write(2, Zeroizing::new(Vec::new()))
+        .unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [3..=3]);
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [1, 2],
+    );
+    ops.stage_inode_write(3, Zeroizing::new(Vec::new()))
+        .unwrap();
+    ops.check_invariants();
+    assert!(ops.inode_unlink_ranges.is_empty());
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [1, 2, 3],
+    );
+
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(1..=3).unwrap();
+    ops.stage_inode_write(2, Zeroizing::new(Vec::new()))
+        .unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [1..=1, 3..=3]);
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [2],
+    );
+    ops.stage_inode_write(1, Zeroizing::new(Vec::new()))
+        .unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [3..=3]);
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [1, 2],
+    );
+    ops.stage_inode_write(3, Zeroizing::new(Vec::new()))
+        .unwrap();
+    ops.check_invariants();
+    assert!(ops.inode_unlink_ranges.is_empty());
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [1, 2, 3],
+    );
+
+    let mut ops = PersistenceMultiOp::new();
+    ops.stage_inode_range_unlinking(1..=3).unwrap();
+    ops.stage_inode_write(3, Zeroizing::new(Vec::new()))
+        .unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [1..=2]);
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [3],
+    );
+    ops.stage_inode_write(2, Zeroizing::new(Vec::new()))
+        .unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [1..=1]);
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [2, 3],
+    );
+    ops.stage_inode_write(1, Zeroizing::new(Vec::new()))
+        .unwrap();
+    ops.check_invariants();
+    assert!(ops.inode_unlink_ranges.is_empty());
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [1, 2, 3],
+    );
+}
+
+#[test]
+fn test_multi_op_stage_unlink_written() {
+    let mut ops = PersistenceMultiOp::new();
+    for i in 1..=3 {
+        ops.stage_inode_write(i, Zeroizing::new(Vec::new()))
+            .unwrap();
+    }
+    ops.stage_inode_range_unlinking(1..=3).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [1..=3]);
+    assert!(ops.inode_writes.is_empty());
+
+    let mut ops = PersistenceMultiOp::new();
+    for i in 1..=3 {
+        ops.stage_inode_write(i, Zeroizing::new(Vec::new()))
+            .unwrap();
+    }
+    ops.stage_inode_range_unlinking(0..=4).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [0..=4]);
+    assert!(ops.inode_writes.is_empty());
+
+    let mut ops = PersistenceMultiOp::new();
+    for i in 1..=3 {
+        ops.stage_inode_write(i, Zeroizing::new(Vec::new()))
+            .unwrap();
+    }
+    ops.stage_inode_range_unlinking(1..=1).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [1..=1]);
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [2, 3],
+    );
+
+    let mut ops = PersistenceMultiOp::new();
+    for i in 1..=3 {
+        ops.stage_inode_write(i, Zeroizing::new(Vec::new()))
+            .unwrap();
+    }
+    ops.stage_inode_range_unlinking(2..=2).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [2..=2]);
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [1, 3],
+    );
+
+    let mut ops = PersistenceMultiOp::new();
+    for i in 1..=3 {
+        ops.stage_inode_write(i, Zeroizing::new(Vec::new()))
+            .unwrap();
+    }
+    ops.stage_inode_range_unlinking(3..=3).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [3..=3]);
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [1, 2],
+    );
+
+    let mut ops = PersistenceMultiOp::new();
+    for i in 1..=3 {
+        ops.stage_inode_write(i, Zeroizing::new(Vec::new()))
+            .unwrap();
+    }
+    ops.stage_inode_range_unlinking(0..=2).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [0..=2]);
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [3],
+    );
+
+    let mut ops = PersistenceMultiOp::new();
+    for i in 1..=3 {
+        ops.stage_inode_write(i, Zeroizing::new(Vec::new()))
+            .unwrap();
+    }
+    ops.stage_inode_range_unlinking(2..=4).unwrap();
+    ops.check_invariants();
+    assert_eq!(ops.inode_unlink_ranges.as_slice(), [2..=4]);
+    assert_eq!(
+        ops.inode_writes
+            .iter()
+            .map(|(inode, _)| *inode)
+            .collect::<Vec<u64>>(),
+        [1],
+    );
+}
+
+/// Commit a [`PersistenceMultiOp`] to storage.
+struct CommitPersistenceMultiOpFuture<FS: NvFs> {
+    ops: PersistenceMultiOp,
+    issue_sync: bool,
+    fut_state: CommitPersistenceMultiOpFutureState<FS>,
+}
+
+/// Internal [`CommitPersistenceMultiOpFuture`] state-machine state.
+enum CommitPersistenceMultiOpFutureState<FS: NvFs> {
+    Init,
+    StartTransaction {
+        start_transaction_fut: FS::StartTransactionFut,
+    },
+    InstantiateUnlinkCursor {
+        next_staged_inode_unlink_ranges_index: usize,
+        // Is mandatory, lives in an Option<> only so that it can be taken out of a mutable self.
+        transaction: Option<FS::Transaction>,
+    },
+    AdvanceUnlinkCursor {
+        cur_staged_inode_unlink_ranges_index: usize,
+        cursor_next_fut: <FS::UnlinkCursor as NvFsUnlinkCursor<FS>>::NextFut,
+    },
+    UnlinkInode {
+        cur_staged_inode_unlink_ranges_index: usize,
+        cursor_unlink_fut: <FS::UnlinkCursor as NvFsUnlinkCursor<FS>>::UnlinkInodeFut,
+    },
+    WriteInodePrepare {
+        next_staged_inode_writes_index: usize,
+        // Is mandatory, lives in an Option<> only so that it can be taken out of a mutable self.
+        transaction: Option<FS::Transaction>,
+    },
+    WriteInode {
+        cur_staged_inode_writes_index: usize,
+        write_fut: FS::WriteInodeFut,
+    },
+    CommitTransaction {
+        commit_transaction_fut: FS::CommitTransactionFut,
+    },
+    Done,
+}
+
+impl<FS: NvFs> CommitPersistenceMultiOpFuture<FS> {
+    /// Instantiate a [`CommitPersistenceMultiOpFuture`].
+    ///
+    /// # Arguments:
+    ///
+    /// * `ops` - The [`PersistenceMultiOp`] to commit to persistent storage.
+    /// * `issue_sync` - Whether or not to issue a sync request to the underlying storage after the
+    ///   writes have completed. That's best effort though and relies on the host to behave well.
+    fn new(ops: PersistenceMultiOp, issue_sync: bool) -> Self {
+        Self {
+            ops,
+            issue_sync,
+            fut_state: CommitPersistenceMultiOpFutureState::Init,
+        }
+    }
+}
+
+impl<FS: NvFs> NvFsFuture<FS> for CommitPersistenceMultiOpFuture<FS>
+where
+    FS::Transaction: Send,
+{
+    type Output = Result<(), NvFsError>;
+
+    fn poll(
+        self: pin::Pin<&mut Self>,
+        fs_instance: &FS::SyncRcPtrRef<'_>,
+        rng: &mut dyn rng::RngCoreDispatchable,
+        cx: &mut task::Context<'_>,
+    ) -> task::Poll<Self::Output> {
+        // SAFETY: the Pin is only relevant for the inner NvFsFutures, and these all get repinned below.
+        let this = unsafe { pin::Pin::into_inner_unchecked(self) };
+
+        loop {
+            match &mut this.fut_state {
+                CommitPersistenceMultiOpFutureState::Init => {
+                    // Complete early in case there's nothing to do.
+                    if this.ops.inode_unlink_ranges.is_empty() && this.ops.inode_writes.is_empty() {
+                        this.fut_state = CommitPersistenceMultiOpFutureState::Done;
+                        return task::Poll::Ready(Ok(()));
+                    }
+
+                    this.fut_state = CommitPersistenceMultiOpFutureState::StartTransaction {
+                        start_transaction_fut: FS::start_transaction(fs_instance, None),
+                    };
+                }
+                CommitPersistenceMultiOpFutureState::StartTransaction {
+                    start_transaction_fut,
+                } => {
+                    // SAFETY: is a projection Pin.
+                    let start_transaction_fut =
+                        unsafe { pin::Pin::new_unchecked(start_transaction_fut) };
+                    let transaction =
+                        match NvFsFuture::poll(start_transaction_fut, fs_instance, rng, cx) {
+                            task::Poll::Ready(Ok(transaction)) => transaction,
+                            task::Poll::Ready(Err(NvFsError::Retry)) => {
+                                this.fut_state = CommitPersistenceMultiOpFutureState::Init;
+                                continue;
+                            }
+                            task::Poll::Ready(Err(e)) => {
+                                this.fut_state = CommitPersistenceMultiOpFutureState::Done;
+                                return task::Poll::Ready(Err(e));
+                            }
+                            task::Poll::Pending => return task::Poll::Pending,
+                        };
+
+                    // Proceed to apply the staged ops at the transaction. If there's nothing
+                    // to unlink, proceed directly to handling the inode write ops.
+                    this.fut_state = if !this.ops.inode_unlink_ranges.is_empty() {
+                        CommitPersistenceMultiOpFutureState::InstantiateUnlinkCursor {
+                            next_staged_inode_unlink_ranges_index: 0,
+                            transaction: Some(transaction),
+                        }
+                    } else {
+                        CommitPersistenceMultiOpFutureState::WriteInodePrepare {
+                            next_staged_inode_writes_index: 0,
+                            transaction: Some(transaction),
+                        }
+                    };
+                }
+                CommitPersistenceMultiOpFutureState::InstantiateUnlinkCursor {
+                    next_staged_inode_unlink_ranges_index,
+                    transaction,
+                } => {
+                    let transaction = match transaction.take() {
+                        Some(transaction) => transaction,
+                        None => {
+                            this.fut_state = CommitPersistenceMultiOpFutureState::Done;
+                            return task::Poll::Ready(Err(nvfs_err_internal!()));
+                        }
+                    };
+
+                    if *next_staged_inode_unlink_ranges_index == this.ops.inode_unlink_ranges.len()
+                    {
+                        // All done with the unlinking ops, proceed to handling the inode writes, if any.
+                        this.fut_state = CommitPersistenceMultiOpFutureState::WriteInodePrepare {
+                            next_staged_inode_writes_index: 0,
+                            transaction: Some(transaction),
+                        };
+                        continue;
+                    }
+
+                    let unlink_cursor = match FS::unlink_cursor(
+                        fs_instance,
+                        transaction,
+                        this.ops.inode_unlink_ranges[*next_staged_inode_unlink_ranges_index]
+                            .clone(),
+                    ) {
+                        Ok(Ok(unlink_cursor)) => unlink_cursor,
+                        Err(e) | Ok(Err((_, e))) => {
+                            if e == NvFsError::Retry {
+                                // Our transaction became stale due to a concurrent NvFs transaction
+                                // commit. Start all over.
+                                this.fut_state = CommitPersistenceMultiOpFutureState::Init;
+                                continue;
+                            }
+
+                            this.fut_state = CommitPersistenceMultiOpFutureState::Done;
+                            return task::Poll::Ready(Err(e));
+                        }
+                    };
+
+                    // Advance the unlink_cursor to the first existing inode in the range.
+                    this.fut_state = CommitPersistenceMultiOpFutureState::AdvanceUnlinkCursor {
+                        cur_staged_inode_unlink_ranges_index:
+                            *next_staged_inode_unlink_ranges_index,
+                        cursor_next_fut: unlink_cursor.next(),
+                    };
+                }
+                CommitPersistenceMultiOpFutureState::AdvanceUnlinkCursor {
+                    cur_staged_inode_unlink_ranges_index,
+                    cursor_next_fut,
+                } => {
+                    // SAFETY: is a projection Pin.
+                    let cursor_next_fut = unsafe { pin::Pin::new_unchecked(cursor_next_fut) };
+                    let (unlink_cursor, at_end) =
+                        match NvFsFuture::poll(cursor_next_fut, fs_instance, rng, cx) {
+                            task::Poll::Ready(Ok((unlink_cursor, Ok(cur_inode)))) => {
+                                (unlink_cursor, cur_inode.is_none())
+                            }
+                            task::Poll::Ready(Err(e) | Ok((_, Err(e)))) => {
+                                if e == NvFsError::Retry {
+                                    // Our transaction became stale due to a concurrent NvFs transaction
+                                    // commit. Start all over.
+                                    this.fut_state = CommitPersistenceMultiOpFutureState::Init;
+                                    continue;
+                                }
+
+                                this.fut_state = CommitPersistenceMultiOpFutureState::Done;
+                                return task::Poll::Ready(Err(e));
+                            }
+                            task::Poll::Pending => return task::Poll::Pending,
+                        };
+
+                    this.fut_state = if !at_end {
+                        // Unlink the current inode at point.
+                        CommitPersistenceMultiOpFutureState::UnlinkInode {
+                            cur_staged_inode_unlink_ranges_index:
+                                *cur_staged_inode_unlink_ranges_index,
+                            cursor_unlink_fut: unlink_cursor.unlink_current_inode(),
+                        }
+                    } else {
+                        // The current inode range has been exhausted. Proceed to the next, if any.
+                        let transaction = match unlink_cursor.into_transaction() {
+                            Ok(transaction) => transaction,
+                            Err(e) => {
+                                if e == NvFsError::Retry {
+                                    // Our transaction became stale due to a concurrent NvFs transaction
+                                    // commit. Start all over.
+                                    this.fut_state = CommitPersistenceMultiOpFutureState::Init;
+                                    continue;
+                                }
+
+                                this.fut_state = CommitPersistenceMultiOpFutureState::Done;
+                                return task::Poll::Ready(Err(e));
+                            }
+                        };
+                        CommitPersistenceMultiOpFutureState::InstantiateUnlinkCursor {
+                            next_staged_inode_unlink_ranges_index:
+                                *cur_staged_inode_unlink_ranges_index + 1,
+                            transaction: Some(transaction),
+                        }
+                    };
+                }
+                CommitPersistenceMultiOpFutureState::UnlinkInode {
+                    cur_staged_inode_unlink_ranges_index,
+                    cursor_unlink_fut,
+                } => {
+                    // SAFETY: is a projection Pin.
+                    let cursor_unlink_fut = unsafe { pin::Pin::new_unchecked(cursor_unlink_fut) };
+                    let unlink_cursor =
+                        match NvFsFuture::poll(cursor_unlink_fut, fs_instance, rng, cx) {
+                            task::Poll::Ready(Ok((unlink_cursor, Ok(())))) => unlink_cursor,
+                            task::Poll::Ready(Err(e) | Ok((_, Err(e)))) => {
+                                if e == NvFsError::Retry {
+                                    // Our transaction became stale due to a concurrent NvFs transaction
+                                    // commit. Start all over.
+                                    this.fut_state = CommitPersistenceMultiOpFutureState::Init;
+                                    continue;
+                                }
+
+                                this.fut_state = CommitPersistenceMultiOpFutureState::Done;
+                                return task::Poll::Ready(Err(e));
+                            }
+                            task::Poll::Pending => return task::Poll::Pending,
+                        };
+                    // Advance the unlink_cursor to the next inode in the range, if any.
+                    this.fut_state = CommitPersistenceMultiOpFutureState::AdvanceUnlinkCursor {
+                        cur_staged_inode_unlink_ranges_index: *cur_staged_inode_unlink_ranges_index,
+                        cursor_next_fut: unlink_cursor.next(),
+                    };
+                }
+                CommitPersistenceMultiOpFutureState::WriteInodePrepare {
+                    next_staged_inode_writes_index,
+                    transaction,
+                } => {
+                    let transaction = match transaction.take() {
+                        Some(transaction) => transaction,
+                        None => {
+                            this.fut_state = CommitPersistenceMultiOpFutureState::Done;
+                            return task::Poll::Ready(Err(nvfs_err_internal!()));
+                        }
+                    };
+
+                    // If all pending inode write requests have been processed, proceed to the transaction commit.
+                    if *next_staged_inode_writes_index == this.ops.inode_writes.len() {
+                        this.fut_state = CommitPersistenceMultiOpFutureState::CommitTransaction {
+                            commit_transaction_fut: FS::commit_transaction(
+                                fs_instance,
+                                transaction,
+                                None,
+                                None,
+                                this.issue_sync,
+                            ),
+                        };
+                        continue;
+                    }
+
+                    let (inode, data) = &mut this.ops.inode_writes[*next_staged_inode_writes_index];
+                    let inode = *inode;
+                    // Temporarily steal the data buffer. It will get returned back upon write_fut completion.
+                    let data = mem::take(data);
+                    this.fut_state = CommitPersistenceMultiOpFutureState::WriteInode {
+                        cur_staged_inode_writes_index: *next_staged_inode_writes_index,
+                        write_fut: FS::write_inode(fs_instance, transaction, inode, 0, 0, data),
+                    };
+                }
+                CommitPersistenceMultiOpFutureState::WriteInode {
+                    cur_staged_inode_writes_index,
+                    write_fut,
+                } => {
+                    // SAFETY: is a projection Pin.
+                    let write_fut = unsafe { pin::Pin::new_unchecked(write_fut) };
+                    let transaction = match NvFsFuture::poll(write_fut, fs_instance, rng, cx) {
+                        task::Poll::Ready((data, result)) => {
+                            // Reinstall the temporarily stolen data back.
+                            this.ops.inode_writes[*cur_staged_inode_writes_index].1 = data;
+
+                            match result {
+                                Ok((transaction, Ok(()))) => transaction,
+                                Err(e) | Ok((_, Err(e))) => {
+                                    if e == NvFsError::Retry {
+                                        // Our transaction became stale due to a concurrent NvFs transaction
+                                        // commit. Start all over.
+                                        this.fut_state = CommitPersistenceMultiOpFutureState::Init;
+                                        continue;
+                                    }
+
+                                    this.fut_state = CommitPersistenceMultiOpFutureState::Done;
+                                    return task::Poll::Ready(Err(e));
+                                }
+                            }
+                        }
+                        task::Poll::Pending => return task::Poll::Pending,
+                    };
+                    this.fut_state = CommitPersistenceMultiOpFutureState::WriteInodePrepare {
+                        next_staged_inode_writes_index: *cur_staged_inode_writes_index + 1,
+                        transaction: Some(transaction),
+                    };
+                }
+                CommitPersistenceMultiOpFutureState::CommitTransaction {
+                    commit_transaction_fut,
+                } => {
+                    // SAFETY: is a projection Pin.
+                    let commit_transaction_fut =
+                        unsafe { pin::Pin::new_unchecked(commit_transaction_fut) };
+                    match NvFsFuture::poll(commit_transaction_fut, fs_instance, rng, cx) {
+                        task::Poll::Ready(Ok(())) => {
+                            // All done.
+                            this.fut_state = CommitPersistenceMultiOpFutureState::Done;
+                            return task::Poll::Ready(Ok(()));
+                        }
+                        task::Poll::Ready(Err(TransactionCommitError::LogStateClean {
+                            reason: e,
+                        })) => {
+                            if e == NvFsError::Retry {
+                                // Our transaction became stale due to a concurrent NvFs transaction
+                                // commit. Start all over.
+                                this.fut_state = CommitPersistenceMultiOpFutureState::Init;
+                                continue;
+                            }
+
+                            this.fut_state = CommitPersistenceMultiOpFutureState::Done;
+                            return task::Poll::Ready(Err(e));
+                        }
+                        task::Poll::Ready(Err(TransactionCommitError::LogStateIndeterminate {
+                            reason: e,
+                        })) => {
+                            // In case the NvFs journal log is in an indeterminate state,
+                            // something's seriously off. In order to avoid indefinite loops, do not
+                            // attempt to retry on NvFsError::Retry. Note that NvFsError::Retry
+                            // shouldn't get appear here anyway, but make the non-handling explicit.
+                            this.fut_state = CommitPersistenceMultiOpFutureState::Done;
+                            return task::Poll::Ready(Err(e));
+                        }
+                        task::Poll::Pending => return task::Poll::Pending,
+                    };
+                }
+                CommitPersistenceMultiOpFutureState::Done => unreachable!(),
+            }
+        }
+    }
+}
+
+/// Instantiate a [`CommitPersistenceMultiOpFuture`].
+///
+/// The [`CommitPersistenceMultiOpFuture`] is huge, and by instantiating it in an `inline(never)`
+/// function and `Box`ing it right after, the stack allocations required for the moves are hopefully
+/// getting freed up quickly again.
+#[inline(never)]
+fn instantiate_commit_multi_op_fut<FS: NvFs>(
+    ops: PersistenceMultiOp,
+    issue_sync: bool,
+) -> Result<Box<CommitPersistenceMultiOpFuture<FS>>, NvFsError> {
+    box_try_new(CommitPersistenceMultiOpFuture::new(ops, issue_sync)).map_err(NvFsError::from)
+}
+
+/// Synchronously commit a [`PersistenceMultiOp`] to storage.
+///
+/// Apply the operations staged at `ops` atomically to storage.
+///
+/// Any error propagated back to the caller indicates an actual problem -- in particular requests to
+/// retry received from the backing filesystem implementation are handled transparently within
+/// `persistence_commit_multi_op_sync()` itself.
+///
+/// # Arguments:
+///
+/// * `ops` - The [`PersistenceMultiOp`] to commit to persistent storage.
+/// * `issue_sync` - Whether or not to issue a sync request to the underlying storage after the
+///   writes have completed. That's best effort though and relies on the host to behave well.
+#[allow(unused)]
+pub fn persistence_commit_multi_op_sync(
+    ops: PersistenceMultiOp,
+    issue_sync: bool,
+) -> Result<(), SvsmError> {
+    let fs_instance = match SVSM_COCOONFS_INSTANCE.try_get_inner().ok() {
+        Some(fs_instance) => <pin::Pin<SvsmCocoonFsSyncRcPtrType> as sync_types::SyncRcPtr<
+            SvsmCocoonFsType,
+        >>::as_ref(fs_instance),
+        None => {
+            return Err(SvsmError::FileSystem(FsError::NotSupported));
+        }
+    };
+
+    let mut rng = match get_svsm_rng() {
+        Ok(rng) => rng,
+        Err(e) => {
+            log::error!("persistence read: failed to get rng instance: {e:?}");
+            return Err(nvfs_error_to_svsm_error(NvFsError::from(e)));
+        }
+    };
+
+    instantiate_commit_multi_op_fut::<SvsmCocoonFsType>(ops, issue_sync)
+        .and_then(|mut commit_multi_op_fut| {
+            task_busypoll_to_completion(|cx| {
+                NvFsFuture::poll(
+                    pin::Pin::new(&mut *commit_multi_op_fut),
+                    &fs_instance,
+                    &mut rng,
+                    cx,
+                )
+            })
+        })
+        .map_err(nvfs_error_to_svsm_error)
+}
+
+/// Enumerate existing inodes, invoking a callback on each.
+///
+/// Iterate over all existing inodes within `inode_range` and invoke the provided callback `f` on
+/// each. The callback is provided the respective inode number and supposed to return an
+/// `Option`. If `None`, the enumeration continues. If `Some`, the enumeration stops and the value
+/// is passed upwards.
+///
+/// Note that while it would be possible to commit changes to the underlying storage from the
+/// callback `f`, that would be terribly inefficient. In such situations it's recommended to
+/// accumulate an in-memory representation of the required modifications and apply them only after
+/// the enumeration has completed.
+///
+/// Any error propagated back to the caller indicates an actual problem -- in particular requests to
+/// retry received from the backing filesystem implementation are handled transparently within
+/// `persistence_enumerate_inodes_sync()` itself: the enumeration gets restarted transparently at
+/// the current point in that case.
+///
+/// # Arguments:
+///
+/// * `inode_range` - The range to restrict the enumeration to.
+/// * `f` - The callback to invoke on each existing inode.
+pub fn persistence_enumerate_inodes_sync<R>(
+    inode_range: RangeInclusive<u64>,
+    f: &mut dyn FnMut(u64) -> Option<R>,
+) -> Result<Option<R>, SvsmError> {
+    if inode_range.is_empty() {
+        return Ok(None);
+    }
+
+    let fs_instance = match SVSM_COCOONFS_INSTANCE.try_get_inner().ok() {
+        Some(fs_instance) => <pin::Pin<SvsmCocoonFsSyncRcPtrType> as sync_types::SyncRcPtr<
+            SvsmCocoonFsType,
+        >>::as_ref(fs_instance),
+        None => {
+            return Err(SvsmError::FileSystem(FsError::NotSupported));
+        }
+    };
+
+    let mut rng = match get_svsm_rng() {
+        Ok(rng) => rng,
+        Err(e) => {
+            log::error!("persistence read: failed to get rng instance: {e:?}");
+            return Err(nvfs_error_to_svsm_error(NvFsError::from(e)));
+        }
+    };
+
+    let mut last_visited_inode = None;
+
+    'restart_read_sequence: loop {
+        // Determine the remaining range.
+        let inode_range = match last_visited_inode {
+            Some(last_visited_inode) => {
+                if last_visited_inode == *inode_range.end() {
+                    // All done.
+                    return Ok(None);
+                }
+                RangeInclusive::new(last_visited_inode + 1, *inode_range.end())
+            }
+            None => inode_range.clone(),
+        };
+
+        let read_sequence = match instantiate_cocoonfs_start_read_sequence_fut(&fs_instance)
+            .and_then(|mut start_read_sequence_fut| {
+                task_busypoll_to_completion(|cx| {
+                    NvFsFuture::poll(
+                        pin::Pin::new(&mut *start_read_sequence_fut),
+                        &fs_instance,
+                        &mut rng,
+                        cx,
+                    )
+                })
+            }) {
+            Ok(read_sequence) => read_sequence,
+            Err(NvFsError::Retry) => continue 'restart_read_sequence,
+            Err(e) => return Err(nvfs_error_to_svsm_error(e)),
+        };
+        let mut cursor = match SvsmCocoonFsType::enumerate_cursor(
+            &fs_instance,
+            NvFsReadContext::Committed { seq: read_sequence },
+            inode_range,
+        ) {
+            Ok(Ok(cursor)) => cursor,
+            Err(e) | Ok(Err((_, e))) => {
+                if e == NvFsError::Retry {
+                    // The read_sequence became stale due to some concurrent transaction
+                    // commit. Restart at the current point.
+                    continue 'restart_read_sequence;
+                }
+                return Err(nvfs_error_to_svsm_error(e));
+            }
+        };
+
+        // Iterate the cursor over the inodes.
+        loop {
+            let cur_inode;
+            (cursor, cur_inode) = match instantiate_cocoonfs_enumerate_cursor_next_fut(cursor)
+                .and_then(|mut next_fut| {
+                    match task_busypoll_to_completion(|cx| {
+                        NvFsFuture::poll(pin::Pin::new(&mut *next_fut), &fs_instance, &mut rng, cx)
+                    }) {
+                        Ok((cursor, Ok(cur_inode))) => Ok((cursor, cur_inode)),
+                        Err(e) | Ok((_, Err(e))) => Err(e),
+                    }
+                }) {
+                Ok((cursor, cur_inode)) => (cursor, cur_inode),
+                Err(e) => {
+                    if e == NvFsError::Retry {
+                        // The read_sequence became stale due to some concurrent transaction
+                        // commit. Restart at the current point.
+                        continue 'restart_read_sequence;
+                    }
+                    return Err(nvfs_error_to_svsm_error(e));
+                }
+            };
+
+            match cur_inode {
+                Some((inode, _flags)) => {
+                    last_visited_inode = Some(inode);
+                    let r = f(inode);
+                    if r.is_some() {
+                        return Ok(r);
+                    }
+                }
+                None => {
+                    // All done, no more inodes in the enumerated range.
+                    return Ok(None);
+                }
             }
         }
     }
