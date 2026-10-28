@@ -5,12 +5,13 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 extern crate alloc;
-use crate::address::VirtAddr;
+use crate::address::{PhysAddr, VirtAddr};
 #[cfg(feature = "enable-console-log")]
 use crate::console::console_write;
 use crate::error::SvsmError;
 use crate::fs::FsError;
 use crate::fs::log_buffer::log_write;
+use crate::mm::guestmem::{copy_slice_from_guest, copy_slice_to_guest};
 use crate::mm::{copy_from_user, copy_to_user};
 use alloc::string::String;
 use core::{cmp, mem};
@@ -132,6 +133,40 @@ impl Buffer for UserBuffer {
         let size = cmp::min(buf.len(), self.size.checked_sub(offset).unwrap());
         if size > 0 {
             copy_to_user(&buf[..size], self.addr + offset)?;
+        }
+        Ok(size)
+    }
+
+    fn size(&self) -> usize {
+        self.size
+    }
+}
+
+#[derive(Debug)]
+pub struct GuestBuffer {
+    addr: PhysAddr,
+    size: usize,
+}
+
+impl GuestBuffer {
+    pub fn new(addr: PhysAddr, size: usize) -> Self {
+        Self { addr, size }
+    }
+}
+
+impl Buffer for GuestBuffer {
+    fn read_buffer(&self, buf: &mut [u8], offset: usize) -> Result<usize, SvsmError> {
+        let size = cmp::min(buf.len(), self.size.checked_sub(offset).unwrap());
+        if size > 0 {
+            copy_slice_from_guest(self.addr + offset, &mut buf[..size])?;
+        }
+        Ok(size)
+    }
+
+    fn write_buffer(&mut self, buf: &[u8], offset: usize) -> Result<usize, SvsmError> {
+        let size = cmp::min(buf.len(), self.size.checked_sub(offset).unwrap());
+        if size > 0 {
+            copy_slice_to_guest(&buf[..size], self.addr + offset)?;
         }
         Ok(size)
     }
