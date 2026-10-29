@@ -15,7 +15,6 @@ use crate::error::SvsmError;
 const TSC_INFO_REQ_SIZE: usize = 128;
 
 /// MSG_TSC_INFO_REQ payload format.
-#[repr(C, packed)]
 #[derive(Clone, Copy, Debug, FromBytes, KnownLayout, Immutable, IntoBytes)]
 pub struct SnpTscInfoRequest {
     /// Reserved, must be zero.
