@@ -604,6 +604,8 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         panic!("Failed to launch FW: {e:?}");
     }
 
+    init_monotonic_clock().expect("failed to initialize monotonic clock");
+
     #[cfg(test)]
     {
         if boot_params.has_qemu_testdev() {
@@ -617,8 +619,6 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
             "SVSM test task",
         );
     }
-
-    init_monotonic_clock().expect("failed to initialize monotonic clock");
 
     #[cfg(not(test))]
     {
