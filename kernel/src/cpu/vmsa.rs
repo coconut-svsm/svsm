@@ -192,5 +192,4 @@ pub fn init_guest_vmsa(v: &mut VMSA, rip: u64, alternate_injection: bool) {
     }
 
     v.sev_features = sev_status.as_sev_features();
-    configure_secure_tsc(v);
 }
