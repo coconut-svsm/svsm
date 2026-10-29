@@ -393,6 +393,11 @@ pub struct Task {
     /// Objects shared among threads within the same process
     objs: Arc<RWLock<BTreeMap<ObjHandle, Arc<dyn Obj>>>>,
 
+    /// The log the kernel writes its messages for this task to. It is also
+    /// the standard output and error of the task, but user mode can close
+    /// those descriptors or use them for other files.
+    log: Arc<dyn Obj>,
+
     /// Queue of tasks waiting for completion of this task.
     wait_queue: SpinLockIrqSafe<WaitQueue>,
 
@@ -527,6 +532,16 @@ impl Task {
             None
         };
 
+        // The threads of a process share the log of the process.
+        let log = match args.thread_of {
+            Some(ref parent_thread) => parent_thread.log.clone(),
+            None => stdout_open(if &*args.name == "idle" {
+                "SVSM"
+            } else {
+                &args.name
+            }),
+        };
+
         let xsa = Self::allocate_xsave_area();
         let xsa_addr = u64::from(xsa.vaddr()) as usize;
 
@@ -616,6 +631,7 @@ impl Task {
             runlist_link: LinkedListAtomicLink::default(),
             waitlist_link: LinkedListAtomicLink::default(),
             objs: objtree,
+            log,
             wait_queue: SpinLockIrqSafe::new(WaitQueue::new()),
             exit_status: AtomicU32::new(TaskExitStatus::default().into()),
         });
@@ -1098,21 +1114,19 @@ impl Task {
             .ok_or(ObjError::NotFound.into())
     }
 
-    fn attach_stdout(&self) {
-        let name = if &*self.name == "idle" {
-            "SVSM"
-        } else {
-            &self.name
-        };
+    /// Returns the log of the task, which the kernel writes its messages to.
+    pub fn log(&self) -> Arc<dyn Obj> {
+        self.log.clone()
+    }
 
+    fn attach_stdout(&self) {
         // Like on Linux, descriptor 0 is standard input, which is empty, and
         // the log is standard output and standard error. Attaching an object
         // to 0 also keeps it from being handed out for another object.
         self.add_obj_at(stdin_open(), ObjHandle::new(STDIN_FILENO))
             .expect("Failed to attach stdin");
-        let fh_log = stdout_open(name);
         for fd in [STDOUT_FILENO, STDERR_FILENO] {
-            self.add_obj_at(fh_log.clone(), ObjHandle::new(fd))
+            self.add_obj_at(self.log.clone(), ObjHandle::new(fd))
                 .expect("Failed to attach log");
         }
     }
