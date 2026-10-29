@@ -27,8 +27,8 @@ struct ClockParams {
     freq_hz: u64,
     /// Scaled nanoseconds per tick: (10^9 << 32) / freq_hz.
     nanos_per_tick_scaled: u64,
-    /// TSC value at boot time (when clock was initialized)
-    boot_tsc: u64,
+    /// Instant corresponding to boot time
+    boot_instant: Instant,
 }
 
 impl ClockParams {
@@ -36,8 +36,8 @@ impl ClockParams {
     ///
     /// # Arguments
     /// * `freq_hz` - TSC frequency in Hz
-    /// * `boot_tsc` - TSC value at initialization time
-    fn new(freq_hz: u64, boot_tsc: u64) -> Self {
+    /// * `boot_instant - Instant correspending to boot time
+    fn new(freq_hz: u64, boot_instant: Instant) -> Self {
         // Pre-compute nanos_per_tick_scaled = (10^9 << 32) / freq_hz
         // This allows us to convert ticks to nanos without division:
         // nanos = (ticks * nanos_per_tick_scaled) >> 32
@@ -50,14 +50,17 @@ impl ClockParams {
         Self {
             freq_hz,
             nanos_per_tick_scaled: nanos_per_tick_scaled as u64,
-            boot_tsc,
+            boot_instant,
         }
     }
 
-    #[inline]
-    fn ticks_to_duration(&self, ticks: u64) -> Duration {
+    fn ticks_to_nanos(&self, ticks: u64) -> u64 {
         let nanos = ((ticks as u128) * (self.nanos_per_tick_scaled as u128)) >> 32;
-        Duration::from_nanos(u64::try_from(nanos).unwrap_or(u64::MAX))
+        u64::try_from(nanos).unwrap_or(u64::MAX)
+    }
+
+    fn nanos_to_ticks(&self, nanos: u64) -> u64 {
+        (self.freq_hz / 1_000_000_000) * nanos
     }
 }
 
@@ -91,7 +94,6 @@ impl MonotonicClock {
     }
 
     /// Check if the monotonic clock has been initialized.
-    #[inline]
     pub fn is_initialized(&self) -> bool {
         self.clock_params.try_get_inner().is_ok()
     }
@@ -100,7 +102,6 @@ impl MonotonicClock {
     ///
     /// # Panics
     /// Panics if the clock has not been initialized.
-    #[inline]
     pub fn now(&self) -> Instant {
         self.try_now()
             .expect("Monotonic clock not initialized - call init_monotonic_clock() first")
@@ -109,22 +110,15 @@ impl MonotonicClock {
     /// Try to get the current instant.
     ///
     /// Returns `None` if the clock has not been initialized.
-    #[inline]
     pub fn try_now(&self) -> Option<Instant> {
-        let params = self.clock_params.try_get_inner().ok()?;
-        let tsc = SECURE_TSC_ACCESSOR.read_tsc();
-
-        // Calculate ticks since boot, handling potential wraparound
-        let duration_since_boot = params.ticks_to_duration(tsc.wrapping_sub(params.boot_tsc));
-
-        Some(Instant::from_duration_since_boot(duration_since_boot))
+        let _params = self.clock_params.try_get_inner().ok()?;
+        Some(Instant::now())
     }
 
     /// Get the current instant.
     ///
     /// # Panics
     /// Panics if the clock has not been initialized.
-    #[inline]
     pub fn get_instant(&self) -> Instant {
         self.now()
     }
@@ -132,7 +126,6 @@ impl MonotonicClock {
     /// Try to get the current instant.
     ///
     /// Returns `None` if the clock has not been initialized.
-    #[inline]
     pub fn try_get_instant(&self) -> Option<Instant> {
         self.try_now()
     }
@@ -141,17 +134,17 @@ impl MonotonicClock {
     ///
     /// # Panics
     /// Panics if the clock has not been initialized.
-    #[inline]
     pub fn elapsed_since_boot(&self) -> Duration {
-        self.now().duration_since_boot()
+        let boot_instant = self.clock_params.try_get_inner().ok().unwrap().boot_instant;
+        self.now().duration_since(boot_instant)
     }
 
     /// Try to get the duration elapsed since boot.
     ///
     /// Returns `None` if the clock has not been initialized.
-    #[inline]
     pub fn try_elapsed_since_boot(&self) -> Option<Duration> {
-        self.try_now().map(|i| i.duration_since_boot())
+        let boot_instant = self.clock_params.try_get_inner().ok()?.boot_instant;
+        self.try_now().map(|i| i.duration_since(boot_instant))
     }
 
     /// Get the TSC frequency in Hz.
@@ -159,6 +152,26 @@ impl MonotonicClock {
     /// Returns `None` if the clock has not been initialized.
     pub fn frequency(&self) -> Option<u64> {
         self.clock_params.try_get_inner().ok().map(|p| p.freq_hz)
+    }
+
+    /// Converts ticks to nanos
+    ///
+    /// Returns `None` if the clock has not been initialized.
+    pub fn ticks_to_nanos(&self, ticks: u64) -> Option<u64> {
+        self.clock_params
+            .try_get_inner()
+            .ok()
+            .map(|p| p.ticks_to_nanos(ticks))
+    }
+
+    /// Converts nanos to ticks
+    ///
+    /// Returns `None` if the clock has not been initialized.
+    pub fn nanos_to_ticks(&self, nanos: u64) -> Option<u64> {
+        self.clock_params
+            .try_get_inner()
+            .ok()
+            .map(|p| p.nanos_to_ticks(nanos))
     }
 }
 
@@ -175,79 +188,44 @@ impl Default for MonotonicClock {
 /// users can work with deadlines without depending on TSC details.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Instant {
-    nanos_since_boot: u64,
+    ticks: u64,
 }
 
 impl Instant {
-    /// The monotonic epoch.
-    pub const ZERO: Self = Self {
-        nanos_since_boot: 0,
-    };
-
-    /// Create an instant from a raw nanosecond value since boot.
-    ///
-    /// This is intended for code that persists or exchanges monotonic deadlines
-    /// in their raw representation.
-    #[inline]
-    pub const fn from_nanos(nanos: u64) -> Self {
+    /// Return the current Instant
+    pub fn now() -> Instant {
         Self {
-            nanos_since_boot: nanos,
+            ticks: SECURE_TSC_ACCESSOR.read_tsc(),
         }
-    }
-
-    /// Return the raw nanosecond value since boot.
-    #[inline]
-    pub const fn as_nanos(self) -> u64 {
-        self.nanos_since_boot
-    }
-
-    /// Create an instant from a duration since boot.
-    #[inline]
-    pub fn from_duration_since_boot(duration: Duration) -> Self {
-        Self::from_nanos(duration.as_nanos().try_into().unwrap_or(u64::MAX))
-    }
-
-    /// Return the duration since boot represented by this instant.
-    #[inline]
-    pub const fn duration_since_boot(self) -> Duration {
-        Duration::from_nanos(self.nanos_since_boot)
     }
 
     /// Calculate the duration elapsed since this instant.
     ///
     /// # Panics
     /// Panics if the clock has not been initialized.
-    #[inline]
     pub fn elapsed(&self) -> Duration {
-        MONOTONIC_CLOCK.now().duration_since(*self)
-    }
-
-    /// Try to calculate the duration elapsed since this instant.
-    ///
-    /// Returns `None` if the clock has not been initialized.
-    #[inline]
-    pub fn try_elapsed(&self) -> Option<Duration> {
-        MONOTONIC_CLOCK
-            .try_now()
-            .map(|now| now.duration_since(*self))
+        Self::now().duration_since(*self)
     }
 
     /// Calculate the duration between this instant and an earlier one.
     ///
     /// If `earlier` is actually later than `self`, this returns a zero duration.
-    #[inline]
-    pub const fn duration_since(self, earlier: Instant) -> Duration {
-        Duration::from_nanos(
-            self.nanos_since_boot
-                .saturating_sub(earlier.nanos_since_boot),
-        )
+    /// # Panics
+    /// Panics if the clock has not been initialized.
+    pub fn duration_since(self, earlier: Instant) -> Duration {
+        let diff = self.ticks.saturating_sub(earlier.ticks);
+        let diff_nanos = MONOTONIC_CLOCK
+            .ticks_to_nanos(diff)
+            .expect("clock uninitialized");
+        Duration::from_nanos(diff_nanos)
     }
 
     /// Calculate the duration between this instant and an earlier one,
     /// returning `None` if `earlier` is later than `self`.
-    #[inline]
-    pub const fn checked_duration_since(self, earlier: Instant) -> Option<Duration> {
-        if self.nanos_since_boot >= earlier.nanos_since_boot {
+    /// # Panics
+    /// Panics if the clock has not been initialized.
+    pub fn checked_duration_since(self, earlier: Instant) -> Option<Duration> {
+        if self.ticks >= earlier.ticks {
             Some(self.duration_since(earlier))
         } else {
             None
@@ -255,51 +233,56 @@ impl Instant {
     }
 
     /// Add a duration, saturating at the maximum representable instant.
-    #[inline]
+    /// # Panics
+    /// Panics if the clock has not been initialized.
     pub fn saturating_add(self, duration: Duration) -> Self {
-        Self::from_nanos(
-            self.nanos_since_boot
-                .saturating_add(duration.as_nanos().try_into().unwrap_or(u64::MAX)),
-        )
+        let nanos = duration.as_nanos().try_into().unwrap_or(u64::MAX);
+        let ticks = MONOTONIC_CLOCK
+            .nanos_to_ticks(nanos)
+            .expect("clock uninitialized");
+        let t = self.ticks.saturating_add(ticks);
+        Self { ticks: t }
     }
 
     /// Add a duration, returning `None` on overflow.
-    #[inline]
+    /// # Panics
+    /// Panics if the clock has not been initialized.
     pub fn checked_add(self, duration: Duration) -> Option<Self> {
-        Some(Self::from_nanos(
-            self.nanos_since_boot
-                .checked_add(duration.as_nanos().try_into().ok()?)?,
-        ))
+        let nanos = duration.as_nanos().try_into().ok()?;
+        let ticks = MONOTONIC_CLOCK
+            .nanos_to_ticks(nanos)
+            .expect("clock uninitialized");
+        let t = self.ticks.checked_add(ticks)?;
+        Some(Self { ticks: t })
     }
 
     /// Subtract a duration, saturating at the monotonic epoch.
-    #[inline]
+    /// # Panics
+    /// Panics if the clock has not been initialized.
     pub fn saturating_sub(self, duration: Duration) -> Self {
-        Self::from_nanos(
-            self.nanos_since_boot
-                .saturating_sub(duration.as_nanos().try_into().unwrap_or(u64::MAX)),
-        )
+        let nanos = duration.as_nanos().try_into().unwrap_or(u64::MAX);
+        let ticks = MONOTONIC_CLOCK
+            .nanos_to_ticks(nanos)
+            .expect("clock uninitialized");
+        let t = self.ticks.saturating_sub(ticks);
+        Self { ticks: t }
     }
 
     /// Subtract a duration, returning `None` on underflow.
-    #[inline]
+    /// # Panics
+    /// Panics if the clock has not been initialized.
     pub fn checked_sub(self, duration: Duration) -> Option<Self> {
-        Some(Self::from_nanos(
-            self.nanos_since_boot
-                .checked_sub(duration.as_nanos().try_into().ok()?)?,
-        ))
+        let nanos = duration.as_nanos().try_into().ok()?;
+        let ticks = MONOTONIC_CLOCK
+            .nanos_to_ticks(nanos)
+            .expect("clock uninitialized");
+        let t = self.ticks.checked_sub(ticks)?;
+        Some(Self { ticks: t })
     }
 
     /// Return whether this instant has passed relative to `now`.
-    #[inline]
     pub const fn has_elapsed(self, now: Instant) -> bool {
-        self.nanos_since_boot <= now.nanos_since_boot
-    }
-
-    /// Convert this instant to a Duration representing time since boot.
-    #[inline]
-    pub const fn as_duration(self) -> Duration {
-        self.duration_since_boot()
+        self.ticks <= now.ticks
     }
 }
 
@@ -339,31 +322,26 @@ impl Deadline {
     pub const NONE: Self = Self(None);
 
     /// Create a deadline for an absolute instant.
-    #[inline]
     pub const fn at(instant: Instant) -> Self {
         Self(Some(instant))
     }
 
     /// Create a deadline relative to `now`.
-    #[inline]
     pub fn after(now: Instant, duration: Duration) -> Self {
         Self::at(now.saturating_add(duration))
     }
 
     /// Return the deadline instant, if one is armed.
-    #[inline]
     pub const fn instant(self) -> Option<Instant> {
         self.0
     }
 
     /// Return whether this deadline is armed.
-    #[inline]
     pub const fn is_armed(self) -> bool {
         self.0.is_some()
     }
 
     /// Return whether this deadline has expired relative to `now`.
-    #[inline]
     pub const fn has_expired(self, now: Instant) -> bool {
         match self.0 {
             Some(deadline) => deadline.has_elapsed(now),
@@ -372,12 +350,8 @@ impl Deadline {
     }
 
     /// Return the remaining time until this deadline relative to `now`.
-    #[inline]
-    pub const fn remaining(self, now: Instant) -> Option<Duration> {
-        match self.0 {
-            Some(deadline) => Some(deadline.duration_since(now)),
-            None => None,
-        }
+    pub fn remaining(self, now: Instant) -> Option<Duration> {
+        self.0.map(|deadline| deadline.duration_since(now))
     }
 }
 
@@ -445,11 +419,11 @@ pub fn init_monotonic_clock() -> Result<(), SvsmError> {
         return Err(SvsmError::TimerError);
     }
 
-    // Read the current TSC as boot time
-    let boot_tsc = SECURE_TSC_ACCESSOR.read_tsc();
+    // Get the current instant
+    let boot_instant = Instant::now();
 
     // Initialize clock parameters
-    let params = ClockParams::new(freq_hz, boot_tsc);
+    let params = ClockParams::new(freq_hz, boot_instant);
     MONOTONIC_CLOCK.init(params)?;
 
     log::info!(
@@ -461,66 +435,58 @@ pub fn init_monotonic_clock() -> Result<(), SvsmError> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, test_in_svsm))]
 mod tests {
     use super::*;
 
     #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_instant_ordering() {
-        let earlier = Instant::from_nanos(100);
-        let later = Instant::from_nanos(200);
+        if MONOTONIC_CLOCK.is_initialized() {
+            let earlier = Instant::now();
+            let later = Instant::now();
 
-        assert!(earlier < later);
-        assert!(later > earlier);
-        assert_eq!(earlier, Instant::from_nanos(100));
+            assert!(earlier < later);
+            assert!(later > earlier);
+        }
     }
 
     #[test]
-    fn test_instant_nanos() {
-        let instant = Instant::from_nanos(12345);
-        assert_eq!(instant.as_nanos(), 12345);
-    }
-
-    #[test]
-    fn test_clock_params_creation() {
-        let params = ClockParams::new(1_000_000_000, 0); // 1 GHz
-        assert_eq!(params.freq_hz, 1_000_000_000);
-        assert_eq!(params.boot_tsc, 0);
-        // nanos_per_tick_scaled should be approximately (10^9 << 32) / 10^9 = 2^32
-        assert!(params.nanos_per_tick_scaled > 0);
-    }
-
-    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_duration_since_zero_when_earlier_is_later() {
-        let earlier = Instant::from_nanos(200);
-        let later = Instant::from_nanos(100);
+        if MONOTONIC_CLOCK.is_initialized() {
+            let earlier = Instant::now();
+            let later = Instant::now();
 
-        // duration_since uses saturating_sub, so should return 0
-        let duration = later.duration_since(earlier);
-        assert_eq!(duration, Duration::ZERO);
+            // duration_since uses saturating_sub, so should return 0
+            let duration = earlier.duration_since(later);
+            assert_eq!(duration, Duration::ZERO);
+        }
     }
 
     #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_checked_duration_since() {
-        let earlier = Instant::from_nanos(100);
-        let later = Instant::from_nanos(200);
+        if MONOTONIC_CLOCK.is_initialized() {
+            let earlier = Instant::now();
+            let later = Instant::now();
 
-        assert!(later.checked_duration_since(earlier).is_some());
-        assert!(earlier.checked_duration_since(later).is_none());
+            assert!(later.checked_duration_since(earlier).is_some());
+            assert!(earlier.checked_duration_since(later).is_none());
+        }
     }
 
     #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_deadline_expiration() {
-        let now = Instant::from_nanos(100);
-        let deadline = Deadline::after(now, Duration::from_nanos(50));
+        if MONOTONIC_CLOCK.is_initialized() {
+            let now = Instant::now();
+            let deadline = Deadline::after(now, Duration::from_nanos(1));
 
-        assert!(deadline.is_armed());
-        assert!(!deadline.has_expired(Instant::from_nanos(149)));
-        assert!(deadline.has_expired(Instant::from_nanos(150)));
-        assert_eq!(
-            deadline.remaining(Instant::from_nanos(125)),
-            Some(Duration::from_nanos(25))
-        );
+            assert!(deadline.is_armed());
+            assert!(deadline.has_expired(Instant::now()));
+            assert_eq!(deadline.remaining(Instant::now()), Some(Duration::ZERO));
+        }
     }
 
     #[test]

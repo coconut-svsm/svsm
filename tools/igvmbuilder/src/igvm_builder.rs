@@ -237,8 +237,6 @@ impl IgvmBuilder {
             _ => 0,
         };
 
-        let use_secure_tsc = if self.options.secure_tsc { 1 } else { 0 };
-
         // Most of the parameter block can be initialised with constants.
         Ok(BootParamBlock {
             param_area_size: self.gpa_map.boot_param_layout.total_size(),
@@ -276,7 +274,7 @@ impl IgvmBuilder {
                 .get_param_size(BootParamType::GuestContext),
             firmware: fw_info,
             vmsa_in_kernel_range: self.gpa_map.vmsa_in_kernel_range as u8,
-            use_secure_tsc,
+            use_secure_tsc: self.options.secure_tsc.into(),
             _reserved: Default::default(),
             kernel_base: self.gpa_map.kernel.get_start(),
             kernel_min_size: self.gpa_map.kernel_min_size,
