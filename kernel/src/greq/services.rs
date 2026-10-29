@@ -117,22 +117,14 @@ mod tests {
     fn test_snp_launch_measurement() {
         extern crate alloc;
 
-        use crate::serial::Terminal;
-        use crate::testing::{IORequest, assert_eq_warn, svsm_test_io};
+        use crate::testing::{assert_eq_warn, launch_measurement};
         use crate::testutils::{has_test_iorequests, is_test_platform_type};
 
         use alloc::vec;
         use bootdefs::platform::SvsmPlatformType;
 
         if has_test_iorequests() && is_test_platform_type(SvsmPlatformType::Snp) {
-            let sp = svsm_test_io().unwrap();
-
-            sp.put_byte(IORequest::GetLaunchMeasurement as u8);
-
-            let mut expected_measurement = [0u8; 48];
-            for byte in &mut expected_measurement {
-                *byte = sp.get_byte();
-            }
+            let expected_measurement = launch_measurement();
 
             let mut buf = vec![0; size_of::<SnpReportResponse>()];
             let size = get_regular_report(&mut buf).unwrap();

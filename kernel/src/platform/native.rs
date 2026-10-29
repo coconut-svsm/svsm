@@ -38,6 +38,8 @@ use bootdefs::kernel_launch::BLDR_BASE;
 use core::arch::asm;
 use core::mem::MaybeUninit;
 use cpufeature::backend::CpuidBackend;
+#[cfg(all(test, test_in_svsm, feature = "attest"))]
+use libaproxy::AttestationEvidence;
 use syscall::GlobalFeatureFlags;
 
 #[cfg(debug_assertions)]
@@ -121,6 +123,31 @@ impl SvsmPlatform for NativePlatform {
     fn capabilities(&self) -> Caps {
         let features = GlobalFeatureFlags::PLATFORM_TYPE_NATIVE;
         Caps::new(0, features)
+    }
+
+    /// Build synthetic SEV-SNP evidence for the in-SVSM tests, where there is
+    /// no PSP to ask for a real report. See
+    /// [`AttestationReport::new_synthetic()`](crate::greq::pld_report::AttestationReport::new_synthetic).
+    ///
+    /// The host must implement the test I/O requests, see
+    /// [`has_test_iorequests()`](crate::testutils::has_test_iorequests).
+    #[cfg(all(test, test_in_svsm, feature = "attest"))]
+    fn attestation_evidence(&self, hash: &[u8]) -> Result<AttestationEvidence, SvsmError> {
+        use crate::attest::AttestationError;
+        use crate::greq::pld_report::AttestationReport;
+        use crate::testing::launch_measurement;
+        use crate::utils::vec::try_to_vec;
+        use zerocopy::IntoBytes;
+
+        let mut report_data = [0u8; 64];
+        report_data.copy_from_slice(hash);
+
+        let report = AttestationReport::new_synthetic(report_data, launch_measurement());
+
+        Ok(AttestationEvidence::Snp {
+            report: try_to_vec(report.as_bytes()).or(Err(AttestationError::VecAlloc))?,
+            certs_buf: None,
+        })
     }
 
     fn setup_hyperv_hypercalls(&self) -> Result<(), SvsmError> {
