@@ -50,7 +50,11 @@ fn main() {
             "cargo::rustc-link-search={}",
             libcrt_build_dir.to_str().unwrap()
         );
-        println!("cargo::rustc-link-lib=static=crt");
+        // A C runtime library is a provider of last resort — its consumers
+        // (e.g. OpenSSL) may use weak references for runtime feature detection.
+        // Weak references don't trigger archive member extraction, so link the
+        // entire archive to ensure all symbols are unconditionally available.
+        println!("cargo::rustc-link-lib=static:+whole-archive=crt");
     }
 
     let libcrt_include = libcrt_src_dir.join("include");
