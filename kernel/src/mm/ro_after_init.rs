@@ -5,11 +5,8 @@
 // Author: Thomas Leroy <thomas.leroy.mp@gmail.com>
 
 use crate::{
-    address::VirtAddr,
-    cpu::{flush_tlb_global_sync_range, percpu::with_pgtable_mut},
-    error::SvsmError,
-    types::PageSize,
-    utils::MemoryRegion,
+    address::VirtAddr, cpu::flush_tlb_global_sync_range, error::SvsmError,
+    mm::pagetable::with_pgtable_mut, types::PageSize, utils::MemoryRegion,
 };
 #[macro_export]
 macro_rules! ro_after_init_section {

@@ -35,7 +35,7 @@ use crate::error::SvsmError;
 use crate::fs::{Directory, FileHandle, opendir, stdout_open};
 use crate::locking::RWLock;
 use crate::locking::SpinLockIrqSafe;
-use crate::mm::pagetable::{PTEntryFlags, PageTable};
+use crate::mm::pagetable::{PTEntryFlags, PageTable, new_pgtable};
 use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR, VMRMapping};
 use crate::mm::{
     PageBox, SVSM_PERTASK_BASE, SVSM_PERTASK_END, USER_MEM_END, USER_MEM_START,
@@ -461,7 +461,7 @@ struct CreateTaskArguments {
 
 impl Task {
     fn create_common(cpu: &PerCpu, args: CreateTaskArguments) -> Result<TaskPointer, SvsmError> {
-        let mut pgtable = cpu.new_pgtable()?;
+        let mut pgtable = new_pgtable()?;
 
         cpu.populate_page_table(&mut pgtable);
 

@@ -144,7 +144,10 @@ impl GDT {
         }
     }
 
-    /// Loads all selectors from the current GDT.
+    /// Loads the current GDT and its code and flat data selectors.
+    ///
+    /// The FS and GS selectors are left unchanged so their independently
+    /// managed base addresses remain intact.
     pub fn load_selectors(&self) {
         self.load();
         // SAFETY: assembly is required to load segments from the GDT.  In the
@@ -157,8 +160,6 @@ impl GDT {
                  /* Reload data segments */
                  movw   %cx, %ds
                  movw   %cx, %es
-                 movw   %cx, %fs
-                 movw   %cx, %gs
                  movw   %cx, %ss
 
                  /* Reload code segment */

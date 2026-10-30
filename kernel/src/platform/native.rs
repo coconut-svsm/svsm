@@ -18,7 +18,6 @@ use crate::cpu::IrqGuard;
 use crate::cpu::features::{CPU_VENDOR_ID, Feature, cpu_get_feat, cpu_has_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::msr::write_msr;
-use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::ApStartContextRef;
 use crate::cpu::smp::set_ap_start_context;
 use crate::cpu::x86::{
@@ -100,7 +99,7 @@ impl SvsmPlatform for NativePlatform {
         }
     }
 
-    fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
+    fn setup_percpu_current(&self) -> Result<(), SvsmError> {
         apic_initialize(&X2APIC_ACCESSOR);
         apic_enable();
         apic_sw_enable();
@@ -213,13 +212,14 @@ impl SvsmPlatform for NativePlatform {
 
     fn start_cpu(
         &self,
-        cpu: &PerCpu,
-        start_rip: u64,
+        shared: &'static crate::cpu::percpu::PerCpuShared,
+        initial_context: &hyperv::HvInitialVpContext,
+        _svsm_vmsa: Option<(PhysAddr, u64)>,
         ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError> {
-        let context = cpu.get_initial_context(start_rip);
+        let context = *initial_context;
         if cpu_has_feat(Feature::HyperV) {
-            return hyperv_start_cpu(cpu, &context);
+            return hyperv_start_cpu(shared.cpu_index(), &context);
         }
 
         // Initialize the AP start context.
@@ -228,7 +228,7 @@ impl SvsmPlatform for NativePlatform {
         // Now that the AP startup transition page has been configured, send
         // INIT-SIPI to start the processor.  No second SIPI is required when
         // running virtualized.
-        let icr = ApicIcr::new().with_destination(cpu.shared().apic_id());
+        let icr = ApicIcr::new().with_destination(shared.apic_id());
         let init_icr = icr.with_message_type(IcrMessageType::Init);
         apic_post_irq(init_icr.into());
         let sipi_vector = BLDR_BASE >> 12;

@@ -14,11 +14,12 @@ pub mod svsm_gdbstub {
     use crate::address::{Address, VirtAddr};
     use crate::cpu::control_regs::read_cr3;
     use crate::cpu::idt::common::{BP_VECTOR, DB_VECTOR, VC_VECTOR, X86ExceptionContext};
-    use crate::cpu::percpu::{this_cpu, with_pgtable};
+    use crate::cpu::percpu::this_cpu;
     use crate::error::SvsmError;
     use crate::locking::{LockGuard, SpinLock};
     use crate::mm::PerCPUPageMappingGuard;
     use crate::mm::guestmem::{read_u8, write_u8};
+    use crate::mm::pagetable::with_pgtable;
     use crate::platform::SvsmPlatform;
     use crate::serial::{SerialPort, Terminal};
     use crate::task::{INITIAL_TASK_ID, TASKLIST, TaskContext, TaskPointer, is_current_task};

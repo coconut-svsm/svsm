@@ -10,6 +10,7 @@ pub mod percpu;
 pub mod apic;
 pub mod control_regs;
 pub mod cpuid;
+pub mod cpulaunch;
 pub mod cpuset;
 pub mod efer;
 pub mod extable;

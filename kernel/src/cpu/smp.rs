@@ -4,27 +4,31 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::idt::load_static_idt;
+extern crate alloc;
+
 use crate::acpi::tables::ACPICPUInfo;
+use crate::address::Address;
 use crate::address::PhysAddr;
-use crate::address::{Address, VirtAddr};
+use crate::cpu::cpulaunch::{CpuLaunch, initialize_cpu};
+use crate::cpu::idt::load_static_idt;
 use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu};
 use crate::cpu::shadow_stack::{
     MODE_64BIT, S_CET, SCetFlags, initial_shadow_stack, is_cet_ss_enabled,
 };
 use crate::cpu::sse::sse_init;
 use crate::cpu::tlb::set_tlb_flush_smp;
-use crate::cpu::tss::load_gdt_tss;
 use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
 use crate::hyperv;
-use crate::mm::PerCPUPageMappingGuard;
-use crate::mm::STACK_SIZE;
+use crate::mm::pagetable::new_pgtable;
+use crate::mm::{PerCPUPageMappingGuard, phys_to_virt};
 use crate::platform::{SVSM_PLATFORM, SvsmPlatform};
-use crate::task::{schedule_init, set_current_stack};
-use crate::utils::MemoryRegion;
+use crate::task::schedule_init;
+use alloc::boxed::Box;
 use bootdefs::kernel_launch::ApStartContext;
 use core::arch::global_asm;
+use core::mem::size_of;
+use core::sync::atomic::{Ordering, fence};
 use cpuarch::x86::EFERFlags;
 
 percpu! {
@@ -66,14 +70,52 @@ fn start_cpu(
     percpu_shared: &'static PerCpuShared,
     ap_start_context_ref: Option<&ApStartContextRef>,
 ) -> Result<(), SvsmError> {
-    let start_rip: u64 = (start_ap as *const u8) as u64;
-    let percpu = PerCpu::alloc(percpu_shared)?;
-    let pgtable = this_cpu().new_pgtable()?;
-    percpu.setup(pgtable)?;
+    let start_rip: u64 = start_ap_entry as *const () as usize as u64;
+    let percpu = PerCpu::alloc()?;
+    let pgtable = new_pgtable()?;
+    let (pgtable, context_switch_stack, init_shadow_stack, exception_stacks) =
+        percpu.setup(pgtable)?;
 
-    platform.start_cpu(percpu, start_rip, ap_start_context_ref)?;
+    let stack_slot = context_switch_stack
+        .checked_sub(size_of::<*mut CpuLaunch>())
+        .unwrap();
+    let stack_slot_paddr = pgtable.phys_addr(stack_slot)?;
+    let stack_slot_vaddr = phys_to_virt(stack_slot_paddr);
+    let mut launch = Box::new(CpuLaunch::new_application(
+        percpu,
+        percpu_shared,
+        pgtable,
+        context_switch_stack,
+        init_shadow_stack,
+        exception_stacks,
+    ));
+    let initial_context = launch.get_initial_context(start_rip);
+    platform.prepare_cpu(&mut launch, &initial_context)?;
+    let svsm_vmsa = launch.svsm_vmsa_info();
+    let launch_ptr = Box::into_raw(launch);
 
-    let percpu_shared = percpu.shared();
+    // SAFETY: the stack slot is backed by the target CPU's private stack and
+    // is not visible to that CPU until the launch operation below. The AP
+    // entry shim consumes this pointer before using the stack.
+    unsafe {
+        stack_slot_vaddr
+            .as_mut_ptr::<*mut CpuLaunch>()
+            .write(launch_ptr);
+    }
+    fence(Ordering::Release);
+
+    if let Err(err) = platform.start_cpu(
+        percpu_shared,
+        &initial_context,
+        svsm_vmsa,
+        ap_start_context_ref,
+    ) {
+        // SAFETY: a failed platform launch did not release the target CPU, so
+        // ownership of the launch record remains with this CPU.
+        drop(unsafe { Box::from_raw(launch_ptr) });
+        return Err(err);
+    }
+
     while !percpu_shared.is_online() {}
     Ok(())
 }
@@ -116,30 +158,9 @@ pub fn start_secondary_cpus(
     }
 }
 
-#[unsafe(no_mangle)]
-extern "C" fn start_ap_setup(top_of_stack: u64) {
-    // Initialize the per-CPU TSS before loading its descriptor.
-    this_cpu().setup_percpu_keys();
-
-    // Initialize the GDT, TSS, and IDT.
-    load_gdt_tss(true);
-    load_static_idt();
-
-    // Loading the GS selector above resets its base, so reinstall the per-CPU
-    // area after the segment registers have their final values.
-    this_cpu().setup_percpu_keys();
-
-    // Now the stack unwinder can be used
-    set_current_stack(MemoryRegion::new(
-        VirtAddr::from(top_of_stack)
-            .checked_sub(STACK_SIZE)
-            .unwrap(),
-        STACK_SIZE,
-    ));
-}
-
 unsafe extern "C" {
     fn start_ap_indirect();
+    fn start_ap_entry();
 }
 
 global_asm!(
@@ -173,23 +194,18 @@ global_asm!(
     1:
         movq    %r9, %cr3
 
-        /* Make sure stack frames are 16b-aligned */
-        andq    $~0xf, %rsp
-
         /* Mark the next stack frame as the bottom frame */
         xor     %rbp, %rbp
 
-        /*
-         * Call a startup function to complete setup in the local
-         * environment.
-         *
-         * %r12 is preserved per x86-64 calling convention.
-         */
-        mov     %rsp, %rdi
-        call    start_ap_setup
-
         /* Begin execution from the starting RIP */
-        call    *%r12
+        jmp     *%r12
+        int3
+
+        .globl start_ap_entry
+    start_ap_entry:
+        /* Consume the owned CpuLaunch pointer from the initial stack. */
+        popq    %rdi
+        call    start_ap
         int3
         "#,
     LME = const EFERFlags::LME.bits(),
@@ -216,18 +232,20 @@ pub fn set_ap_start_context(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn start_ap() -> ! {
-    let percpu = this_cpu();
-    percpu.setup_percpu_keys();
+extern "C" fn start_ap(launch: *mut CpuLaunch) -> ! {
+    fence(Ordering::Acquire);
+    // SAFETY: the BSP created this pointer with Box::into_raw() and transfers
+    // ownership exactly once through the initial AP stack slot.
+    let launch = unsafe { Box::from_raw(launch) };
+    let percpu = launch.percpu();
+
+    initialize_cpu(*launch, &**SVSM_PLATFORM).expect("Failed to initialize AP");
+    load_static_idt();
 
     if is_cet_ss_enabled() {
         let ssp_token = initial_shadow_stack().unwrap();
         enable_shadow_stacks!(ssp_token);
     }
-
-    percpu
-        .setup_on_cpu(&**SVSM_PLATFORM)
-        .expect("setup_on_cpu() failed");
 
     percpu
         .setup_idle_task()
