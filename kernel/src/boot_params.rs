@@ -375,6 +375,18 @@ impl BootParams<'_> {
         }
     }
 
+    /// Host vsock port used to connect to the attestation proxy.
+    #[cfg(feature = "attest")]
+    pub fn attestation_vsock_port(&self) -> u32 {
+        use crate::vsock::VMADDR_PORT_ANY;
+
+        self.get_cmdline_parameter(b"ATTESTATIONPORT=")
+            .and_then(|param| core::str::from_utf8(param).ok())
+            .and_then(|param| param.parse::<u32>().ok())
+            .filter(|&port| port != 0 && port != VMADDR_PORT_ANY)
+            .unwrap_or(libaproxy::ATTEST_DEFAULT_VSOCK_PORT)
+    }
+
     pub fn get_fw_metadata(&self) -> Option<SevFWMetaData> {
         if !self.should_launch_fw() {
             return None;

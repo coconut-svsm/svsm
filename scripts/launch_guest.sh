@@ -35,6 +35,10 @@ STATE_DEVICE=""
 VSOCK_DEVICE=""
 VIRTIO=0
 
+# IGVM command line parameters
+ATTESTPORT=""
+COMPORT=""
+
 # Must match SVSM_VMPL and GUEST_VMPL in kernel/src/types.rs
 SVSM_VMPL=0
 GUEST_VMPL=2
@@ -95,6 +99,16 @@ while [[ $# -gt 0 ]]; do
     --vsock)
       VIRTIO=1
       VSOCK_DEVICE="-device vhost-vsock-device,guest-cid=$2"
+      shift
+      shift
+      ;;
+    --attestport)
+      ATTESTPORT="$2"
+      shift
+      shift
+      ;;
+    --comport)
+      COMPORT="$2"
       shift
       shift
       ;;
@@ -166,7 +180,15 @@ if [ -n "$SNP_GUEST" ] && [ -n "$QEMU_PLANES" ]; then
   [ -n "$VSOCK_DEVICE" ] && VSOCK_DEVICE+=",plane=$SVSM_VMPL"
 fi
 
-IGVM_OBJ="-object igvm-cfg,id=igvm0,file=$IGVM"
+# Build the IGVM command line. It contains spaces, so IGVM_OBJ is passed to
+# QEMU as a single quoted argument below.
+IGVM_CMDLINE=""
+[ -n "$COMPORT" ] && IGVM_CMDLINE+="CONSOLEPORT=$COMPORT "
+[ -n "$ATTESTPORT" ] && IGVM_CMDLINE+="ATTESTATIONPORT=$ATTESTPORT "
+IGVM_CMDLINE=${IGVM_CMDLINE% }
+
+IGVM_OBJ="igvm-cfg,id=igvm0,file=$IGVM"
+[ -n "$IGVM_CMDLINE" ] && IGVM_OBJ+=",cmdline=$IGVM_CMDLINE"
 
 # Setup a disk if an image has been specified
 if [ ! -z "$IMAGE" ]; then
@@ -192,7 +214,7 @@ $QEMU \
     -cpu $CPU \
     -machine $MACHINE \
     -object $MEMORY \
-    $IGVM_OBJ \
+    -object "$IGVM_OBJ" \
     $SNP_GUEST \
     -smp 4 \
     -no-reboot \
