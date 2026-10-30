@@ -8,6 +8,7 @@ pub mod ghcb;
 pub mod hv_doorbell;
 pub mod msr_protocol;
 pub mod secrets_page;
+pub mod secure_tsc;
 pub mod snp_apic;
 pub mod status;
 pub mod tlb;
@@ -17,6 +18,7 @@ pub mod utils;
 
 pub use msr_protocol::init_hypervisor_ghcb_features;
 pub use secrets_page::{SecretsPage, VMPCK_SIZE, secrets_page, secrets_page_mut};
+pub use secure_tsc::SECURE_TSC_ACCESSOR;
 pub use snp_apic::{GHCB_APIC_ACCESSOR, GHCBApicAccessor};
 pub use status::sev_status_init;
 pub use status::sev_status_verify;

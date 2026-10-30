@@ -71,6 +71,7 @@ use svsm::svsm_paging::invalidate_early_boot_memory;
 use svsm::task::{
     KernelThreadStartInfo, current_stack, schedule_init, set_current_stack, start_kernel_task,
 };
+use svsm::time::init_monotonic_clock;
 use svsm::types::PAGE_SIZE;
 use svsm::utils::MemoryRegion;
 use svsm::utils::ScopedMut;
@@ -516,6 +517,10 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         .env_setup_svsm()
         .expect("SVSM platform environment setup failed");
 
+    if let Err(e) = SVSM_PLATFORM.configure_secure_tsc(launch_info.use_secure_tsc) {
+        log::warn!("Secure TSC config failed: {e:#?}");
+    }
+
     hyperv_setup().expect("failed to complete Hyper-V setup");
 
     let boot_params =
@@ -598,6 +603,8 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     if let Err(e) = SVSM_PLATFORM.launch_fw(&boot_params) {
         panic!("Failed to launch FW: {e:?}");
     }
+
+    init_monotonic_clock().expect("failed to initialize monotonic clock");
 
     #[cfg(test)]
     {

@@ -274,6 +274,8 @@ impl IgvmBuilder {
                 .get_param_size(BootParamType::GuestContext),
             firmware: fw_info,
             vmsa_in_kernel_range: self.gpa_map.vmsa_in_kernel_range as u8,
+            use_secure_tsc: self.options.secure_tsc.into(),
+            _reserved: Default::default(),
             kernel_base: self.gpa_map.kernel.get_start(),
             kernel_min_size: self.gpa_map.kernel_min_size,
             kernel_max_size: self.gpa_map.kernel_max_size,
@@ -634,6 +636,7 @@ impl IgvmBuilder {
                 SNP_COMPATIBILITY_MASK,
                 &self.options.sev_features,
                 self.options.hypervisor,
+                self.options.secure_tsc,
             ));
         }
 
