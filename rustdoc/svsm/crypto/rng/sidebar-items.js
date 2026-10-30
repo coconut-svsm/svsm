@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SVSM_RNG_DRBG_HASH_ALG","SVSM_RNG_POOL_SIZE"],"fn":["get_svsm_rng"],"static":["SVSM_RNG_INSTANTIATION_ID","SVSM_RNG_POOL"],"struct":["SvsmRng"]};

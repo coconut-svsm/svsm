@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["__safe_mmio_read_u16","__safe_mmio_read_u32","__safe_mmio_read_u64","__safe_mmio_read_u8","__safe_mmio_write_u16","__safe_mmio_write_u32","__safe_mmio_write_u64","__safe_mmio_write_u8"],"static":["SHARED_MEM"],"struct":["PageStore","SvsmHal","SvsmMmio"]};

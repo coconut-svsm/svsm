@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PERCPU_SHARED_INDEX_OFFSET"],"fn":["cpu_idle_loop","current_task","this_cpu","try_this_cpu","with_pgtable","with_pgtable_mut"],"mod":["key","legacy"],"static":["PERCPU_AREAS","PERCPU_VMSAS"],"struct":["GuestVmsaRef","PerCpu","PerCpuAreas","PerCpuKey","PerCpuShared","PerCpuVmsas","VmsaRegistryEntry"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["IST_DF","TSS_LIMIT"],"fn":["double_fault_stack","init_double_fault_stack","load_gdt_tss","set_tss_rsp0","setup_tss","tss_address"],"static":["DOUBLE_FAULT_STACK","TSS"],"struct":["X86Tss"]};

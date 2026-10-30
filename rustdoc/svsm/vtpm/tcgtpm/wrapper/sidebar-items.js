@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["abort","calloc","fclose","fflush","fopen","fread","free","fseek","ftell","fwrite","malloc","realloc","serial_out"]};

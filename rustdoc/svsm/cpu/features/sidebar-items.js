@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CPU_VENDOR_ID","HYPERV_INTERFACE","HYPERV_INTERFACE_SIGNATURE","NUM_FEATS","PHYS_ADDR_SIZES"],"enum":["Feature"],"fn":["cpu_get_feat","cpu_has_feat"],"macro":["define_cpu_feats"],"static":["CPU_FEATS"],"struct":["CpuFeat"]};

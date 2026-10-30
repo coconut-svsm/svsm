@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["ai_handle_intercepts","clear_pending_interrupts","configure_apic_all_vectors","configure_apic_vector","disable_apic_emulation","init_apic_emulation","read_apic_register","update_apic_emulation","use_apic_emulation","with_guest_apic_mut","write_apic_register"],"static":["GUEST_APIC"],"struct":["LocalApic"],"trait":["ApicCpuState"]};

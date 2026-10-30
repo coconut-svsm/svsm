@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EFLAGS_IF","TPR_LIMIT"],"fn":["irq_nesting_count","irqs_disable","irqs_disabled","irqs_enable","irqs_enabled","irqs_pop_nesting","irqs_push_nesting","lower_tpr","raise_tpr","raw_get_tpr","raw_irqs_disable","raw_irqs_enable","raw_set_tpr","tpr_from_vector","with_irq_state"],"static":["IRQ_STATE"],"struct":["IrqGuard","IrqState","TprGuard"]};

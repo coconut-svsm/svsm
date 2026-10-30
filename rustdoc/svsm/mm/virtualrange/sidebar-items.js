@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["VIRT_ALIGN_2M","VIRT_ALIGN_4K"],"fn":["init_vrange_2m","init_vrange_4k","virt_log_usage"],"static":["VRANGE_2M","VRANGE_4K"],"struct":["VRangeAlloc","VirtualRange"]};
