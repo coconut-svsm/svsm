@@ -54,8 +54,13 @@ fn do_invlpgb(rax: u64, rcx: u64, rdx: u64) {
 fn do_tlbsync() {
     // SAFETY: Inline assembly to synchronize TLB invalidations. It does not
     // change any state.
+    // Execute two TLBSYNC instruction as a workaround for AMD Erratum 1718.
     unsafe {
-        asm!("tlbsync", options(att_syntax, nomem, preserves_flags));
+        asm!(
+            r#"tlbsync
+               tlbsync"#,
+            options(att_syntax, nomem, preserves_flags)
+        );
     }
 }
 
