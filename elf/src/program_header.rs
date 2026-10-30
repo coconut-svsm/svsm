@@ -59,6 +59,12 @@ impl Elf64Phdr {
     pub const PT_SHLIB: Elf64Word = 5;
     /// Represents the Program Header Table itself
     pub const PT_PHDR: Elf64Word = 6;
+    /// OS-specific entries lower bound
+    pub const PT_LOOS: Elf64Word = 0x60000000;
+    /// GNU extension: region to be made read-only after relocations are done
+    pub const PT_GNU_RELRO: Elf64Word = 0x6474e552;
+    /// OS-specific entries upper bound
+    pub const PT_HIOS: Elf64Word = 0x6fffffff;
     /// Processor-specific entries lower bound
     pub const PT_LOPROC: Elf64Word = 0x70000000;
     /// Processor-specific entries upper bound
