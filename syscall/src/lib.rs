@@ -14,7 +14,9 @@ mod logging;
 mod obj;
 mod sysno;
 
-pub use call::{SysCallError, syscall0, syscall1, syscall2, syscall3, syscall4, syscall5};
+pub use call::{
+    SysCallError, syscall0, syscall1, syscall2, syscall3, syscall4, syscall5, syscall6,
+};
 pub use class0::*;
 pub use class1::*;
 pub use class3::*;
