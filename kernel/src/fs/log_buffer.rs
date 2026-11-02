@@ -91,11 +91,11 @@ mod tests {
     fn test_log_buffer_basic() {
         let _ = log_reset();
         log::info!("hello world");
-        let mut buf1 = [0u8; 29];
+        let mut buf1 = [0u8; 30];
         let _ = log_read(&mut buf1);
         assert_eq!(
             str::from_utf8(&buf1).unwrap(),
-            "[SVSM test task] hello world\n"
+            "[SVSM test task] hello world\r\n"
         );
     }
 
@@ -110,8 +110,8 @@ mod tests {
         let task2 = start_kernel_task(KernelThreadStartInfo::new(task2, 2), "task2")
             .expect("Failed to launch request processing task");
         wait_for_termination(task2);
-        let expected = "[SVSM test task] in test task\n[task1] in task1\n[task2] in task2\n";
-        let mut buf1 = [0u8; 64];
+        let expected = "[SVSM test task] in test task\r\n[task1] in task1\r\n[task2] in task2\r\n";
+        let mut buf1 = [0u8; 67];
         let _ = log_read(&mut buf1);
         assert_eq!(str::from_utf8(&buf1).unwrap(), expected);
     }
