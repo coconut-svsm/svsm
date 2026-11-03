@@ -15,7 +15,7 @@ use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::vm::{VMR, VMReserved};
-use crate::mm::{SIZE_LEVEL3, SVSM_PERTASK_BASE, SVSM_PERTASK_END, alloc::AllocError};
+use crate::mm::{SVSM_PERTASK, alloc::AllocError};
 use crate::utils::MemoryRegion;
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 
@@ -40,8 +40,8 @@ impl TaskVirtualRegionGuard {
     }
 
     fn vaddr_region(&self) -> MemoryRegion<VirtAddr> {
-        const SPAN: usize = SIZE_LEVEL3 / BitmapAllocator1024::CAPACITY;
-        let base = SVSM_PERTASK_BASE + (self.index * SPAN);
+        const SPAN: usize = SVSM_PERTASK.size() / BitmapAllocator1024::CAPACITY;
+        let base = SVSM_PERTASK.base() + (self.index * SPAN);
         MemoryRegion::<VirtAddr>::new(base, SPAN)
     }
 }
@@ -82,19 +82,19 @@ impl TaskMM {
 
         // A VMR must have a size of exactly one VMR_GRANULE, so use the whole
         // per-TASK virtual address space
-        let vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty())?;
+        let vm_kernel_range = VMR::new(SVSM_PERTASK, PTEntryFlags::empty())?;
 
         // Now limit the usable virtual address space by inserting `VMReserved`
         // mappings. These mappings are empty, but prevent the VMR from
         // inserting new mappings in the address space covered by them.
-        if kvregion.start() > SVSM_PERTASK_BASE {
-            let size = kvregion.start() - SVSM_PERTASK_BASE;
+        if kvregion.start() > SVSM_PERTASK.base() {
+            let size = kvregion.start() - SVSM_PERTASK.base();
             let mapping = VMReserved::new_mapping(size);
-            vm_kernel_range.insert_at(SVSM_PERTASK_BASE, mapping)?;
+            vm_kernel_range.insert_at(SVSM_PERTASK.base(), mapping)?;
         }
 
-        if kvregion.end() < SVSM_PERTASK_END {
-            let size = SVSM_PERTASK_END - kvregion.end();
+        if kvregion.end() < SVSM_PERTASK.end() {
+            let size = SVSM_PERTASK.end() - kvregion.end();
             let mapping = VMReserved::new_mapping(size);
             vm_kernel_range.insert_at(kvregion.end(), mapping)?;
         }

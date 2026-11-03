@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
-// Copyright (c) 2022-2023 SUSE LLC
+// Copyright (c) 2022-2023, 2026 SUSE LLC
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
+// Author: Carlos López <clopez@suse.de>
 
 use crate::address::VirtAddr;
 use crate::cpu::percpu::this_cpu;
@@ -12,93 +13,133 @@ use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 use core::fmt::Debug;
+use core::marker::PhantomData;
 
-use super::{
-    SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
-    SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_TEMP_SIZE_2M, SVSM_PERCPU_TEMP_SIZE_4K,
-};
+use super::{AddrSpaceDescriptor, PERCPU_TEMP_2M, PERCPU_TEMP_4K};
 
 pub const VIRT_ALIGN_4K: usize = PAGE_SHIFT - 12;
 pub const VIRT_ALIGN_2M: usize = PAGE_SHIFT_2M - 12;
 
+/// A trait describing an allocatable virtual address range.
+pub trait SubVmRange: Sized {
+    /// The address space portion that corresponds to this virtual range.
+    const DESCRIPTOR: AddrSpaceDescriptor;
+
+    /// The size of virtual address allocations within this virtual range.
+    const GRANULE: usize;
+
+    /// Whether to add guard slots between allocations or not.
+    const GUARD_SLOTS: bool = true;
+
+    /// Runs the provided function with a mutable reference to the
+    /// allocator for this virtual range.
+    fn with_allocator<F, R>(f: F) -> R
+    where
+        F: FnMut(&mut SubVmAllocator<Self>) -> R;
+}
+
+#[derive(Debug)]
+pub struct PerCpu4kRange;
+
+impl SubVmRange for PerCpu4kRange {
+    const DESCRIPTOR: AddrSpaceDescriptor = PERCPU_TEMP_4K;
+    const GRANULE: usize = PAGE_SIZE;
+
+    fn with_allocator<F, R>(mut f: F) -> R
+    where
+        F: FnMut(&mut SubVmAllocator<Self>) -> R,
+    {
+        VRANGE_4K.with(|a| f(&mut a.write_noblock()))
+    }
+}
+
+#[derive(Debug)]
+pub struct PerCpu2mRange;
+
+impl SubVmRange for PerCpu2mRange {
+    const DESCRIPTOR: AddrSpaceDescriptor = PERCPU_TEMP_2M;
+    const GRANULE: usize = PAGE_SIZE_2M;
+
+    fn with_allocator<F, R>(mut f: F) -> R
+    where
+        F: FnMut(&mut SubVmAllocator<Self>) -> R,
+    {
+        VRANGE_2M.with(|a| f(&mut a.write_noblock()))
+    }
+}
+
+/// A virtual address allocator for a particular address range `A`.
 #[derive(Debug, Default)]
-pub struct VirtualRange {
-    start_virt: VirtAddr,
-    page_count: usize,
-    page_shift: usize,
+pub struct SubVmAllocator<A: SubVmRange> {
     bits: BitmapAllocator1024,
+    _phantom: PhantomData<A>,
 }
 
 percpu! {
-    static VRANGE_4K: RWLock<VirtualRange> = RWLock::new(VirtualRange::new());
-    static VRANGE_2M: RWLock<VirtualRange> = RWLock::new(VirtualRange::new());
+    static VRANGE_4K: RWLock<SubVmAllocator<PerCpu4kRange>> = RWLock::new(SubVmAllocator::new());
+    static VRANGE_2M: RWLock<SubVmAllocator<PerCpu2mRange>> = RWLock::new(SubVmAllocator::new());
 }
 
 pub(crate) fn init_vrange_4k() {
-    const PAGE_COUNT: usize = SVSM_PERCPU_TEMP_SIZE_4K / PAGE_SIZE;
-    const { assert!(PAGE_COUNT < VirtualRange::CAPACITY) };
-
     VRANGE_4K.with(|vrange| {
-        vrange
-            .write_noblock()
-            .init(SVSM_PERCPU_TEMP_BASE_4K, PAGE_COUNT, PAGE_SHIFT);
+        vrange.write_noblock().init();
     });
 }
 
 pub(crate) fn init_vrange_2m() {
-    const PAGE_COUNT: usize = SVSM_PERCPU_TEMP_SIZE_2M / PAGE_SIZE_2M;
-    const { assert!(PAGE_COUNT < VirtualRange::CAPACITY) };
-
     VRANGE_2M.with(|vrange| {
-        vrange
-            .write_noblock()
-            .init(SVSM_PERCPU_TEMP_BASE_2M, PAGE_COUNT, PAGE_SHIFT_2M);
+        vrange.write_noblock().init();
     });
 }
 
-impl VirtualRange {
+impl<A: SubVmRange> SubVmAllocator<A> {
     pub const CAPACITY: usize = BitmapAllocator1024::CAPACITY;
 
-    pub const fn new() -> VirtualRange {
-        VirtualRange {
-            start_virt: VirtAddr::null(),
-            page_count: 0,
-            page_shift: PAGE_SHIFT,
+    pub const fn new() -> Self {
+        const { assert!(A::DESCRIPTOR.size() / A::GRANULE <= Self::CAPACITY) }
+        Self {
             bits: BitmapAllocator1024::new_full(),
+            _phantom: PhantomData,
         }
     }
 
-    pub fn init(&mut self, start_virt: VirtAddr, page_count: usize, page_shift: usize) {
-        self.start_virt = start_virt;
-        self.page_count = page_count;
-        self.page_shift = page_shift;
-        self.bits.set(0, page_count, false);
+    pub fn init(&mut self) {
+        let count = A::DESCRIPTOR.size() / A::GRANULE;
+        self.bits.set(0, count, false);
     }
 
-    pub fn alloc(&mut self, page_count: usize, alignment: usize) -> Result<VirtAddr, SvsmError> {
+    pub fn alloc(&mut self, mut count: usize, alignment: usize) -> Result<VirtAddr, SvsmError> {
         // Always reserve an extra page to leave a guard between virtual memory allocations
-        match self.bits.alloc(page_count + 1, alignment) {
-            Some(offset) => Ok(self.start_virt + (offset << self.page_shift)),
+        if A::GUARD_SLOTS {
+            count += 1;
+        }
+        match self.bits.alloc(count, alignment) {
+            Some(offset) => Ok(A::DESCRIPTOR.base() + (offset * A::GRANULE)),
             None => Err(SvsmError::Mem),
         }
     }
 
-    pub fn free(&mut self, vaddr: VirtAddr, page_count: usize) {
-        let offset = (vaddr - self.start_virt) >> self.page_shift;
+    pub fn free(&mut self, vaddr: VirtAddr, mut count: usize) {
+        let offset = (vaddr - A::DESCRIPTOR.base()) / A::GRANULE;
         // Add 1 to the page count for the VM guard
-        self.bits.free(offset, page_count + 1);
+        if A::GUARD_SLOTS {
+            count += 1;
+        }
+        self.bits.free(offset, count);
     }
 
     pub fn used_pages(&self) -> usize {
         self.bits.used()
     }
+
+    pub const fn descriptor(&self) -> AddrSpaceDescriptor {
+        A::DESCRIPTOR
+    }
 }
 
 pub fn virt_log_usage() {
-    let page_count4k = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
-    let page_count2m = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
-    let unused_cap_4k = BitmapAllocator1024::CAPACITY - page_count4k;
-    let unused_cap_2m = BitmapAllocator1024::CAPACITY - page_count2m;
+    let unused_cap_4k = BitmapAllocator1024::CAPACITY - PERCPU_TEMP_4K.size() / PAGE_SIZE;
+    let unused_cap_2m = BitmapAllocator1024::CAPACITY - PERCPU_TEMP_2M.size() / PAGE_SIZE_2M;
 
     log::info!(
         "[CPU {}] Virtual memory pages used: {} * 4K, {} * 2M",
@@ -108,80 +149,95 @@ pub fn virt_log_usage() {
     );
 }
 
+/// An allocation within a sub-range of the virtual address space.
 #[derive(Debug)]
-pub struct VRangeAlloc {
+pub struct SubVmAlloc<A: SubVmRange> {
     region: MemoryRegion<VirtAddr>,
-    huge: bool,
+    _phantom: PhantomData<A>,
 }
 
-impl VRangeAlloc {
-    /// Returns a virtual memory region in the 4K virtual range.
-    pub fn new_4k(size: usize, align: usize) -> Result<Self, SvsmError> {
-        // Each bit in our bitmap represents a 4K page
-        if (size & (PAGE_SIZE - 1)) != 0 {
-            return Err(SvsmError::Mem);
-        }
-        let page_count = size >> PAGE_SHIFT;
-        let addr = VRANGE_4K.with(|vrange| vrange.write_noblock().alloc(page_count, align))?;
-        let region = MemoryRegion::new(addr, size);
+impl<A: SubVmRange> SubVmAlloc<A> {
+    /// Returns a virtual memory region in the given virtual range.
+    pub fn new(count: usize, align: usize) -> Result<Self, SvsmError> {
+        let addr = A::with_allocator(|a| a.alloc(count, align))?;
+        let region = MemoryRegion::new(addr, count * A::GRANULE);
         Ok(Self {
             region,
-            huge: false,
+            _phantom: PhantomData,
         })
-    }
-
-    /// Returns a virtual memory region in the 2M virtual range.
-    pub fn new_2m(size: usize, align: usize) -> Result<Self, SvsmError> {
-        // Each bit in our bitmap represents a 2M page
-        if (size & (PAGE_SIZE_2M - 1)) != 0 {
-            return Err(SvsmError::Mem);
-        }
-        let page_count = size >> PAGE_SHIFT_2M;
-        let addr = VRANGE_2M.with(|vrange| vrange.write_noblock().alloc(page_count, align))?;
-        let region = MemoryRegion::new(addr, size);
-        Ok(Self { region, huge: true })
     }
 
     /// Returns the virtual memory region that this allocation spans.
     pub const fn region(&self) -> MemoryRegion<VirtAddr> {
         self.region
     }
-
-    /// Returns true if the allocation was made from the huge (2M) virtual range.
-    pub const fn huge(&self) -> bool {
-        self.huge
-    }
 }
 
-impl Drop for VRangeAlloc {
+impl<A: SubVmRange> Drop for SubVmAlloc<A> {
     fn drop(&mut self) {
         let region = self.region();
-        if self.huge {
-            VRANGE_2M.with(|vrange| {
-                vrange
-                    .write_noblock()
-                    .free(region.start(), region.len() >> PAGE_SHIFT_2M);
-            });
-        } else {
-            VRANGE_4K.with(|vrange| {
-                vrange
-                    .write_noblock()
-                    .free(region.start(), region.len() >> PAGE_SHIFT);
-            });
-        }
+        A::with_allocator(|a| a.free(region.start(), region.len() / A::GRANULE));
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::VirtualRange;
+    use super::*;
     use crate::address::VirtAddr;
-    use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
+    use crate::locking::{LockGuard, SpinLock};
+    use crate::mm::AddrSpaceDescriptor;
+    use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
+
+    static TEST_VRANGE_4K: SpinLock<SubVmAllocator<TestRange4k>> =
+        SpinLock::new(SubVmAllocator::new());
+    static TEST_VRANGE_2M: SpinLock<SubVmAllocator<TestRange2m>> =
+        SpinLock::new(SubVmAllocator::new());
+
+    struct TestRange4k {}
+
+    impl SubVmRange for TestRange4k {
+        const DESCRIPTOR: AddrSpaceDescriptor =
+            AddrSpaceDescriptor::new(VirtAddr::new(0x1000000), 1024 * PAGE_SIZE);
+        const GRANULE: usize = PAGE_SIZE;
+
+        fn with_allocator<F, R>(mut f: F) -> R
+        where
+            F: FnMut(&mut SubVmAllocator<Self>) -> R,
+        {
+            f(&mut TEST_VRANGE_4K.try_lock().unwrap())
+        }
+    }
+
+    struct TestRange2m {}
+
+    impl SubVmRange for TestRange2m {
+        const DESCRIPTOR: AddrSpaceDescriptor =
+            AddrSpaceDescriptor::new(VirtAddr::new(0x1000000), 1024 * PAGE_SIZE_2M);
+        const GRANULE: usize = PAGE_SIZE_2M;
+
+        fn with_allocator<F, R>(mut f: F) -> R
+        where
+            F: FnMut(&mut SubVmAllocator<Self>) -> R,
+        {
+            f(&mut TEST_VRANGE_2M.try_lock().unwrap())
+        }
+    }
+
+    fn range_4k() -> LockGuard<'static, SubVmAllocator<TestRange4k>> {
+        let mut guard = TEST_VRANGE_4K.lock();
+        guard.init();
+        guard
+    }
+
+    fn range_2m() -> LockGuard<'static, SubVmAllocator<TestRange2m>> {
+        let mut guard = TEST_VRANGE_2M.lock();
+        guard.init();
+        guard
+    }
 
     #[test]
     fn test_alloc_no_overlap_4k() {
-        let mut range = VirtualRange::new();
-        range.init(VirtAddr::new(0x1000000), 1024, PAGE_SHIFT);
+        let mut range = range_4k();
 
         // Test that we get two virtual addresses that do
         // not overlap when using 4k pages.
@@ -196,8 +252,7 @@ mod tests {
 
     #[test]
     fn test_alloc_no_overlap_2m() {
-        let mut range = VirtualRange::new();
-        range.init(VirtAddr::new(0x1000000), 1024, PAGE_SHIFT_2M);
+        let mut range = range_2m();
 
         // Test that we get two virtual addresses that do
         // not overlap when using 2M pages.
@@ -212,8 +267,7 @@ mod tests {
 
     #[test]
     fn test_free_4k() {
-        let mut range = VirtualRange::new();
-        range.init(VirtAddr::new(0x1000000), 1024, PAGE_SHIFT);
+        let mut range = range_4k();
 
         // This checks that freeing an allocated range giving the size
         // of the virtual region in bytes does indeed free the correct amount
@@ -232,8 +286,7 @@ mod tests {
 
     #[test]
     fn test_free_2m() {
-        let mut range = VirtualRange::new();
-        range.init(VirtAddr::new(0x1000000), 1024, PAGE_SHIFT_2M);
+        let mut range = range_2m();
 
         // This checks that freeing an allocated range giving the size
         // of the virtual region in bytes does indeed free the correct amount
