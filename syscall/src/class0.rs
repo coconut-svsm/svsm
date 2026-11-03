@@ -8,9 +8,8 @@ use super::call::{SysCallError, syscall1, syscall3};
 use super::{SYS_EXEC, SYS_EXIT};
 use core::ffi::CStr;
 
-/// Terminate the current task with the given exit code. The kernel only
-/// supports exit codes on 16 bits, so the upper 16 bits of the provided
-/// code will be ignored.
+/// Terminate the current task with the given exit code. Like on Linux, only
+/// the low 8 bits of the code are used.
 pub fn exit(code: u32) -> ! {
     // SAFETY: SYS_EXIT is supported syscall number by the svsm kernel.
     unsafe {

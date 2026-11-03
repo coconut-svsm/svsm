@@ -163,14 +163,14 @@ impl From<TaskState> for u32 {
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum TaskExitStatus {
     /// Task called sys_exit(code).
-    Exited(u16),
+    Exited(u8),
     /// Task was killed by an x86 exception.
     Exception,
 }
 
 impl From<u32> for TaskExitStatus {
     fn from(v: u32) -> Self {
-        let (code, exception) = ((v >> 16) as u16, (v & 0xFFFF) as u16);
+        let (code, exception) = ((v >> 16) as u8, (v & 0xFFFF) as u16);
         if exception != 0 {
             Self::Exception
         } else {

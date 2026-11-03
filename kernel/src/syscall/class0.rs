@@ -16,7 +16,8 @@ use core::ffi::c_char;
 use syscall::SysCallError;
 
 pub fn sys_exit(exit_code: u32) -> ! {
-    let code = (exit_code & 0xffff) as u16;
+    // Like on Linux, only the low 8 bits of the exit code are kept.
+    let code = exit_code as u8;
     log::info!(
         "Terminating task {}, exit_code {code}",
         current_task().get_task_name()
