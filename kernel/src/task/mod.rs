@@ -18,6 +18,7 @@ pub use schedule::{
     wake_and_schedule_task,
 };
 
+pub use task_mm::TaskVm;
 pub use tasks::{
     INITIAL_TASK_ID, KernelThreadStartInfo, TASK_FLAG_SHARE_PT, Task, TaskContext, TaskError,
     TaskExitStatus, TaskListAdapter, TaskPointer, TaskRunListAdapter, TaskState, is_task_fault,
