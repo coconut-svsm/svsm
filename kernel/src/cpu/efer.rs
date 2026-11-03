@@ -24,3 +24,30 @@ pub unsafe fn write_efer(efer: EFERFlags) {
         write_msr(MSR_EFER, val);
     }
 }
+
+/// Disables the `syscall` instruction by clearing `EFER.SCE`.
+///
+/// The SVSM handles system calls from user mode in the #UD handler, which
+/// relies on the `syscall` instruction raising #UD.
+pub fn disable_syscall_insn() {
+    let efer = read_efer();
+    if efer.contains(EFERFlags::SCE) {
+        log::warn!("EFER.SCE is set, clearing it");
+        // SAFETY: SCE only enables the syscall instruction. Clearing it
+        // makes the instruction raise #UD and cannot break memory safety.
+        unsafe {
+            write_efer(efer.difference(EFERFlags::SCE));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_syscall_insn_disabled() {
+        assert!(!read_efer().contains(EFERFlags::SCE));
+    }
+}

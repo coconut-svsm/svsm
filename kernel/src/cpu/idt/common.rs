@@ -283,11 +283,6 @@ impl IdtEntry {
         IdtEntry::create(target, SVSM_CS, IDT_TYPE_INT, 0, 0)
     }
 
-    pub fn user_entry(handler: unsafe extern "C" fn()) -> Self {
-        let target = VirtAddr::from(handler as *const ());
-        IdtEntry::create(target, SVSM_CS, IDT_TYPE_INT, 3, 0)
-    }
-
     pub fn ist_entry(handler: unsafe extern "C" fn(), ist: u8) -> Self {
         let target = VirtAddr::from(handler as *const ());
         IdtEntry::create(target, SVSM_CS, IDT_TYPE_INT, 0, ist)
@@ -418,6 +413,11 @@ pub fn is_exception_handler_return_site(rip: VirtAddr) -> bool {
     (start..end).contains(&rip)
 }
 
+/// How an interrupt vector was invoked, as passed to the exception handlers.
+///
+/// Nothing uses it since the `int 0x80` system call entry was removed. It is
+/// kept so that handlers of future software interrupts can tell them apart
+/// from external interrupts using the platform.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy)]
 pub enum IdtEventType {

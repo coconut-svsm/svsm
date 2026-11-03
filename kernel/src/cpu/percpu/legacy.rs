@@ -18,7 +18,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::ShadowStackInit;
 use crate::cpu::apic::init_apic_emulation;
 use crate::cpu::control_regs::{read_cr0, read_cr3, read_cr4};
-use crate::cpu::efer::read_efer;
+use crate::cpu::efer::{disable_syscall_insn, read_efer};
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, reset_ip};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
@@ -700,6 +700,10 @@ impl PerCpu {
     // Setup code which needs to run on the target CPU
     pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
         self.setup_percpu_keys();
+
+        // System calls from user mode rely on the syscall instruction
+        // raising #UD, see ex_handler_invalid_opcode().
+        disable_syscall_insn();
 
         // Initialize platform resources before allocating shared pages.
         platform.setup_percpu_current(self)?;

@@ -22,6 +22,9 @@ fn main() -> u32 {
 }
 
 #[cfg(test)]
+mod syscall;
+
+#[cfg(test)]
 mod tests {
     static mut SOME_BSS_DATA: [u64; 128] = [0; 128];
     static mut SOME_DATA: [u64; 128] = [0x01; 128];
