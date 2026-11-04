@@ -1385,11 +1385,6 @@ impl RawPageTablePart {
         RawPageTablePart::free_lvl2(&mut self.page);
     }
 
-    /// Returns the physical address of this page table part.
-    fn address(&self) -> PhysAddr {
-        virt_to_phys(VirtAddr::from(self as *const RawPageTablePart))
-    }
-
     /// Walks the page table at level 3 to find the mapping for a given
     /// virtual address.
     ///
@@ -1556,8 +1551,8 @@ impl Drop for RawPageTablePart {
 /// used for virtual memory management
 #[derive(Debug)]
 pub struct PageTablePart {
-    /// The root of the page-table sub-tree
-    raw: Option<PageBox<RawPageTablePart>>,
+    /// The root of the page-table sub-tree, along with its physical address
+    raw: Option<(PageBox<RawPageTablePart>, PhysAddr)>,
     /// The top-level index this PageTablePart is populated at
     idx: usize,
 }
@@ -1583,18 +1578,19 @@ impl PageTablePart {
         self.get_or_init_mut();
     }
 
-    fn get_or_init_mut(&mut self) -> &mut RawPageTablePart {
-        self.raw.get_or_insert_with(|| {
-            PageBox::try_new_zeroed().expect("Failed to allocate page table page")
-        })
+    fn get_or_init_mut(&mut self) -> (&mut RawPageTablePart, PhysAddr) {
+        let (root, paddr) = self.raw.get_or_insert_with(|| {
+            let root = PageBox::<RawPageTablePart>::try_new_zeroed()
+                .expect("Failed to allocate page table page");
+            let paddr = virt_to_phys(root.vaddr());
+            (root, paddr)
+        });
+        (root, *paddr)
     }
 
-    fn get_mut(&mut self) -> Option<&mut RawPageTablePart> {
-        self.raw.as_deref_mut()
-    }
-
-    fn get(&self) -> Option<&RawPageTablePart> {
-        self.raw.as_deref()
+    fn get_mut(&mut self) -> Option<(&mut RawPageTablePart, PhysAddr)> {
+        let (root, paddr) = self.raw.as_mut()?;
+        Some((root, *paddr))
     }
 
     /// Request PageTable index to populate this instance to
@@ -1613,7 +1609,7 @@ impl PageTablePart {
     ///
     /// Physical base address of the page-table sub-tree
     pub fn address(&self) -> Option<PhysAddr> {
-        self.get().map(|p| p.address())
+        self.raw.as_ref().map(|(_, paddr)| *paddr)
     }
 
     /// Map a 4KiB page in the page table sub-tree
@@ -1643,7 +1639,7 @@ impl PageTablePart {
     ) -> Result<(), SvsmError> {
         assert!(PageTable::index::<3>(vaddr) == self.idx);
 
-        self.get_or_init_mut().map_4k(vaddr, paddr, flags, shared)
+        self.get_or_init_mut().0.map_4k(vaddr, paddr, flags, shared)
     }
 
     /// Unmaps a 4KiB page from the page table sub-tree
@@ -1662,7 +1658,7 @@ impl PageTablePart {
     pub fn unmap_4k(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
         assert!(PageTable::index::<3>(vaddr) == self.idx);
 
-        self.get_mut().and_then(|r| r.unmap_4k(vaddr))
+        self.get_mut().and_then(|(r, _)| r.unmap_4k(vaddr))
     }
 
     /// Map a 2MiB page in the page table sub-tree
@@ -1692,7 +1688,7 @@ impl PageTablePart {
     ) -> Result<(), SvsmError> {
         assert!(PageTable::index::<3>(vaddr) == self.idx);
 
-        self.get_or_init_mut().map_2m(vaddr, paddr, flags, shared)
+        self.get_or_init_mut().0.map_2m(vaddr, paddr, flags, shared)
     }
 
     /// Unmaps a 2MiB page from the page table sub-tree
@@ -1711,7 +1707,7 @@ impl PageTablePart {
     pub fn unmap_2m(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
         assert!(PageTable::index::<3>(vaddr) == self.idx);
 
-        self.get_mut().and_then(|r| r.unmap_2m(vaddr))
+        self.get_mut().and_then(|(r, _)| r.unmap_2m(vaddr))
     }
 }
 
