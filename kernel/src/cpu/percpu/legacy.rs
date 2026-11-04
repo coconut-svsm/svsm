@@ -28,7 +28,7 @@ use crate::hyperv::{self, allocate_hypercall_pages};
 use crate::locking::{
     LockGuard, RWLock, RWLockIrqSafe, ReadLockGuardIrqSafe, SpinLock, WriteLockGuardIrqSafe,
 };
-use crate::mm::pagetable::{ActivePageTable, PTEntryFlags, PageTable};
+use crate::mm::pagetable::{ActivePageTable, PTEntryFlags, PageTable, init_temp_selfmap};
 use crate::mm::virtualrange::{init_vrange_2m, init_vrange_4k};
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
 use crate::mm::{
@@ -705,6 +705,7 @@ impl PerCpu {
         init_isst(double_fault_shadow_stack());
         init_vrange_4k();
         init_vrange_2m();
+        init_temp_selfmap();
     }
 
     // Setup code which needs to run on the target CPU

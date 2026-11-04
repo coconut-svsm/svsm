@@ -237,12 +237,17 @@ impl VMR {
         // Now update each page table part that covers the VMM's virtual
         // addresses.
         for (idx, region) in self.vmm_parts(vmm) {
-            // Keep only pages that have physical backing.
-            let pages = region
+            // Keep only pages that have physical backing. Skip if there are no
+            // pages to map.
+            let mut pages = region
                 .iter_pages(page_size)
-                .filter_map(|vaddr| Some((vaddr, vmm.map(vaddr)?, vmm.pt_flags(vaddr)?)));
+                .filter_map(|vaddr| Some((vaddr, vmm.map(vaddr)?, vmm.pt_flags(vaddr)?)))
+                .peekable();
+            if pages.peek().is_none() {
+                continue;
+            }
 
-            let part = &mut pgtbl_parts[idx];
+            let mut part = pgtbl_parts[idx].as_active();
             for (vaddr, paddr, flags) in pages {
                 let pt_flags = self.pt_flags | flags | PTEntryFlags::PRESENT;
                 match page_size {
@@ -266,7 +271,10 @@ impl VMR {
         let page_size = mapping.page_size();
 
         for (idx, region) in self.vmm_parts(vmm) {
-            let part = &mut pgtbl_parts[idx];
+            // Nothing can be unmapped in a part whose subtree is not allocated.
+            let Some(mut part) = pgtbl_parts[idx].try_as_active() else {
+                continue;
+            };
             for vaddr in region.iter_pages(page_size) {
                 let result = match page_size {
                     PageSize::Regular => part.unmap_4k(vaddr),
