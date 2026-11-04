@@ -615,8 +615,7 @@ impl PerCpu {
         Ok(())
     }
 
-    fn install_pagetable(&self, mut pgtable: PageBox<PageTable>) {
-        self.vm_range.populate(&mut pgtable);
+    fn install_pagetable(&self, pgtable: PageBox<PageTable>) {
         self.set_pgtable(PageBox::leak(pgtable));
     }
 
@@ -624,12 +623,17 @@ impl PerCpu {
         self.vm_range.dump_ranges();
     }
 
-    pub fn setup(&self, pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
+    pub fn setup(&self, mut pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
         // SAFETY: The per-CPU address range is fully aligned to top-level
         // paging boundaries.
         unsafe {
             self.vm_range.initialize()?;
         }
+
+        // Populate the per-CPU range in the page table before mapping into it.
+        // For the BSP, this is the active page table, so the mappings below
+        // are made through it.
+        self.vm_range.populate(&mut pgtable);
 
         // Map PerCpu data in own page-table
         self.map_self()?;
