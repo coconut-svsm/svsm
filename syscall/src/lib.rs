@@ -13,7 +13,7 @@ mod def;
 mod logging;
 mod obj;
 
-pub use call::SysCallError;
+pub use call::{SysCallError, syscall0, syscall1, syscall2, syscall3, syscall4, syscall5};
 pub use class0::*;
 pub use class1::*;
 pub use class3::*;
