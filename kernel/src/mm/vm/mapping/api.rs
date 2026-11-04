@@ -4,11 +4,12 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::address::{PhysAddr, VirtAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::vm::VMR;
 use crate::types::{PAGE_SHIFT, PageSize};
+use crate::utils::MemoryRegion;
 
 use intrusive_collections::rbtree::AtomicLink;
 use intrusive_collections::{KeyAdapter, intrusive_adapter};
@@ -204,11 +205,48 @@ impl VMM {
         )
     }
 
+    pub fn region(&self) -> MemoryRegion<VirtAddr> {
+        let (start, end) = self.range();
+        MemoryRegion::from_addresses(start, end)
+    }
+
     pub fn get_mapping(&self) -> &Mapping {
         &self.mapping
     }
 
     pub fn get_mapping_clone(&self) -> Mapping {
         self.mapping.clone()
+    }
+
+    fn offset(&self, vaddr: VirtAddr) -> Option<usize> {
+        let (start, end) = self.range();
+        vaddr
+            .bits()
+            .checked_sub(start.bits())
+            .filter(|_| vaddr < end)
+    }
+
+    /// Returns the physical address to map for the given virtual address
+    /// in this VMM. Returns `None` if the address does not belong to this
+    /// VMM, or if the address should not be backed by a physical page.
+    pub fn map(&self, vaddr: VirtAddr) -> Option<PhysAddr> {
+        let off = self.offset(vaddr)?;
+        self.get_mapping().map(off)
+    }
+
+    /// Informs the backing `Mapping` that the given virtual address is
+    /// about to be unmapped.
+    pub fn unmap(&self, vaddr: VirtAddr) {
+        if let Some(off) = self.offset(vaddr) {
+            self.get_mapping().unmap(off);
+        }
+    }
+
+    /// Returns the PTE flags that should be used to map the given virtual
+    /// address. Returns `None` if the virtual address does not belong to
+    /// this VMM.
+    pub fn pt_flags(&self, vaddr: VirtAddr) -> Option<PTEntryFlags> {
+        let off = self.offset(vaddr)?;
+        Some(self.get_mapping().pt_flags(off))
     }
 }

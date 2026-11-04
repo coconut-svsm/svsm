@@ -14,7 +14,7 @@ use crate::types::{PAGE_SHIFT, PAGE_SIZE, PageSize};
 use crate::utils::{MemoryRegion, align_down, align_up};
 
 use core::borrow::Borrow;
-use core::cmp::max;
+use core::cmp::{max, min};
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
 
@@ -197,6 +197,23 @@ impl VMR {
         )
     }
 
+    /// Given a [`VMM`], returns an iterator over the indexes of the [`PageTablePart`]s
+    /// that the `VMM` spans, along with the virtual subregion of that VMM that is
+    /// covered by that `PageTablePart`.
+    fn vmm_parts(&self, vmm: &VMM) -> impl Iterator<Item = (usize, MemoryRegion<VirtAddr>)> {
+        let vmm_region = vmm.region();
+        let vmr_start = self.virt_range().start();
+        let first_idx = (vmm_region.start() - vmr_start) / VMR_GRANULE;
+        let end_idx = (vmm_region.end() - vmr_start).div_ceil(VMR_GRANULE);
+
+        (first_idx..end_idx).map(move |idx| {
+            let part = MemoryRegion::new(vmr_start + idx * VMR_GRANULE, VMR_GRANULE);
+            let start = max(vmm_region.start(), part.start());
+            let end = min(vmm_region.end(), part.end());
+            (idx, MemoryRegion::from_addresses(start, end))
+        })
+    }
+
     /// Map a [`VMM`] into the [`PageTablePart`]s of this region
     ///
     /// # Arguments
@@ -207,11 +224,8 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     fn map_vmm(&self, vmm: &VMM) -> Result<(), SvsmError> {
-        let rstart = self.virt_range().start();
-        let (vmm_start, vmm_end) = vmm.range();
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
         let mapping = vmm.get_mapping();
-        let mut offset: usize = 0;
         let page_size = mapping.page_size();
         let shared = mapping.shared();
 
@@ -220,20 +234,22 @@ impl VMR {
             return Ok(());
         }
 
-        while vmm_start + offset < vmm_end {
-            let idx = PageTable::index::<3>(VirtAddr::from(vmm_start - rstart));
-            if let Some(paddr) = mapping.map(offset) {
-                let pt_flags = self.pt_flags | mapping.pt_flags(offset) | PTEntryFlags::PRESENT;
+        // Now update each page table part that covers the VMM's virtual
+        // addresses.
+        for (idx, region) in self.vmm_parts(vmm) {
+            // Keep only pages that have physical backing.
+            let pages = region
+                .iter_pages(page_size)
+                .filter_map(|vaddr| Some((vaddr, vmm.map(vaddr)?, vmm.pt_flags(vaddr)?)));
+
+            let part = &mut pgtbl_parts[idx];
+            for (vaddr, paddr, flags) in pages {
+                let pt_flags = self.pt_flags | flags | PTEntryFlags::PRESENT;
                 match page_size {
-                    PageSize::Regular => {
-                        pgtbl_parts[idx].map_4k(vmm_start + offset, paddr, pt_flags, shared)?
-                    }
-                    PageSize::Huge => {
-                        pgtbl_parts[idx].map_2m(vmm_start + offset, paddr, pt_flags, shared)?
-                    }
+                    PageSize::Regular => part.map_4k(vaddr, paddr, pt_flags, shared)?,
+                    PageSize::Huge => part.map_2m(vaddr, paddr, pt_flags, shared)?,
                 }
             }
-            offset += usize::from(page_size);
         }
 
         Ok(())
@@ -245,25 +261,22 @@ impl VMR {
     ///
     /// - `vmm` - Reference to a [`VMM`] instance to unmap from the page-table
     fn unmap_vmm(&self, vmm: &VMM) {
-        let rstart = self.virt_range().start();
-        let (vmm_start, vmm_end) = vmm.range();
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
         let mapping = vmm.get_mapping();
         let page_size = mapping.page_size();
-        let mut offset: usize = 0;
 
-        while vmm_start + offset < vmm_end {
-            let idx = PageTable::index::<3>(VirtAddr::from(vmm_start - rstart));
-            let result = match page_size {
-                PageSize::Regular => pgtbl_parts[idx].unmap_4k(vmm_start + offset),
-                PageSize::Huge => pgtbl_parts[idx].unmap_2m(vmm_start + offset),
-            };
+        for (idx, region) in self.vmm_parts(vmm) {
+            let part = &mut pgtbl_parts[idx];
+            for vaddr in region.iter_pages(page_size) {
+                let result = match page_size {
+                    PageSize::Regular => part.unmap_4k(vaddr),
+                    PageSize::Huge => part.unmap_2m(vaddr),
+                };
 
-            if result.is_some() {
-                mapping.unmap(offset);
+                if result.is_some() {
+                    vmm.unmap(vaddr);
+                }
             }
-
-            offset += usize::from(page_size);
         }
     }
 
