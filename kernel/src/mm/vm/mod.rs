@@ -5,10 +5,12 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 mod mapping;
+mod pcid_set;
 mod range;
 
 pub use mapping::{
     Mapping, RawAllocMapping, VMFileMapping, VMFileMappingFlags, VMKernelStack, VMM, VMMAdapter,
     VMPhysMem, VMReserved, VMalloc, VirtualMapping,
 };
+pub use pcid_set::PcidSet;
 pub use range::{VMR, VMR_GRANULE, VMRMapping};

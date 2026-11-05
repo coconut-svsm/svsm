@@ -21,10 +21,11 @@ use core::ops::Deref;
 use intrusive_collections::Bound;
 use intrusive_collections::rbtree::{CursorMut, RBTree};
 
-use super::{Mapping, VMM, VMMAdapter};
+use super::{Mapping, PcidSet, VMM, VMMAdapter};
 
 extern crate alloc;
 use alloc::boxed::Box;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 /// Granularity of ranges mapped by [`struct VMR`]. The mapped region of a
@@ -66,6 +67,12 @@ pub struct VMR {
     /// Indicates that this [`struct VMR`] is visible only on a single CPU
     /// and therefore TLB flushes do not require broadcast.
     per_cpu: bool,
+
+    /// PCIDs of page-table roots that may cache translations for this VMR.
+    /// `None` for global/shared VMRs. Task VMRs share one set across threads:
+    /// each thread has its own root/PCID, so unmaps must shoot down every
+    /// member rather than a single id or the current CPU's PCID.
+    pcid_set: Option<Arc<PcidSet>>,
 }
 
 impl VMR {
@@ -94,6 +101,7 @@ impl VMR {
             pgtbl_parts: RWLock::new(Vec::new()),
             pt_flags: flags,
             per_cpu: false,
+            pcid_set: None,
         })
     }
 
@@ -101,6 +109,16 @@ impl VMR {
     /// so that TLB flushes do not require broadcast.
     pub fn set_per_cpu(&mut self, per_cpu: bool) {
         self.per_cpu = per_cpu;
+    }
+
+    /// Associates this VMR with a shared PCID set for its owning address space.
+    ///
+    /// This stores only a ref used for shootdowns on mapping removal. The
+    /// owner (task mm) registers and unregisters PCIDs; unmaps here invalidate
+    /// every PCID in the set on every CPU instead of using `INVLPG`, which only
+    /// affects the current PCID.
+    pub fn set_pcid_set(&mut self, pcid_set: Arc<PcidSet>) {
+        self.pcid_set = Some(pcid_set);
     }
 
     /// Allocated all [`PageTablePart`]s needed to map this region
@@ -446,6 +464,11 @@ impl VMR {
 
         if self.per_cpu {
             flush_tlb_global_percpu_range(region, pgsize);
+        } else if let Some(ref pcid_set) = self.pcid_set {
+            // The page-table update above must complete before this
+            // shootdown. The synchronous flush must complete before the
+            // unmapped page can be freed or reassigned.
+            pcid_set.flush_range(region, pgsize);
         } else {
             flush_tlb_global_sync_range(region, pgsize);
         }

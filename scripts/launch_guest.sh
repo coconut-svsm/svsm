@@ -145,7 +145,7 @@ QEMU_PLANES=$($QEMU -h | grep -o "device-plane=" || true)
 case "$CGS" in
   nocc)
     SNP_GUEST=""
-    CPU=max,smep=on
+    CPU=EPYC-v4,+pcid,+invpcid
     MEMORY=memory-backend-ram,size=$MEMORY_SIZE,id=mem0,prealloc=false
     ;;
   sev)

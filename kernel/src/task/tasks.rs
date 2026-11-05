@@ -47,6 +47,7 @@ use crate::utils::{MemoryRegion, is_aligned};
 use intrusive_collections::{LinkedList, LinkedListAtomicLink, intrusive_adapter};
 
 use super::exec::exec;
+use super::pcid::{TaskPcid, pcid_supported};
 use super::schedule::complete_task_switch;
 use super::schedule::terminate;
 use super::task_mm::TaskMM;
@@ -348,9 +349,6 @@ pub struct Task {
 
     pub shadow_stack_base: VirtAddr,
 
-    /// Page table that is loaded when the task is scheduled
-    pub page_table: RWLock<PageBox<PageTable>>,
-
     /// Task kernel stack mapping
     _kernel_stack: VMRMapping<Arc<TaskMM>>,
 
@@ -359,6 +357,15 @@ pub struct Task {
 
     /// Task memory management state
     mm: Arc<TaskMM>,
+
+    /// PCID tagging this task's page-table root. Declared before
+    /// `page_table` so `Drop` INVPCID runs before the page-table pages are
+    /// freed; otherwise a reused PCID can keep a stale self-map and
+    /// `virt_to_phys` panics on a live kernel address.
+    pcid: Option<TaskPcid>,
+
+    /// Page table that is loaded when the task is scheduled.
+    pub page_table: RWLock<PageBox<PageTable>>,
 
     /// State relevant for scheduler
     sched_state: TaskSchedState,
@@ -438,6 +445,14 @@ impl Drop for Task {
         // but they are good sanity checks on the scheduler.
         debug_assert!(self.is_terminated() || self.is_pending());
         debug_assert!(irqs_enabled());
+
+        // Leave the VMR shootdown set before `TaskPcid` is dropped (and the
+        // PCID id is freed for reuse). Overflow tasks register PCID 0 instead.
+        if let Some(ref pcid) = self.pcid {
+            self.mm.remove_pcid(pcid.pcid());
+        } else {
+            self.mm.remove_pcid(0);
+        }
     }
 }
 
@@ -474,6 +489,27 @@ impl Task {
                     Arc::new(RWLock::new(BTreeMap::new())),
                 )
             }
+        };
+
+        // One PCID per page-table root. Threads share TaskMM/VMRs but not the
+        // root or self-map; tagging both with the same PCID would let CR3[63]
+        // retain a stale self-map across switches. If PCIDs are exhausted,
+        // fall back to reserved PCID 0 (CR3[63]=0) so creation still succeeds
+        // and still register that tag for VMR shootdowns — otherwise unmaps
+        // would skip INVPCID for the overflow task's TLB entries.
+        let pcid = if pcid_supported() {
+            match TaskPcid::new() {
+                Ok(p) => {
+                    task_mm.append_pcid(p.pcid());
+                    Some(p)
+                }
+                Err(_) => {
+                    task_mm.append_pcid(0);
+                    None
+                }
+            }
+        } else {
+            None
         };
 
         let xsa = Self::allocate_xsave_area();
@@ -552,10 +588,11 @@ impl Task {
             xsa,
             stack_bounds: bounds,
             shadow_stack_base,
-            page_table: RWLock::new(pgtable),
             _kernel_stack: kernel_stack_mapping,
             _shadow_stack: shadow_stack_mapping,
             mm: task_mm,
+            pcid,
+            page_table: RWLock::new(pgtable),
             sched_state: TaskSchedState::new(cpu.get_cpu_index()),
             name: args.name,
             id: TASK_ID_ALLOCATOR.next_id(),
@@ -664,6 +701,10 @@ impl Task {
 
     pub fn rootdir(&self) -> Arc<dyn Directory> {
         self.rootdir.clone()
+    }
+
+    pub fn pcid(&self) -> Option<u16> {
+        self.pcid.as_ref().map(TaskPcid::pcid)
     }
 
     pub fn set_task_active(&self) {

@@ -552,7 +552,27 @@ unsafe fn switch_to(prev_task: Option<TaskPointer>, next_task: TaskPointer) -> O
     // the page table and stack information in those tasks are correct and
     // can be used to switch to the correct page table and execution stack.
     unsafe {
-        let cr3 = (*next).page_table.lock_read().cr3_value().bits();
+        let cr3 = {
+            let mut cr3 = (*next).page_table.lock_read().cr3_value().bits();
+            if let Some(pcid) = (*next).pcid() {
+                cr3 |= usize::from(pcid);
+                // Set bit 63 so that writing CR3 does not flush the TLB
+                // entries associated with the target PCID. Without this bit,
+                // every write to CR3 invalidates all non-global entries for
+                // the loaded PCID, defeating the purpose of tagging address
+                // spaces with a PCID across context switches.
+                //
+                // Same-CPU switches keep bit 63. Cross-CPU switches clear it
+                // in `switch_context` after `update_task_percpu_page_tables`
+                // so the destination CPU drops any leftover tags for this
+                // PCID (reuse, or paging-structure caches from an earlier
+                // residency) before entering the task. VMR unmaps still
+                // INVPCID the owning PCID on every CPU; INVLPG alone is not
+                // enough for inactive PCIDs.
+                cr3 |= 1usize << 63;
+            }
+            cr3
+        };
 
         // Switch to new task
         let new_prev = switch_context(prev as usize, next as usize, cr3);
@@ -816,6 +836,15 @@ global_asm!(
         popq    %rdi
         popq    %rsi
 
+        // Drop CR3[63] after a cross-CPU migrate. Bit 63 preserves PCID-
+        // tagged TLB entries across the CR3 write; that is wrong here because
+        // `update_task_percpu_page_tables` just changed this root, and the
+        // destination CPU may still hold tags for a prior owner of the same
+        // PCID. Clearing bit 63 makes MOV CR3 invalidate this PCID's
+        // non-global entries (Intel/AMD PCIDE semantics). Same-CPU switches
+        // skip this path and keep bit 63.
+        btrq    $63, %rdx
+
     5:
         // Switch to the new task page tables
         movq    %rdx, %cr3
@@ -912,10 +941,14 @@ mod test {
     use super::schedule;
     use super::set_affinity;
     use super::start_kernel_task;
+    use super::start_kernel_thread;
     use super::wait_for_termination;
-    use crate::cpu::percpu::{PERCPU_AREAS, this_cpu};
+    use crate::address::Address;
+    use crate::cpu::percpu::{PERCPU_AREAS, current_task, this_cpu};
+    use crate::task::pcid::pcid_supported;
     use core::sync::atomic::AtomicBool;
     use core::sync::atomic::AtomicU32;
+    use core::sync::atomic::AtomicUsize;
     use core::sync::atomic::Ordering;
 
     static EMPTY_TASK_COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -1079,5 +1112,74 @@ mod test {
 
         // Move this thread back to its starting point.
         set_affinity(cpu_index);
+    }
+
+    // Per-root PCID invariant: threads share TaskMM/VMRs but each has its own
+    // page table (and self-map). Distinct roots must not share a PCID, or
+    // CR3[63] can retain a stale self-map across switches.
+    static SELFMAP_WORKER_CR3_PHYS: AtomicUsize = AtomicUsize::new(0);
+    static SELFMAP_WORKER_READY: AtomicBool = AtomicBool::new(false);
+    static SELFMAP_WORKER_DONE: AtomicBool = AtomicBool::new(false);
+
+    fn shared_pcid_selfmap_worker(_: usize) {
+        let cr3_phys = current_task().page_table.lock_read().cr3_value();
+        SELFMAP_WORKER_CR3_PHYS.store(cr3_phys.bits(), Ordering::Release);
+        SELFMAP_WORKER_READY.store(true, Ordering::Release);
+
+        // Yield once so the parent can observe our CR3/PCID, then exit.
+        while !SELFMAP_WORKER_DONE.load(Ordering::Acquire) {
+            schedule();
+        }
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_thread_shared_pcid_selfmap() {
+        if !pcid_supported() {
+            return;
+        }
+
+        SELFMAP_WORKER_CR3_PHYS.store(0, Ordering::Relaxed);
+        SELFMAP_WORKER_READY.store(false, Ordering::Relaxed);
+        SELFMAP_WORKER_DONE.store(false, Ordering::Relaxed);
+
+        let parent = current_task();
+        let parent_cr3_phys = parent.page_table.lock_read().cr3_value();
+        let parent_pcid = parent.pcid();
+        assert!(
+            parent_pcid.is_some(),
+            "PCID supported but parent task has no PCID"
+        );
+
+        // Sibling thread: same TaskMM, different page table / PCID / self-map.
+        // No affinity pin: this is a structural PCID/root check, and pinning
+        // the suite runner disturbed later multi-CPU wait tests under NOCC.
+        let worker = start_kernel_thread(KernelThreadStartInfo::new(shared_pcid_selfmap_worker, 0))
+            .expect("Failed to start shared-PCID self-map worker");
+
+        while !SELFMAP_WORKER_READY.load(Ordering::Acquire) {
+            schedule();
+        }
+
+        let worker_cr3 = SELFMAP_WORKER_CR3_PHYS.load(Ordering::Acquire);
+        let worker_pcid = worker.pcid();
+
+        SELFMAP_WORKER_DONE.store(true, Ordering::Release);
+        wait_for_termination(worker);
+
+        assert_ne!(
+            parent_cr3_phys.bits(),
+            worker_cr3,
+            "expected distinct per-task page-table roots"
+        );
+
+        assert!(
+            parent_pcid != worker_pcid || parent_cr3_phys.bits() == worker_cr3,
+            "threads share PCID {:?} with distinct page tables ({:#x} vs {:#x}); \
+             CR3[63] can retain stale self-map TLB entries across switches",
+            parent_pcid,
+            parent_cr3_phys.bits(),
+            worker_cr3
+        );
     }
 }
