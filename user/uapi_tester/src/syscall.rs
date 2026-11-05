@@ -49,7 +49,7 @@ fn test_syscall_insn_dispatch() {
     // The first index after the last capability is invalid.
     assert_eq!(
         syscall_insn(SYS_CAPABILITIES, count + 1) as i64,
-        SysCallError::ENOTFOUND as i64
+        SysCallError::ENOENT as i64
     );
 }
 
@@ -79,7 +79,7 @@ fn test_syscall_insn_registers() {
         );
     }
 
-    assert_eq!(ret as i64, SysCallError::EINVAL as i64);
+    assert_eq!(ret as i64, SysCallError::ENOSYS as i64);
     // All registers other than rax, rcx and r11 are preserved.
     assert_eq!((rdi, rsi, rdx, r8, r9, r10), (1, 2, 3, 4, 5, 6));
 }
