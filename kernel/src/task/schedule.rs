@@ -566,9 +566,10 @@ unsafe fn switch_to(prev_task: Option<TaskPointer>, next_task: TaskPointer) -> O
                 // in `switch_context` after `update_task_percpu_page_tables`
                 // so the destination CPU drops any leftover tags for this
                 // PCID (reuse, or paging-structure caches from an earlier
-                // residency) before entering the task. VMR unmaps still
-                // INVPCID the owning PCID on every CPU; INVLPG alone is not
-                // enough for inactive PCIDs.
+                // residency) before entering the task. Task teardown must
+                // INVPCID the id before removing it from `PcidSet`; once the
+                // set is empty, VMR unmap falls back to INVLPG (current PCID
+                // only), which does not cover an inactive task PCID.
                 cr3 |= 1usize << 63;
             }
             cr3

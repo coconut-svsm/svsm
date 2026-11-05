@@ -30,6 +30,7 @@ use crate::cpu::percpu::{PerCpu, current_task};
 use crate::cpu::shadow_stack::init_shadow_stack;
 use crate::cpu::sse::sse_restore_context;
 use crate::cpu::sse::xsave_area_size;
+use crate::cpu::tlb::flush_tlb_pcid_sync;
 use crate::cpu::{X86ExceptionContext, X86InterruptFrame};
 use crate::error::SvsmError;
 use crate::fs::{Directory, FileHandle, opendir, stdout_open};
@@ -446,11 +447,24 @@ impl Drop for Task {
         debug_assert!(self.is_terminated() || self.is_pending());
         debug_assert!(irqs_enabled());
 
-        // Leave the VMR shootdown set before `TaskPcid` is dropped (and the
-        // PCID id is freed for reuse). Overflow tasks register PCID 0 instead.
+        // Shoot down this task's PCID *before* removing it from the VMR set
+        // and before `_kernel_stack` / `_shadow_stack` drop.
+        //
+        // `Drop` field order unmaps the stacks next. If the id is already gone
+        // from `PcidSet`, that unmap sees an empty set and only INVLPG's the
+        // *current* CR3 PCID — not this task's. Stack pages can then be reused
+        // while other CPUs still hold VA→PA tags for the dying PCID. A later
+        // task that reuses the id and migrates with CR3[63]=1 can restore its
+        // stack through those stale tags and `ret` to NULL (multi-waiter RIP 0).
+        //
+        // Overflow tasks use reserved PCID 0 with no `TaskPcid`, so they never
+        // flush in `TaskPcid::drop`; flush 0 here explicitly.
         if let Some(ref pcid) = self.pcid {
-            self.mm.remove_pcid(pcid.pcid());
-        } else {
+            let id = pcid.pcid();
+            flush_tlb_pcid_sync(id);
+            self.mm.remove_pcid(id);
+        } else if pcid_supported() {
+            flush_tlb_pcid_sync(0);
             self.mm.remove_pcid(0);
         }
     }
