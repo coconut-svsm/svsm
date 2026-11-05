@@ -153,17 +153,17 @@ impl log::Log for BufferLogger {
         match record.metadata().level() {
             log::Level::Error | log::Level::Warn => {
                 let level_str = record.metadata().level().as_str();
-                lb_write(format_args!("{level_str}: {record_args}\n"));
+                lb_write(format_args!("{level_str}: {record_args}\r\n"));
             }
 
             log::Level::Info => {
-                lb_write(format_args!("{record_args}\n"));
+                lb_write(format_args!("{record_args}\r\n"));
             }
 
             log::Level::Debug | log::Level::Trace => {
                 let level_str = record.metadata().level().as_str();
                 let tgt = record.metadata().target();
-                lb_write(format_args!("[{tgt}] {level_str} {record_args}\n"));
+                lb_write(format_args!("[{tgt}] {level_str} {record_args}\r\n"));
             }
         };
     }
