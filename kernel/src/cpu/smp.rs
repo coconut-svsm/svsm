@@ -25,7 +25,6 @@ use crate::task::{schedule_init, set_current_stack};
 use crate::utils::MemoryRegion;
 use bootdefs::kernel_launch::ApStartContext;
 use core::arch::global_asm;
-use cpuarch::x86::EFERFlags;
 
 percpu! {
     #[percpu_asm_symbol("__svsm_percpu_shared")]
@@ -163,14 +162,8 @@ global_asm!(
          * environment and context structure from the address space. */
         movq    %r8, %cr0
         movq    %r10, %cr4
-
-        /* Check to see whether EFER.LME is specified.  If not, then EFER
-         * should not be reloaded. */
-        testl   ${LME}, %eax
-        je      1f
         movl    $0xC0000080, %ecx   /* EFER */
         wrmsr
-    1:
         movq    %r9, %cr3
 
         /* Make sure stack frames are 16b-aligned */
@@ -192,7 +185,6 @@ global_asm!(
         call    *%r12
         int3
         "#,
-    LME = const EFERFlags::LME.bits(),
     options(att_syntax)
 );
 

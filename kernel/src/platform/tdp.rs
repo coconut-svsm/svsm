@@ -227,12 +227,7 @@ impl SvsmPlatform for TdpPlatform {
     ) -> Result<(), SvsmError> {
         // Translate this context into an AP start context and place it in the
         // AP startup transition page.
-        let mut context = cpu.get_initial_context(start_rip);
-
-        // Set the initial EFER to zero so that it is not reloaded.  This
-        // is necessary since the TDX module does not permit changes to EFER
-        // when running in the L1.
-        context.efer = 0;
+        let context = cpu.get_initial_context(start_rip);
 
         // Set up the AP start context.
         set_ap_start_context(&context, ap_start_context_ref.unwrap());
