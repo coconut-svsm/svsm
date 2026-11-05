@@ -9,7 +9,8 @@ use crate::error::SvsmError;
 use crate::mm::pagetable::PTEntryFlags;
 
 use super::rawalloc::RawAllocMapping;
-use super::{Mapping, VMFileMappingFlags, VirtualMapping};
+use super::{Mapping, VirtualMapping};
+use crate::mm::vm::VMFlags;
 
 extern crate alloc;
 use alloc::sync::Arc;
@@ -23,7 +24,7 @@ pub struct VMalloc {
     /// [`RawAllocMapping`] used for memory allocation
     alloc: RawAllocMapping,
     /// Page-table flags to map pages
-    flags: PTEntryFlags,
+    prot: PTEntryFlags,
 }
 
 impl VMalloc {
@@ -36,18 +37,14 @@ impl VMalloc {
     /// # Returns
     ///
     /// New instance on success, Err(SvsmError::Mem) on error
-    pub fn new(size: usize, flags: VMFileMappingFlags) -> Result<Self, SvsmError> {
+    pub fn new(size: usize, flags: VMFlags) -> Result<Self, SvsmError> {
         let mut vmalloc = VMalloc {
             alloc: RawAllocMapping::new(size),
-            flags: PTEntryFlags::ACCESSED,
+            prot: flags.page_prot() | PTEntryFlags::ACCESSED,
         };
 
-        if flags.contains(VMFileMappingFlags::Write) {
-            vmalloc.flags |= PTEntryFlags::WRITABLE | PTEntryFlags::DIRTY;
-        }
-
-        if !flags.contains(VMFileMappingFlags::Execute) {
-            vmalloc.flags |= PTEntryFlags::NX;
+        if flags.contains(VMFlags::Write) {
+            vmalloc.prot |= PTEntryFlags::DIRTY;
         }
 
         vmalloc.alloc_pages()?;
@@ -63,7 +60,7 @@ impl VMalloc {
     /// # Returns
     ///
     /// New [`Mapping`] on success, Err(SvsmError::Mem) on error
-    pub fn new_mapping(size: usize, flags: VMFileMappingFlags) -> Result<Mapping, SvsmError> {
+    pub fn new_mapping(size: usize, flags: VMFlags) -> Result<Mapping, SvsmError> {
         Ok(Arc::new(Self::new(size, flags)?))
     }
 
@@ -86,6 +83,68 @@ impl VirtualMapping for VMalloc {
     }
 
     fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
-        self.flags
+        self.prot
+    }
+
+    fn split_at(&self, offset: usize) -> Result<(Mapping, Mapping), SvsmError> {
+        let (head, tail) = self.alloc.split_at(offset)?;
+
+        Ok((
+            Arc::new(Self {
+                alloc: head,
+                prot: self.prot,
+            }),
+            Arc::new(Self {
+                alloc: tail,
+                prot: self.prot,
+            }),
+        ))
+    }
+
+    fn set_access(&self, access: VMFlags) -> Result<Mapping, SvsmError> {
+        Ok(Arc::new(Self {
+            alloc: self.alloc.try_clone()?,
+            prot: self.prot.with_prot(access.page_prot()),
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mm::alloc::{DEFAULT_TEST_MEMORY_SIZE, TestRootMem};
+    use crate::types::PAGE_SIZE;
+
+    #[test]
+    fn test_set_access() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let vm = VMalloc::new(4 * PAGE_SIZE, VMFlags::Write).expect("Failed to create VMalloc");
+        assert!(vm.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+
+        let ro = vm.set_access(VMFlags::Read).expect("Failed to set access");
+        assert!(!ro.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+        // The original is left untouched.
+        assert!(vm.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+
+        // The access is set, not reduced, so it can be granted again.
+        let rw = ro.set_access(VMFlags::Write).expect("Failed to set access");
+        assert!(rw.pt_flags(0).contains(PTEntryFlags::WRITABLE));
+    }
+
+    #[test]
+    fn test_split_at() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let vm = VMalloc::new(4 * PAGE_SIZE, VMFlags::Write).expect("Failed to create VMalloc");
+
+        let (head, tail) = vm.split_at(PAGE_SIZE).expect("Failed to split");
+        assert_eq!(head.mapping_size(), PAGE_SIZE);
+        assert_eq!(tail.mapping_size(), 3 * PAGE_SIZE);
+
+        // Splitting at an invalid offset is rejected.
+        assert!(vm.split_at(0).is_err());
+        assert!(vm.split_at(4 * PAGE_SIZE).is_err());
+        assert!(vm.split_at(PAGE_SIZE / 2).is_err());
     }
 }

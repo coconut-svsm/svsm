@@ -7,7 +7,7 @@
 use crate::address::{PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::vm::VMR;
+use crate::mm::vm::{VMFlags, VMR};
 use crate::types::{PAGE_SHIFT, PageSize};
 
 use intrusive_collections::rbtree::AtomicLink;
@@ -88,6 +88,54 @@ pub trait VirtualMapping: core::fmt::Debug + Send + Sync {
     /// * PTEntryFlags::ACCESSED
     /// * PTEntryFlags::DIRTY
     fn pt_flags(&self, offset: usize) -> PTEntryFlags;
+
+    /// Splits the mapping in two at `offset`, returning the mapping covering
+    /// `[0, offset)` and the one covering `[offset, mapping_size())`.
+    ///
+    /// This allows a [`VMR`] to give a sub-range of a mapping different
+    /// permissions by isolating it into a mapping of its own, so that the
+    /// permissions of every mapping stay uniform across its whole extent.
+    ///
+    /// The backing pages are shared with the new mappings; `self` is left
+    /// untouched.
+    ///
+    /// Implementing `split_at()` is optional and it defaults to failing, as
+    /// splitting is meaningless for mappings covering an indivisible object
+    /// such as a stack.
+    ///
+    /// # Arguments
+    ///
+    /// * `_offset` - Offset in bytes into the mapping to split at. Must be
+    ///   page-aligned and strictly inside the mapping.
+    ///
+    /// # Returns
+    ///
+    /// The two new mappings on success, `Err(SvsmError::Mem)` if the mapping
+    /// cannot be split or the offset is invalid.
+    fn split_at(&self, _offset: usize) -> Result<(Mapping, Mapping), SvsmError> {
+        Err(SvsmError::Mem)
+    }
+
+    /// Returns a copy of this mapping with the access `access` describes, and
+    /// its page-table flags updated accordingly.
+    ///
+    /// Used together with [`VirtualMapping::split_at()`] to change the access
+    /// to a range: the range is isolated into a mapping of its own, which is
+    /// then replaced by a copy of itself carrying the new access.
+    ///
+    /// Implementing `set_access()` is optional and it defaults to failing.
+    ///
+    /// # Arguments
+    ///
+    /// * `_access` - The access the returned mapping permits.
+    ///
+    /// # Returns
+    ///
+    /// The new mapping on success, `Err(SvsmError::Mem)` if the mapping does
+    /// not support changing its access.
+    fn set_access(&self, _access: VMFlags) -> Result<Mapping, SvsmError> {
+        Err(SvsmError::Mem)
+    }
 
     /// Request the page size used for mappings
     ///
