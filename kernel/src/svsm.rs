@@ -473,11 +473,11 @@ fn free_init_bsp_stack() {
 }
 
 #[cfg(all(feature = "attest", not(test_in_svsm)))]
-fn run_attestation() -> Result<SecretSlice, SvsmError> {
+fn run_attestation(boot_params: &BootParams<'_>) -> Result<SecretSlice, SvsmError> {
     use kbs_types::Tee;
     use svsm::attest::AttestationDriver;
 
-    let mut proxy = AttestationDriver::try_from(Tee::Snp)?;
+    let mut proxy = AttestationDriver::new(Tee::Snp, boot_params)?;
     let secret = proxy.attest()?;
     log::info!("attestation successful");
 
@@ -575,7 +575,7 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         #[cfg(feature = "persistence")]
         let persistence_bootstrap_info = persistence_discover().unwrap();
 
-        match run_attestation() {
+        match run_attestation(&boot_params) {
             Ok(secret) => {
                 #[cfg(not(feature = "persistence"))]
                 let _ = secret;

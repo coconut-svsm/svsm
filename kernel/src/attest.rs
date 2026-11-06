@@ -8,6 +8,7 @@
 extern crate alloc;
 
 use crate::{
+    boot_params::BootParams,
     crypto::{SecretSlice, get_svsm_rng},
     error::SvsmError,
     greq::{pld_report::*, services::get_regular_report},
@@ -16,7 +17,7 @@ use crate::{
 };
 #[cfg(feature = "attest-serial")]
 use crate::{io::DEFAULT_IO_DRIVER, serial::SerialPort};
-use crate::{vsock::VMADDR_CID_HOST, vsock::stream::VsockStream};
+use crate::{vsock::VMADDR_CID_HOST, vsock::VMADDR_PORT_ANY, vsock::stream::VsockStream};
 use aes_gcm::{AeadInPlace, Aes256Gcm, KeyInit, Nonce, aead::generic_array::GenericArray};
 use aes_kw::{KeyInit as _, KwAes256};
 use alloc::{string::ToString, vec::Vec};
@@ -66,13 +67,18 @@ impl Write for Transport {
 }
 
 impl Transport {
-    fn new() -> Result<Self, SvsmError> {
-        match VsockStream::connect(ATTEST_DEFAULT_VSOCK_PORT, VMADDR_CID_HOST) {
+    fn new(boot_params: &BootParams<'_>) -> Result<Self, SvsmError> {
+        let vsock_port = match boot_params.attestation_vsock_port() {
+            Some(0) | Some(VMADDR_PORT_ANY) | None => ATTEST_DEFAULT_VSOCK_PORT,
+            Some(port) => port,
+        };
+
+        match VsockStream::connect(vsock_port, VMADDR_CID_HOST) {
             Ok(value) => Ok(Transport::Vsock(value)),
             Err(e) => {
                 log::warn!(
                     "Failed to connect to attestation proxy on vsock port \
-                     {ATTEST_DEFAULT_VSOCK_PORT}: {e:?}."
+                     {vsock_port}: {e:?}."
                 );
 
                 #[cfg(feature = "attest-serial")]
@@ -103,10 +109,9 @@ pub struct AttestationDriver {
     ecc: EccKey,
 }
 
-impl TryFrom<Tee> for AttestationDriver {
-    type Error = SvsmError;
-
-    fn try_from(tee: Tee) -> Result<Self, Self::Error> {
+impl AttestationDriver {
+    /// Create an attestation driver connected to the attestation proxy.
+    pub fn new(tee: Tee, boot_params: &BootParams<'_>) -> Result<Self, SvsmError> {
         match tee {
             Tee::Snp => (),
             _ => return Err(AttestationError::UnsupportedTee.into()),
@@ -115,16 +120,14 @@ impl TryFrom<Tee> for AttestationDriver {
         let curve = Curve::new(TpmEccCurve::NistP521).map_err(AttestationError::Crypto)?;
         let ecc = sc_key_generate(&curve).map_err(AttestationError::Crypto)?;
 
-        let transport = Transport::new()?;
+        let transport = Transport::new(boot_params)?;
         Ok(Self {
             transport,
             tee,
             ecc,
         })
     }
-}
 
-impl AttestationDriver {
     /// Attest SVSM's launch state by communicating with the attestation proxy.
     pub fn attest(&mut self) -> Result<SecretSlice, SvsmError> {
         let negotiation = self.negotiation()?;

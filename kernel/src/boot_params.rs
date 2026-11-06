@@ -375,6 +375,13 @@ impl BootParams<'_> {
         }
     }
 
+    /// Host vsock port used to connect to the attestation proxy.
+    #[cfg(feature = "attest")]
+    pub fn attestation_vsock_port(&self) -> Option<u32> {
+        self.get_cmdline_parameter(b"ATTESTATIONPORT=")
+            .and_then(Self::param_as_u32)
+    }
+
     pub fn get_fw_metadata(&self) -> Option<SevFWMetaData> {
         if !self.should_launch_fw() {
             return None;
