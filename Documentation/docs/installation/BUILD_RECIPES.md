@@ -121,7 +121,10 @@ output.
 
 This has only one supported value for now: `print`. The build script will
 invoke the `igvmmeasure` tool on the IGVM file to print the expected SEV-SNP
-launch measurement for the specified target hypervisor.
+launch measurement for the specified target hypervisor. The measurement is
+also recorded, together with the inputs of the build, in a `.buildinfo.json`
+file next to the output file. See the section on reproducible builds in
+[INSTALL.md](INSTALL.md) for how that file is used.
 
 ### `check-kvm`: Calculate Launch Measurement for KVM-based Hypervisors
 

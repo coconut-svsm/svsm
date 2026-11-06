@@ -8,6 +8,7 @@ clap = { workspace = true, features = ["color", "derive", "help", "std", "sugges
 packit = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["std", "derive"] }
 serde_json = { workspace = true, default-features = true }
+sha2 = { workspace = true, default-features = true }
 
 [lints]
 workspace = true

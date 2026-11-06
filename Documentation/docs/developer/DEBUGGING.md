@@ -59,6 +59,14 @@ debug symbols and use source-level debugging:
 (gdb) symbol-file target/x86_64-unknown-none/debug/svsm
 ```
 
+The source paths in the debug information are relative to the root of the
+repository, so run GDB from there. The sources of dependencies are relative
+to the cargo registry. Add it to the source path of GDB to step into them:
+
+```plain
+(gdb) directory ~/.cargo/registry/src
+```
+
 Note that some GDB features are not available for debugging the SVSM kernel due
 to limited debug capabilities inside an AMD SEV-SNP confidential container. Some
 of these limitations may be addressed in future updates.
