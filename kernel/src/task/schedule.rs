@@ -65,11 +65,25 @@ use alloc::sync::Arc;
 use core::arch::global_asm;
 use core::mem::offset_of;
 use core::ptr::null_mut;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use cpuarch::x86apic::ApicIcr;
 use intrusive_collections::LinkedList;
 
 percpu! {
+    #[percpu_asm_symbol("__svsm_percpu_context_switch_stack")]
+    static CONTEXT_SWITCH_STACK: AtomicUsize = AtomicUsize::new(0);
     static CURRENT_STACK: RWLock<MemoryRegion<VirtAddr>>;
+}
+
+/// Set the current CPU's stack for the context-switch assembly path.
+pub(crate) fn init_context_switch_stack(stack: VirtAddr) {
+    CONTEXT_SWITCH_STACK.with(|stack_key| stack_key.store(stack.into(), Ordering::Relaxed));
+}
+
+/// Return the current CPU's context-switch stack, if it has been installed.
+pub fn context_switch_stack() -> Option<VirtAddr> {
+    let vaddr = CONTEXT_SWITCH_STACK.with(|stack| stack.load(Ordering::Relaxed));
+    if vaddr == 0 { None } else { Some(vaddr.into()) }
 }
 
 pub(crate) fn init_current_stack() {

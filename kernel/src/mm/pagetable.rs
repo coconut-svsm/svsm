@@ -6,9 +6,10 @@
 
 use crate::BIT_MASK;
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::control_regs::write_cr3;
+use crate::cpu::control_regs::{read_cr3, write_cr3};
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::idt::common::PageFaultError;
+use crate::cpu::percpu::current_task;
 use crate::cpu::registers::RFlags;
 use crate::error::SvsmError;
 use crate::mm::{
@@ -23,11 +24,83 @@ use bitflags::bitflags;
 use core::cmp;
 use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
+use core::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use cpuarch::x86::CR0Flags;
 use cpuarch::x86::CR4Flags;
 use cpuarch::x86::EFERFlags;
 use zerocopy::FromBytes;
 use zerocopy::FromZeros;
+
+percpu! {
+    #[percpu_asm_symbol("__svsm_percpu_cr3")]
+    static CR3: AtomicUsize = AtomicUsize::new(0);
+    static PGTABLE: AtomicPtr<PageTable>;
+}
+
+/// Install the initial paging root for the current CPU after loading its
+/// per-CPU area.
+pub(crate) fn init_percpu_pgtable(pgtable: &'static mut PageTable) {
+    let pgtbl = VirtAddr::from(core::ptr::from_ref(pgtable));
+    assert!(PGTABLE.init(AtomicPtr::new(pgtable)).is_ok());
+    CR3.with(|cr3| cr3.store(virt_to_phys(pgtbl).into(), Ordering::Relaxed));
+}
+
+/// Load the initial paging root for the current CPU.
+///
+/// # Safety
+/// The initial page table must map all memory required by the current execution
+/// environment, including its stack and descriptor tables.
+pub(crate) unsafe fn load_initial_pgtable() {
+    // SAFETY: The caller guarantees that the initial page table maps the
+    // current execution environment.
+    unsafe { initial_pgtable().load() };
+}
+
+/// Run callback `f` with an immutable reference to the currently active page table.
+pub fn with_pgtable<F, R>(f: F) -> R
+where
+    F: FnOnce(&PageTable) -> R,
+{
+    if read_cr3().bits() == CR3.with(|cr3| cr3.load(Ordering::Relaxed)) {
+        f(initial_pgtable())
+    } else {
+        let task = current_task();
+        f(&mut task.page_table.lock_read())
+    }
+}
+
+/// Run callback `f` with a mutable reference to the currently active page table.
+pub fn with_pgtable_mut<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut PageTable) -> R,
+{
+    if read_cr3().bits() == CR3.with(|cr3| cr3.load(Ordering::Relaxed)) {
+        f(initial_pgtable())
+    } else {
+        let task = current_task();
+        f(&mut task.page_table.lock_write())
+    }
+}
+
+/// Returns the initial page table for this CPU. Note this page table is
+/// no longer active after switching to task context.
+fn initial_pgtable() -> &'static mut PageTable {
+    // SAFETY: `PGTABLE` is initialized once with the pointer to this
+    // processor's paging root. The page table is CPU-local, and callers
+    // serialize mutable access to it.
+    unsafe {
+        PGTABLE
+            .with(|pgtbl| pgtbl.load(Ordering::Relaxed))
+            .as_mut()
+            .unwrap()
+    }
+}
+
+/// Return a new page table. The new page table will be empty, except
+/// for the shared portion of the virtual address space.
+pub fn new_pgtable() -> Result<PageBox<PageTable>, SvsmError> {
+    initial_pgtable().clone_shared()
+}
 
 /// Number of entries in a page table (4KB/8B).
 pub const ENTRY_COUNT: usize = 512;
