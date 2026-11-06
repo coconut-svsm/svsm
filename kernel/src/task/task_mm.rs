@@ -14,7 +14,7 @@ use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::vm::{VMR, VMReserved};
+use crate::mm::vm::{PcidSet, VMR, VMReserved};
 use crate::mm::{SIZE_LEVEL3, SVSM_PERTASK_BASE, SVSM_PERTASK_END, alloc::AllocError};
 use crate::utils::MemoryRegion;
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
@@ -64,6 +64,10 @@ pub struct TaskMM {
 
     /// Task virtual memory range for use at CPL 3 - None for kernel tasks
     vm_user_range: Option<VMR>,
+
+    /// PCIDs of every page-table root that has populated this mm's VMRs.
+    /// Owned here; both VMRs hold only an `Arc` clone for unmap shootdowns.
+    pcid_set: Arc<PcidSet>,
 }
 
 impl TaskMM {
@@ -76,13 +80,14 @@ impl TaskMM {
     /// # Returns
     ///
     /// `Ok(TaskMM)` on success, `Err(SvsmError)` on failure.
-    pub fn create(user_vmr: Option<VMR>) -> Result<Self, SvsmError> {
+    pub fn create(mut user_vmr: Option<VMR>) -> Result<Self, SvsmError> {
         let ktask_region = TaskVirtualRegionGuard::alloc()?;
         let kvregion = ktask_region.vaddr_region();
 
         // A VMR must have a size of exactly one VMR_GRANULE, so use the whole
         // per-TASK virtual address space
-        let vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty())?;
+        let mut vm_kernel_range =
+            VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty())?;
 
         // Now limit the usable virtual address space by inserting `VMReserved`
         // mappings. These mappings are empty, but prevent the VMR from
@@ -106,10 +111,18 @@ impl TaskMM {
             vm_kernel_range.initialize()?;
         }
 
+        // Own the shootdown set on the mm; hand each VMR a ref for unmaps.
+        let pcid_set = PcidSet::new();
+        vm_kernel_range.set_pcid_set(pcid_set.clone());
+        if let Some(ref mut user) = user_vmr {
+            user.set_pcid_set(pcid_set.clone());
+        }
+
         Ok(TaskMM {
             _ktask_region: ktask_region,
             vm_kernel_range,
             vm_user_range: user_vmr,
+            pcid_set,
         })
     }
 
@@ -129,6 +142,16 @@ impl TaskMM {
     /// `Some(&VMR)` referencing the user-mode `[VMR]` for a user-task, `None` otherwise.
     pub fn user_range(&self) -> Option<&VMR> {
         self.vm_user_range.as_ref()
+    }
+
+    /// Register `pcid` for shootdowns on this mm's VMRs.
+    pub fn append_pcid(&self, pcid: u16) {
+        self.pcid_set.insert(pcid);
+    }
+
+    /// Unregister `pcid` from this mm's VMR shootdown set.
+    pub fn remove_pcid(&self, pcid: u16) {
+        self.pcid_set.remove(pcid);
     }
 }
 

@@ -30,6 +30,7 @@ use crate::cpu::percpu::{PerCpu, current_task};
 use crate::cpu::shadow_stack::init_shadow_stack;
 use crate::cpu::sse::sse_restore_context;
 use crate::cpu::sse::xsave_area_size;
+use crate::cpu::tlb::flush_tlb_pcid_sync;
 use crate::cpu::{X86ExceptionContext, X86InterruptFrame};
 use crate::error::SvsmError;
 use crate::fs::{Directory, FileHandle, opendir, stdout_open};
@@ -47,6 +48,7 @@ use crate::utils::{MemoryRegion, is_aligned};
 use intrusive_collections::{LinkedList, LinkedListAtomicLink, intrusive_adapter};
 
 use super::exec::exec;
+use super::pcid::{TaskPcid, pcid_supported};
 use super::schedule::complete_task_switch;
 use super::schedule::terminate;
 use super::task_mm::TaskMM;
@@ -348,9 +350,6 @@ pub struct Task {
 
     pub shadow_stack_base: VirtAddr,
 
-    /// Page table that is loaded when the task is scheduled
-    pub page_table: RWLock<PageBox<PageTable>>,
-
     /// Task kernel stack mapping
     _kernel_stack: VMRMapping<Arc<TaskMM>>,
 
@@ -359,6 +358,15 @@ pub struct Task {
 
     /// Task memory management state
     mm: Arc<TaskMM>,
+
+    /// PCID tagging this task's page-table root. Declared before
+    /// `page_table` so `Drop` INVPCID runs before the page-table pages are
+    /// freed; otherwise a reused PCID can keep a stale self-map and
+    /// `virt_to_phys` panics on a live kernel address.
+    pcid: Option<TaskPcid>,
+
+    /// Page table that is loaded when the task is scheduled.
+    pub page_table: RWLock<PageBox<PageTable>>,
 
     /// State relevant for scheduler
     sched_state: TaskSchedState,
@@ -438,6 +446,27 @@ impl Drop for Task {
         // but they are good sanity checks on the scheduler.
         debug_assert!(self.is_terminated() || self.is_pending());
         debug_assert!(irqs_enabled());
+
+        // Shoot down this task's PCID *before* removing it from the VMR set
+        // and before `_kernel_stack` / `_shadow_stack` drop.
+        //
+        // `Drop` field order unmaps the stacks next. If the id is already gone
+        // from `PcidSet`, that unmap sees an empty set and only INVLPG's the
+        // *current* CR3 PCID — not this task's. Stack pages can then be reused
+        // while other CPUs still hold VA→PA tags for the dying PCID. A later
+        // task that reuses the id and migrates with CR3[63]=1 can restore its
+        // stack through those stale tags and `ret` to NULL (multi-waiter RIP 0).
+        //
+        // Overflow tasks use reserved PCID 0 with no `TaskPcid`, so they never
+        // flush in `TaskPcid::drop`; flush 0 here explicitly.
+        if let Some(ref pcid) = self.pcid {
+            let id = pcid.pcid();
+            flush_tlb_pcid_sync(id);
+            self.mm.remove_pcid(id);
+        } else if pcid_supported() {
+            flush_tlb_pcid_sync(0);
+            self.mm.remove_pcid(0);
+        }
     }
 }
 
@@ -474,6 +503,27 @@ impl Task {
                     Arc::new(RWLock::new(BTreeMap::new())),
                 )
             }
+        };
+
+        // One PCID per page-table root. Threads share TaskMM/VMRs but not the
+        // root or self-map; tagging both with the same PCID would let CR3[63]
+        // retain a stale self-map across switches. If PCIDs are exhausted,
+        // fall back to reserved PCID 0 (CR3[63]=0) so creation still succeeds
+        // and still register that tag for VMR shootdowns — otherwise unmaps
+        // would skip INVPCID for the overflow task's TLB entries.
+        let pcid = if pcid_supported() {
+            match TaskPcid::new() {
+                Ok(p) => {
+                    task_mm.append_pcid(p.pcid());
+                    Some(p)
+                }
+                Err(_) => {
+                    task_mm.append_pcid(0);
+                    None
+                }
+            }
+        } else {
+            None
         };
 
         let xsa = Self::allocate_xsave_area();
@@ -552,10 +602,11 @@ impl Task {
             xsa,
             stack_bounds: bounds,
             shadow_stack_base,
-            page_table: RWLock::new(pgtable),
             _kernel_stack: kernel_stack_mapping,
             _shadow_stack: shadow_stack_mapping,
             mm: task_mm,
+            pcid,
+            page_table: RWLock::new(pgtable),
             sched_state: TaskSchedState::new(cpu.get_cpu_index()),
             name: args.name,
             id: TASK_ID_ALLOCATOR.next_id(),
@@ -664,6 +715,10 @@ impl Task {
 
     pub fn rootdir(&self) -> Arc<dyn Directory> {
         self.rootdir.clone()
+    }
+
+    pub fn pcid(&self) -> Option<u16> {
+        self.pcid.as_ref().map(TaskPcid::pcid)
     }
 
     pub fn set_task_active(&self) {

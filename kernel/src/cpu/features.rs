@@ -10,9 +10,10 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use cpufeature::CpuidFeature;
 use cpufeature::CpuidRegister;
 use cpufeature::leaves::{
-    CET_SS, INVLPGB, INVLPGB_MAX_PAGES, PTE_CBIT_POS, X86_FEATURE_PGE, X86_FEATURE_SMAP,
-    X86_FEATURE_SME, X86_FEATURE_SMEP, X86_FEATURE_UMIP, X86_FEATURE_X2APIC, X86_FEATURE_XMM,
-    X86_FEATURE_XSAVE, X86_FEATURE_XSAVEOPT, XCR0_AVX, XCR0_SSE, XCR0_X87,
+    CET_SS, INVLPGB, INVLPGB_MAX_PAGES, PTE_CBIT_POS, X86_FEATURE_INVPCID, X86_FEATURE_PCID,
+    X86_FEATURE_PGE, X86_FEATURE_SMAP, X86_FEATURE_SME, X86_FEATURE_SMEP, X86_FEATURE_UMIP,
+    X86_FEATURE_X2APIC, X86_FEATURE_XMM, X86_FEATURE_XSAVE, X86_FEATURE_XSAVEOPT, XCR0_AVX,
+    XCR0_SSE, XCR0_X87,
 };
 
 /// CPUID leaf 0 — CPU vendor ID string (EBX/ECX/EDX).
@@ -162,4 +163,6 @@ define_cpu_feats! {
     InvlpgbMax => CpuFeat::new(INVLPGB_MAX_PAGES).with_present(|_| cpu_has_feat(Feature::Invlpgb)),
     Sme => CpuFeat::new(X86_FEATURE_SME),
     Cbit => CpuFeat::new(PTE_CBIT_POS).with_present(|_| cpu_has_feat(Feature::Sme)),
+    Pcid => CpuFeat::new(X86_FEATURE_PCID),
+    Invpcid => CpuFeat::new(X86_FEATURE_INVPCID),
 }
