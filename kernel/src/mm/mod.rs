@@ -27,7 +27,7 @@ pub use ptguards::*;
 
 pub use pagetable::PageTablePart;
 
-pub use alloc::{PageRef, allocate_file_page};
+pub use alloc::{PageRef, allocate_file_page, free_page_phys};
 
 pub use global_memory::{
     GlobalRangeGuard, map_global_range, map_global_range_2m_private, map_global_range_2m_shared,

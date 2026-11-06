@@ -28,7 +28,7 @@ use crate::hyperv::{self, allocate_hypercall_pages};
 use crate::locking::{
     LockGuard, RWLock, RWLockIrqSafe, ReadLockGuardIrqSafe, SpinLock, WriteLockGuardIrqSafe,
 };
-use crate::mm::pagetable::{PTEntryFlags, PageTable};
+use crate::mm::pagetable::{ActivePageTable, PTEntryFlags, PageTable, init_temp_selfmap};
 use crate::mm::virtualrange::{init_vrange_2m, init_vrange_4k};
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
 use crate::mm::{
@@ -547,13 +547,16 @@ impl PerCpu {
     /// up an AP's `PerCpu`.)
     fn with_pgtable<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&PageTable) -> R,
+        F: FnOnce(&ActivePageTable) -> R,
     {
         if read_cr3().bits() == CR3.with(|cr3| cr3.load(Ordering::Relaxed)) {
-            f(self.get_pgtable())
+            // SAFETY: the active CR3 matches the per-CPU page table.
+            f(unsafe { self.get_pgtable().as_active() })
         } else {
             let task = self.runqueue().current_task();
-            f(&mut task.page_table.lock_read())
+            let pgtable = task.page_table.lock_read();
+            // SAFETY: if CR3 does not match, the current task page table is active.
+            f(unsafe { pgtable.as_active() })
         }
     }
 
@@ -563,13 +566,16 @@ impl PerCpu {
     /// AP's `PerCpu`.)
     fn with_pgtable_mut<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&mut PageTable) -> R,
+        F: FnOnce(&mut ActivePageTable) -> R,
     {
         if read_cr3().bits() == CR3.with(|cr3| cr3.load(Ordering::Relaxed)) {
-            f(self.get_pgtable())
+            // SAFETY: the active CR3 matches the per-CPU page table.
+            f(unsafe { self.get_pgtable().as_active_mut() })
         } else {
             let task = self.runqueue().current_task();
-            f(&mut task.page_table.lock_write())
+            let mut pgtable = task.page_table.lock_write();
+            // SAFETY: if CR3 does not match, the current task page table is active.
+            f(unsafe { pgtable.as_active_mut() })
         }
     }
 
@@ -609,8 +615,7 @@ impl PerCpu {
         Ok(())
     }
 
-    fn install_pagetable(&self, mut pgtable: PageBox<PageTable>) {
-        self.vm_range.populate(&mut pgtable);
+    fn install_pagetable(&self, pgtable: PageBox<PageTable>) {
         self.set_pgtable(PageBox::leak(pgtable));
     }
 
@@ -618,12 +623,17 @@ impl PerCpu {
         self.vm_range.dump_ranges();
     }
 
-    pub fn setup(&self, pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
+    pub fn setup(&self, mut pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
         // SAFETY: The per-CPU address range is fully aligned to top-level
         // paging boundaries.
         unsafe {
             self.vm_range.initialize()?;
         }
+
+        // Populate the per-CPU range in the page table before mapping into it.
+        // For the BSP, this is the active page table, so the mappings below
+        // are made through it.
+        self.vm_range.populate(&mut pgtable);
 
         // Map PerCpu data in own page-table
         self.map_self()?;
@@ -695,6 +705,7 @@ impl PerCpu {
         init_isst(double_fault_shadow_stack());
         init_vrange_4k();
         init_vrange_2m();
+        init_temp_selfmap();
     }
 
     // Setup code which needs to run on the target CPU
@@ -1105,7 +1116,7 @@ pub fn current_task() -> TaskPointer {
 /// active page table.
 pub fn with_pgtable<F, R>(f: F) -> R
 where
-    F: FnOnce(&PageTable) -> R,
+    F: FnOnce(&ActivePageTable) -> R,
 {
     this_cpu().with_pgtable(f)
 }
@@ -1114,7 +1125,7 @@ where
 /// active page table.
 pub fn with_pgtable_mut<F, R>(f: F) -> R
 where
-    F: FnOnce(&mut PageTable) -> R,
+    F: FnOnce(&mut ActivePageTable) -> R,
 {
     this_cpu().with_pgtable_mut(f)
 }

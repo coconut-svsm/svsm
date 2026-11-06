@@ -7,6 +7,7 @@
 use crate::address::Address;
 use crate::types::PageSize;
 use core::fmt;
+use core::ops::{Add, Sub};
 
 /// An abstraction over a memory region, expressed in terms of physical
 /// ([`PhysAddr`](crate::address::PhysAddr)) or virtual
@@ -41,7 +42,7 @@ where
 
 impl<A> MemoryRegion<A>
 where
-    A: Address,
+    A: Address + Add<usize, Output = A> + Sub<A, Output = usize>,
 {
     /// Create a new memory region starting at address `start`, spanning `len`
     /// bytes.
@@ -82,7 +83,7 @@ where
     /// [`MemoryRegion::new()`].
     #[inline]
     pub fn len(&self) -> usize {
-        self.end.bits().saturating_sub(self.start.bits())
+        self.end - self.start
     }
 
     /// Returns whether the region spans any actual memory.
@@ -207,10 +208,10 @@ where
     /// assert_eq!(iter.next(), None);
     /// ```
     pub fn iter_pages(&self, size: PageSize) -> impl Iterator<Item = A> + use<A> {
-        let size = usize::from(size);
-        (self.start().bits()..self.end().bits())
-            .step_by(size)
-            .map(A::from)
+        let start = self.start();
+        (0..self.len())
+            .step_by(usize::from(size))
+            .map(move |off| start + off)
     }
 
     /// Check whether an address is within this region.
@@ -275,5 +276,35 @@ where
     /// ```
     pub fn expand(&self, len: usize) -> Self {
         Self::new(self.start(), self.len() + len)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::address::VirtAddr;
+    use crate::mm::USER_MEM_END;
+    use crate::types::PAGE_SIZE;
+
+    /// A region ending at the top of the lower canonical half, whose end
+    /// address is sign-extended.
+    fn lower_half_end_region(pages: usize) -> MemoryRegion<VirtAddr> {
+        let start = VirtAddr::from(USER_MEM_END.bits() - pages * PAGE_SIZE);
+        MemoryRegion::from_addresses(start, USER_MEM_END)
+    }
+
+    #[test]
+    fn test_len_lower_half_end() {
+        let region = lower_half_end_region(16);
+        assert_eq!(region.len(), 16 * PAGE_SIZE);
+    }
+
+    #[test]
+    fn test_iter_pages_lower_half_end() {
+        let region = lower_half_end_region(16);
+        assert_eq!(region.iter_pages(PageSize::Regular).count(), 16);
+        let mut pages = region.iter_pages(PageSize::Regular);
+        assert_eq!(pages.next(), Some(region.start()));
+        assert_eq!(pages.last(), Some(region.start() + 15 * PAGE_SIZE));
     }
 }

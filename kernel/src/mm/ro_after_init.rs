@@ -27,7 +27,7 @@ unsafe extern "C" {
 ///
 /// # Safety
 ///
-/// See [`crate::mm::pagetable::PageTable::make_region_ro_4k`].
+/// See [`crate::mm::pagetable::ActivePageTable::make_region_ro_4k`].
 pub unsafe fn make_ro(region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
     // SAFETY: delegated to the caller.
     unsafe {
