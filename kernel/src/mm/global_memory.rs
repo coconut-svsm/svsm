@@ -6,10 +6,10 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync_range;
-use crate::cpu::percpu::with_pgtable_mut;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
+use crate::mm::pagetable::with_pgtable_mut;
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::{SIZE_LEVEL1, SVSM_GLOBAL_MAPPING_BASE, SVSM_GLOBAL_MAPPING_END};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, PageSize};
