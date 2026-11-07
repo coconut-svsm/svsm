@@ -25,7 +25,7 @@ QEMU_EXIT_DEVICE=""
 QEMU_TEST_IO_DEVICE=""
 QEMU_NETDEV="-netdev user,id=vmnic -device e1000,netdev=vmnic,romfile="
 CGS=sev
-CPU=EPYC-v4
+CPU=EPYC-v4,+pcid,+invpcid
 ACCEL=kvm
 IGVM_OBJ=""
 SNAPSHOT="on"
@@ -159,7 +159,6 @@ QEMU_PLANES=$($QEMU -h | grep -o "device-plane=" || true)
 case "$CGS" in
   nocc)
     SNP_GUEST=""
-    CPU=EPYC-v4,+pcid,+invpcid
     MEMORY=memory-backend-ram,size=$MEMORY_SIZE,id=mem0,prealloc=false
     ;;
   sev)
