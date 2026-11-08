@@ -32,12 +32,12 @@ pub trait StorageBackend: Sized {
 #[cfg(feature = "persistence")]
 mod backend {
     use super::*;
+    use crate::crt::TpmInode;
     use crate::persistence::{
         Inode, persistence_available, persistence_read_inode_sync, persistence_write_inode_sync,
     };
 
-    use super::super::TpmInode;
-
+    #[derive(Debug)]
     pub struct CocoonFsBackend {
         inode: u64,
     }
@@ -88,6 +88,7 @@ mod backend {
 mod backend {
     use super::*;
 
+    #[derive(Debug)]
     pub struct VolatileBackend;
 
     impl StorageBackend for VolatileBackend {
@@ -111,6 +112,14 @@ pub struct CFileBuffer<B: StorageBackend> {
     buf: Option<Zeroizing<Vec<u8>>>,
     pos: usize,
     backend: B,
+}
+
+impl<B: StorageBackend> core::fmt::Debug for CFileBuffer<B> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("CFileBuffer")
+            .field("pos", &self.pos)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<B: StorageBackend> CFileBuffer<B> {
