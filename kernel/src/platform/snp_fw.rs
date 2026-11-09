@@ -15,7 +15,8 @@ use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
 use crate::sev::ghcb::with_current_ghcb;
-use crate::sev::{PvalidateOp, RMPFlags, pvalidate, rmp_adjust, secrets_page};
+use crate::sev::utils::rmp_grant_guest_access;
+use crate::sev::{PvalidateOp, pvalidate, secrets_page};
 use crate::types::{GUEST_VMPL, PAGE_SIZE, PageSize};
 use crate::utils::{MemoryRegion, zero_mem_region};
 use alloc::vec::Vec;
@@ -69,14 +70,7 @@ unsafe fn validate_fw_mem_region(
         // physical address range supplied by the caller.
         unsafe {
             pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid)?;
-
-            // Make page accessible to guest VMPL
-            rmp_adjust(
-                vaddr,
-                RMPFlags::GUEST_VMPL | RMPFlags::RWX,
-                PageSize::Regular,
-            )?;
-
+            rmp_grant_guest_access(vaddr, PageSize::Regular)?;
             zero_mem_region(vaddr, vaddr + PAGE_SIZE);
         }
     }
@@ -284,13 +278,7 @@ pub unsafe fn adjust_fw_mem(boot_params: &BootParams<'_>) -> Result<(), SvsmErro
             let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
             let vaddr = guard.virt_addr();
             // SAFETY: the address is known to be a guest page.
-            if let Err(e) = unsafe {
-                rmp_adjust(
-                    vaddr,
-                    RMPFlags::GUEST_VMPL | RMPFlags::RWX,
-                    PageSize::Regular,
-                )
-            } {
+            if let Err(e) = unsafe { rmp_grant_guest_access(vaddr, PageSize::Regular) } {
                 log::info!("rmpadjust failed for addr {vaddr:#018x}");
                 return Err(e);
             }
