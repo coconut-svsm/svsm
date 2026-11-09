@@ -78,33 +78,20 @@ unsafe fn validate_fw_mem_region(
     Ok(())
 }
 
-/// # Safety
-///
-/// The caller must have verified that the given physical memory regions are
-/// private to the CVM and that they do not alias SVSM memory.
-unsafe fn validate_fw_memory_vec(
-    boot_params: &BootParams<'_>,
-    regions: Vec<MemoryRegion<PhysAddr>>,
-) -> Result<(), SvsmError> {
-    if regions.is_empty() {
-        return Ok(());
-    }
-
-    let mut next_vec = Vec::new();
-    let mut region = regions[0];
-
-    for next in regions.into_iter().skip(1) {
-        if region.contiguous(&next) {
-            region = region.merge(&next);
-        } else {
-            next_vec.push(next);
+/// Sorts `regions`, merging the ones that overlap or are adjacent.
+fn merge_regions(
+    regions: impl IntoIterator<Item = MemoryRegion<PhysAddr>>,
+) -> Vec<MemoryRegion<PhysAddr>> {
+    let mut regions: Vec<_> = regions.into_iter().collect();
+    regions.sort_unstable_by_key(|region| region.start());
+    regions.dedup_by(|next, prev| {
+        let contiguous = prev.contiguous(next);
+        if contiguous {
+            *prev = prev.merge(next);
         }
-    }
-    // SAFETY: the caller must uphold the safety requirements
-    unsafe {
-        validate_fw_mem_region(boot_params, region)?;
-        validate_fw_memory_vec(boot_params, next_vec)
-    }
+        contiguous
+    });
+    regions
 }
 
 pub fn validate_fw_memory(
@@ -130,9 +117,6 @@ pub fn validate_fw_memory(
         regions.push(MemoryRegion::new(caa_paddr, PAGE_SIZE));
     }
 
-    // Sort regions by base address
-    regions.sort_unstable_by_key(|a| a.start());
-
     for region in regions.iter() {
         if region.overlap(kernel_region) {
             log::error!("FwMeta region ovelaps with kernel");
@@ -140,9 +124,12 @@ pub fn validate_fw_memory(
         }
     }
 
-    // SAFETY: we've just checked that the firmware regions do not overlap with
-    // the SVSM kernel
-    unsafe { validate_fw_memory_vec(boot_params, regions) }
+    for region in merge_regions(regions) {
+        // SAFETY: we've just checked that the firmware regions do not
+        // overlap with the SVSM kernel
+        unsafe { validate_fw_mem_region(boot_params, region)? };
+    }
+    Ok(())
 }
 
 pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
