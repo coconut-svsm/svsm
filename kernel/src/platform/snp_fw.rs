@@ -123,8 +123,13 @@ pub fn validate_fw_memory(
     kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
     let regions = svsm_validated_fw_regions(boot_params, fw_meta);
-    if regions.iter().any(|region| region.overlap(kernel_region)) {
-        log::error!("FwMeta region ovelaps with kernel");
+
+    // The set of memory that the guest is granted access to
+    let fw_regions = boot_params.get_fw_regions();
+    let fw_memory = merge_regions(fw_regions.into_iter().chain(regions.iter().copied()));
+
+    if fw_memory.iter().any(|region| region.overlap(kernel_region)) {
+        log::error!("Firmware memory overlaps with the kernel");
         return Err(SvsmError::Firmware);
     }
 
