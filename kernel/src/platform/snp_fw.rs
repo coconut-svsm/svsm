@@ -71,10 +71,7 @@ unsafe fn validate_fw_mem_region(
 
         // SAFETY: the virtual address mapping is known to point to the guest
         // physical address range supplied by the caller.
-        unsafe {
-            rmp_grant_guest_access(vaddr, PageSize::Regular)?;
-            zero_mem_region(vaddr, vaddr + PAGE_SIZE);
-        }
+        unsafe { zero_mem_region(vaddr, vaddr + PAGE_SIZE) };
     }
 
     Ok(())
@@ -116,6 +113,8 @@ fn svsm_validated_fw_regions(
     merge_regions(regions)
 }
 
+/// Validates the firmware memory that the SVSM validates, and grants the guest
+/// access to all firmware memory.
 pub fn validate_fw_memory(
     platform: &dyn SvsmPlatform,
     boot_params: &BootParams<'_>,
@@ -138,7 +137,10 @@ pub fn validate_fw_memory(
         // overlap with the SVSM kernel
         unsafe { validate_fw_mem_region(platform, boot_params, region)? };
     }
-    Ok(())
+
+    // SAFETY: we've just checked that the firmware memory does not overlap
+    // with the SVSM kernel
+    unsafe { adjust_fw_mem(&fw_memory) }
 }
 
 pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
@@ -257,23 +259,21 @@ pub unsafe fn copy_tables_to_fw(
     Ok(())
 }
 
-/// Configures FW memory regions to grant guest VMPL permission as required.
+/// Grants the guest VMPL access to the firmware memory `regions`.
 ///
 /// # Safety
 ///
-/// The caller must have verified that the firmware physical memory regions in
-/// `boot_params` are private to the CVM and that they do not alias SVSM
-/// memory.
-pub unsafe fn adjust_fw_mem(boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
-    let fw_regions = boot_params.get_fw_regions();
-
-    for (i, region) in fw_regions.into_iter().enumerate() {
+/// The caller must have verified that the given physical memory regions are
+/// private to the CVM and that they do not alias SVSM memory.
+unsafe fn adjust_fw_mem(regions: &[MemoryRegion<PhysAddr>]) -> Result<(), SvsmError> {
+    for (i, region) in regions.iter().enumerate() {
         log::info!("Firmware region {i} at {region:#018x}");
 
         for paddr in region.iter_pages(PageSize::Regular) {
             let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
             let vaddr = guard.virt_addr();
-            // SAFETY: the address is known to be a guest page.
+            // SAFETY: the caller guarantees that the address is firmware
+            // memory.
             if let Err(e) = unsafe { rmp_grant_guest_access(vaddr, PageSize::Regular) } {
                 log::info!("rmpadjust failed for addr {vaddr:#018x}");
                 return Err(e);

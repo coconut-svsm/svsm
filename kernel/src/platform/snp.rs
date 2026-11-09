@@ -11,7 +11,6 @@ use super::PageValidateOp;
 use super::PlatformPageType;
 use super::SvsmPlatform;
 use super::capabilities::Caps;
-use super::snp_fw::adjust_fw_mem;
 use super::snp_fw::copy_tables_to_fw;
 use super::snp_fw::launch_fw;
 use super::snp_fw::prepare_fw_launch;
@@ -208,7 +207,6 @@ impl SvsmPlatform for SnpPlatform {
             // is not being aliased.
             unsafe {
                 copy_tables_to_fw(fw_meta, &kernel_region)?;
-                adjust_fw_mem(boot_params)?;
             }
             prepare_fw_launch(fw_meta)?;
         }
