@@ -96,38 +96,31 @@ fn merge_regions(
     regions
 }
 
+/// Returns the firmware memory regions that the SVSM validates before
+/// launching the firmware, sorted and merged.
+fn svsm_validated_fw_regions(fw_meta: &SevFWMetaData) -> Vec<MemoryRegion<PhysAddr>> {
+    let pages = [fw_meta.cpuid_page, fw_meta.secrets_page, fw_meta.caa_page];
+    let pages = pages
+        .into_iter()
+        .flatten()
+        .map(|paddr| MemoryRegion::new(paddr, PAGE_SIZE));
+    let regions = fw_meta.valid_mem.iter().copied().chain(pages);
+    merge_regions(regions)
+}
+
 pub fn validate_fw_memory(
     platform: &dyn SvsmPlatform,
     boot_params: &BootParams<'_>,
     fw_meta: &SevFWMetaData,
     kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
-    // Initalize vector with regions from the FW
-    let mut regions = fw_meta.valid_mem.clone();
-
-    // Add region for CPUID page if present
-    if let Some(cpuid_paddr) = fw_meta.cpuid_page {
-        regions.push(MemoryRegion::new(cpuid_paddr, PAGE_SIZE));
+    let regions = svsm_validated_fw_regions(fw_meta);
+    if regions.iter().any(|region| region.overlap(kernel_region)) {
+        log::error!("FwMeta region ovelaps with kernel");
+        return Err(SvsmError::Firmware);
     }
 
-    // Add region for Secrets page if present
-    if let Some(secrets_paddr) = fw_meta.secrets_page {
-        regions.push(MemoryRegion::new(secrets_paddr, PAGE_SIZE));
-    }
-
-    // Add region for CAA page if present
-    if let Some(caa_paddr) = fw_meta.caa_page {
-        regions.push(MemoryRegion::new(caa_paddr, PAGE_SIZE));
-    }
-
-    for region in regions.iter() {
-        if region.overlap(kernel_region) {
-            log::error!("FwMeta region ovelaps with kernel");
-            return Err(SvsmError::Firmware);
-        }
-    }
-
-    for region in merge_regions(regions) {
+    for region in regions {
         // SAFETY: we've just checked that the firmware regions do not
         // overlap with the SVSM kernel
         unsafe { validate_fw_mem_region(platform, boot_params, region)? };
