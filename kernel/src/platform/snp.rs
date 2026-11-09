@@ -201,7 +201,7 @@ impl SvsmPlatform for SnpPlatform {
     ) -> Result<(), SvsmError> {
         if let Some(fw_meta) = &boot_params.get_fw_metadata() {
             print_fw_meta(fw_meta);
-            validate_fw_memory(boot_params, fw_meta, &kernel_region)?;
+            validate_fw_memory(self, boot_params, fw_meta, &kernel_region)?;
             write_guest_memory_map(boot_params)?;
             // SAFETY: we've verified the firmware memory addresses above.
             // This is called from CPU 0, so the underlying physical address

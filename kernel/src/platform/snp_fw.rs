@@ -13,10 +13,10 @@ use crate::cpu::percpu::{PERCPU_VMSAS, this_cpu};
 use crate::cpu::smp::this_cpu_shared;
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
-use crate::platform::PageStateChangeOp;
+use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::sev::ghcb::with_current_ghcb;
+use crate::sev::secrets_page;
 use crate::sev::utils::rmp_grant_guest_access;
-use crate::sev::{PvalidateOp, pvalidate, secrets_page};
 use crate::types::{GUEST_VMPL, PAGE_SIZE, PageSize};
 use crate::utils::{MemoryRegion, zero_mem_region};
 use alloc::vec::Vec;
@@ -49,6 +49,7 @@ impl SevFWMetaData {
 /// The caller must have verified that the given physical memory region is
 /// private to the CVM and that it does not alias SVSM memory.
 unsafe fn validate_fw_mem_region(
+    platform: &dyn SvsmPlatform,
     boot_params: &BootParams<'_>,
     region: MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
@@ -58,9 +59,11 @@ unsafe fn validate_fw_mem_region(
     log::info!("Validating {pstart:#018x}-{pend:#018x}");
 
     if boot_params.page_state_change_required() {
-        with_current_ghcb(|ghcb| ghcb.page_state_change(region, PageStateChangeOp::Private))
-            .expect("GHCB PSC call failed to validate firmware memory");
+        platform.page_state_change(region, PageStateChangeOp::Private)?;
     }
+
+    // SAFETY: the caller guarantees that the region is firmware memory.
+    unsafe { platform.validate_physical_page_range(region, PageValidateOp::Validate)? };
 
     for paddr in region.iter_pages(PageSize::Regular) {
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
@@ -69,7 +72,6 @@ unsafe fn validate_fw_mem_region(
         // SAFETY: the virtual address mapping is known to point to the guest
         // physical address range supplied by the caller.
         unsafe {
-            pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid)?;
             rmp_grant_guest_access(vaddr, PageSize::Regular)?;
             zero_mem_region(vaddr, vaddr + PAGE_SIZE);
         }
@@ -95,6 +97,7 @@ fn merge_regions(
 }
 
 pub fn validate_fw_memory(
+    platform: &dyn SvsmPlatform,
     boot_params: &BootParams<'_>,
     fw_meta: &SevFWMetaData,
     kernel_region: &MemoryRegion<PhysAddr>,
@@ -127,7 +130,7 @@ pub fn validate_fw_memory(
     for region in merge_regions(regions) {
         // SAFETY: we've just checked that the firmware regions do not
         // overlap with the SVSM kernel
-        unsafe { validate_fw_mem_region(boot_params, region)? };
+        unsafe { validate_fw_mem_region(platform, boot_params, region)? };
     }
     Ok(())
 }
