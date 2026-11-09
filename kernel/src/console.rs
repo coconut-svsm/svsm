@@ -65,3 +65,15 @@ pub fn console_write(buffer: &[u8]) {
         writer.lock().write_bytes(buffer);
     }
 }
+
+/// Writes to the console unless its lock is already held, e.g. by code that
+/// panicked while printing. Returns whether the output was written.
+pub fn try_console_print(args: fmt::Arguments<'_>) -> bool {
+    use core::fmt::Write;
+    let Ok(writer) = WRITER.try_get_inner() else {
+        return false;
+    };
+    writer
+        .try_lock()
+        .is_some_and(|mut w| w.write_fmt(args).is_ok())
+}

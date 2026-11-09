@@ -42,6 +42,7 @@ pub mod kernel_region;
 pub mod locking;
 pub mod log_buffer;
 pub mod mm;
+pub mod panic_state;
 #[cfg(feature = "persistence")]
 pub mod persistence;
 pub mod platform;
