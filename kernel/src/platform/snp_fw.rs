@@ -98,13 +98,21 @@ fn merge_regions(
 
 /// Returns the firmware memory regions that the SVSM validates before
 /// launching the firmware, sorted and merged.
-fn svsm_validated_fw_regions(fw_meta: &SevFWMetaData) -> Vec<MemoryRegion<PhysAddr>> {
+fn svsm_validated_fw_regions(
+    boot_params: &BootParams<'_>,
+    fw_meta: &SevFWMetaData,
+) -> Vec<MemoryRegion<PhysAddr>> {
     let pages = [fw_meta.cpuid_page, fw_meta.secrets_page, fw_meta.caa_page];
     let pages = pages
         .into_iter()
         .flatten()
         .map(|paddr| MemoryRegion::new(paddr, PAGE_SIZE));
-    let regions = fw_meta.valid_mem.iter().copied().chain(pages);
+    let regions = fw_meta
+        .valid_mem
+        .iter()
+        .copied()
+        .chain(pages)
+        .chain(boot_params.unvalidated_memory_map());
     merge_regions(regions)
 }
 
@@ -114,7 +122,7 @@ pub fn validate_fw_memory(
     fw_meta: &SevFWMetaData,
     kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
-    let regions = svsm_validated_fw_regions(fw_meta);
+    let regions = svsm_validated_fw_regions(boot_params, fw_meta);
     if regions.iter().any(|region| region.overlap(kernel_region)) {
         log::error!("FwMeta region ovelaps with kernel");
         return Err(SvsmError::Firmware);
