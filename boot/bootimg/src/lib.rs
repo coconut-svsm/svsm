@@ -118,6 +118,8 @@ where
     let (idt_paddr, _) = kernel_heap.allocate_pages(1)?;
     let idt_vaddr = initial_stack_base + stack_size;
     kernel_page_tables.map_range(idt_vaddr, PAGE_SIZE_4K, idt_paddr, PteType::RwData)?;
+    // The kernel initializes the IDT, so add it as a zero page.
+    add_page_data(idt_paddr, None, PAGE_SIZE_4K)?;
 
     // Allocate space in the kernel heap to hold the parameters.  This must be
     // large enough to include both the measured boot parameters and the
