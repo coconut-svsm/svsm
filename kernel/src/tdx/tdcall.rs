@@ -223,34 +223,26 @@ unsafe fn td_accept_virtual_page(
 /// acceptance.  The caller is additionally required to ensure that the address
 /// range is appropriate aligned to 4 KB boundaries.
 pub unsafe fn td_accept_virtual_memory(region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
-    let mut vaddr = region.start();
-    if !vaddr.is_aligned(PAGE_SIZE) {
+    if !region.start().is_aligned(PAGE_SIZE) {
         return Err(SvsmError::InvalidAddress);
     }
 
-    let vaddr_end = region.end();
-    while vaddr < vaddr_end {
+    for (vaddr, size) in region.iter_pages_largest() {
         let frame = virt_to_frame(vaddr);
-        let size = if vaddr.is_aligned(PAGE_SIZE_2M)
-            && vaddr + PAGE_SIZE_2M <= vaddr_end
-            && frame.size() >= PAGE_SIZE_2M
-        {
+        if frame.size() >= usize::from(size) {
             // SAFETY: the caller takes responsibility for the correct usage of
             // the virtual address.
-            unsafe {
-                td_accept_virtual_page(vaddr, frame.address(), PageSize::Huge)?;
-            }
-            PAGE_SIZE_2M
+            unsafe { td_accept_virtual_page(vaddr, frame.address(), size)? };
         } else {
-            // SAFETY: the caller takes responsibility for the correct usage of
-            // the virtual address.
-            unsafe {
-                td_accept_virtual_page(vaddr, frame.address(), PageSize::Regular)?;
+            // A 2 MB page mapped with 4 KB pages, which need not be physically
+            // contiguous.
+            for vaddr in MemoryRegion::new(vaddr, PAGE_SIZE_2M).iter_pages(PageSize::Regular) {
+                let paddr = virt_to_frame(vaddr).address();
+                // SAFETY: the caller takes responsibility for the correct
+                // usage of the virtual address.
+                unsafe { td_accept_virtual_page(vaddr, paddr, PageSize::Regular)? };
             }
-            PAGE_SIZE
-        };
-
-        vaddr = vaddr + size;
+        }
     }
     Ok(())
 }
