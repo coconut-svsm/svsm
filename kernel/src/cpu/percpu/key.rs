@@ -285,16 +285,22 @@ impl<T: 'static> PerCpuKey<T> {
     }
 
     #[cfg(target_os = "none")]
-    fn storage(&'static self) -> &'static PerCpuStorage<T> {
+    fn storage(&'static self) -> Option<&'static PerCpuStorage<T>> {
         unsafe extern "C" {
             static percpu_start: u8;
         }
 
         let base: usize;
-        // SAFETY: CPU setup installs a GS relocation delta for a valid copy of
-        // the linker-defined per-CPU section. The GS-relative header reference
-        // therefore resolves to the copy, whose first word contains the
-        // address of the per-CPU area and is initialized before any key access.
+        // SAFETY: The GS-relative header reference always resolves to mapped
+        // memory holding either null or the address of this CPU's per-CPU
+        // area:
+        // - Until CPU setup installs a GS relocation delta, `%GS.base` is
+        //   zero, so the reference resolves to the header of the
+        //   linker-defined template, whose self pointer is null.
+        // - Once a delta is installed, the reference resolves to the header of
+        //   this CPU's mapped per-CPU area. The area is zero-filled on
+        //   allocation, and its header is set to the area's address when the
+        //   template is copied into it.
         unsafe {
             asm!(
                 "movq %gs:{header}(%rip), {base}",
@@ -302,6 +308,10 @@ impl<T: 'static> PerCpuKey<T> {
                 base = out(reg) base,
                 options(att_syntax, nostack, readonly),
             );
+        }
+
+        if base == 0 {
+            return None;
         }
 
         let template_start = ptr::addr_of!(percpu_start) as usize;
@@ -313,24 +323,20 @@ impl<T: 'static> PerCpuKey<T> {
 
         // SAFETY: The offset identifies this key's storage in a live per-CPU
         // section copy, and the returned reference is shared only on this CPU.
-        unsafe { &*storage }
+        Some(unsafe { &*storage })
     }
 
     #[cfg(not(target_os = "none"))]
-    fn storage(&'static self) -> &'static PerCpuStorage<T> {
-        self.template
+    fn storage(&'static self) -> Option<&'static PerCpuStorage<T>> {
+        Some(self.template)
     }
 }
 
 impl<T: Sync + 'static> PerCpuKey<T> {
     /// Return whether this CPU's value has been initialized.
-    ///
-    /// # Panics
-    ///
-    /// On the SVSM target, this function may only be called after per-CPU
-    /// setup has installed the current CPU's `%GS` base.
     pub fn is_initialized(&'static self) -> bool {
-        self.storage().state.load(Ordering::Acquire) == PERCPU_INITIALIZED
+        self.storage()
+            .is_some_and(|storage| storage.state.load(Ordering::Acquire) == PERCPU_INITIALIZED)
     }
 
     /// Initialize this CPU's value.
@@ -345,7 +351,9 @@ impl<T: Sync + 'static> PerCpuKey<T> {
     /// On the SVSM target, this function may only be called after per-CPU
     /// setup has installed the current CPU's `%GS` base.
     pub fn init(&'static self, value: T) -> Result<(), SvsmError> {
-        let storage = self.storage();
+        let storage = self
+            .storage()
+            .expect("per-CPU area is not set up on this CPU");
         if storage
             .state
             .compare_exchange(
@@ -370,16 +378,11 @@ impl<T: Sync + 'static> PerCpuKey<T> {
     }
 
     /// Borrow this CPU's value for the duration of `f`, if initialized.
-    ///
-    /// # Panics
-    ///
-    /// On the SVSM target, this function may only be called after per-CPU
-    /// setup has installed the current CPU's `%GS` base.
     pub fn try_with<F, R>(&'static self, f: F) -> Option<R>
     where
         F: FnOnce(&T) -> R,
     {
-        let storage = self.storage();
+        let storage = self.storage()?;
         if storage.state.load(Ordering::Acquire) != PERCPU_INITIALIZED {
             return None;
         }
