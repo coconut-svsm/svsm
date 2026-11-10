@@ -32,22 +32,16 @@ use super::PerCpu;
 #[allow(dead_code)]
 #[repr(C)]
 struct PerCpuHeader {
-    self_ptr: *const PerCpuHeader,
+    /// Relocation delta of this per-CPU area, as installed in `%GS.base`.
+    /// Zero in the linker template.
+    gs_base: usize,
 }
-
-#[cfg(target_os = "none")]
-// SAFETY: The template header is immutable. Copies of the header are only
-// modified while their per-CPU areas are being initialized and before they
-// become visible to their target CPUs.
-unsafe impl Sync for PerCpuHeader {}
 
 #[cfg(target_os = "none")]
 #[allow(dead_code)]
 #[used]
 #[unsafe(link_section = ".percpu.header")]
-static PERCPU_HEADER: PerCpuHeader = PerCpuHeader {
-    self_ptr: ptr::null(),
-};
+static PERCPU_HEADER: PerCpuHeader = PerCpuHeader { gs_base: 0 };
 
 /// An allocated copy of the linker-defined per-CPU data section.
 #[derive(Debug)]
@@ -129,7 +123,7 @@ impl PerCpuArea {
         unsafe {
             ptr::copy_nonoverlapping(start, base, size);
             base.cast::<PerCpuHeader>().write(PerCpuHeader {
-                self_ptr: base.cast(),
+                gs_base: self.gs_base(),
             });
         }
 
@@ -255,27 +249,31 @@ pub struct PerCpuKey<T: 'static> {
 
 impl<T: 'static> PerCpuKey<T> {
     /// Construct a key for use by [`percpu!`](crate::percpu).
+    ///
+    /// # Safety
+    ///
+    /// `template` must be placed in the `.percpu` linker section, so that its
+    /// offset within the section identifies the same storage in every
+    /// per-CPU area.
     #[doc(hidden)]
-    pub const fn new(template: &'static PerCpuStorage<T>) -> Self {
+    pub const unsafe fn new(template: &'static PerCpuStorage<T>) -> Self {
         Self {
             template,
             _marker: PhantomData,
         }
     }
 
+    /// Return the address of this key's storage in the per-CPU area with the
+    /// given relocation delta.
+    #[cfg(target_os = "none")]
+    fn storage_ptr(&'static self, gs_base: usize) -> *const PerCpuStorage<T> {
+        (ptr::from_ref(self.template) as usize).wrapping_add(gs_base) as *const PerCpuStorage<T>
+    }
+
     /// Return the address of this key's value in a specific per-CPU area.
     #[cfg(target_os = "none")]
     pub(crate) fn ptr_for(&'static self, percpu: &PerCpu) -> *const T {
-        unsafe extern "C" {
-            static percpu_start: u8;
-        }
-
-        let template_start = ptr::addr_of!(percpu_start) as usize;
-        let template_addr = ptr::from_ref(self.template) as usize;
-        let offset = template_addr
-            .checked_sub(template_start)
-            .expect("per-CPU variable is outside the .percpu section");
-        (percpu.percpu_area.base() + offset) as *const T
+        self.storage_ptr(percpu.percpu_area.gs_base()).cast::<T>()
     }
 
     /// Return the address of this key's value in the host-side template.
@@ -286,30 +284,24 @@ impl<T: 'static> PerCpuKey<T> {
 
     #[cfg(target_os = "none")]
     fn storage(&'static self) -> &'static PerCpuStorage<T> {
-        unsafe extern "C" {
-            static percpu_start: u8;
-        }
-
-        let base: usize;
+        let gs_base: usize;
         // SAFETY: CPU setup installs a GS relocation delta for a valid copy of
         // the linker-defined per-CPU section. The GS-relative header reference
         // therefore resolves to the copy, whose first word contains the
-        // address of the per-CPU area and is initialized before any key access.
+        // relocation delta of the per-CPU area and is initialized before any
+        // key access.
         unsafe {
             asm!(
-                "movq %gs:{header}(%rip), {base}",
+                "movq %gs:{header}(%rip), {gs_base}",
                 header = sym PERCPU_HEADER,
-                base = out(reg) base,
+                gs_base = out(reg) gs_base,
                 options(att_syntax, nostack, readonly),
             );
         }
 
-        let template_start = ptr::addr_of!(percpu_start) as usize;
-        let template_addr = ptr::from_ref(self.template) as usize;
-        let offset = template_addr
-            .checked_sub(template_start)
-            .expect("per-CPU variable is outside the .percpu section");
-        let storage = (base + offset) as *const PerCpuStorage<T>;
+        // A zero delta would resolve to the linker template itself.
+        assert!(gs_base != 0, "per-CPU area is not set up on this CPU");
+        let storage = self.storage_ptr(gs_base);
 
         // SAFETY: The offset identifies this key's storage in a live per-CPU
         // section copy, and the returned reference is shared only on this CPU.
@@ -453,7 +445,8 @@ macro_rules! percpu {
             #[unsafe(link_section = ".percpu")]
             static VALUE: $crate::cpu::percpu::PerCpuStorage<$ty> =
                 $crate::cpu::percpu::PerCpuStorage::uninit();
-            $crate::cpu::percpu::PerCpuKey::new(&VALUE)
+            // SAFETY: `VALUE` is placed in the `.percpu` section.
+            unsafe { $crate::cpu::percpu::PerCpuKey::new(&VALUE) }
         };
 
         $crate::percpu! { $($rest)* }
@@ -471,7 +464,8 @@ macro_rules! percpu {
             #[unsafe(link_section = ".percpu")]
             static VALUE: $crate::cpu::percpu::PerCpuStorage<$ty> =
                 $crate::cpu::percpu::PerCpuStorage::new($value);
-            $crate::cpu::percpu::PerCpuKey::new(&VALUE)
+            // SAFETY: `VALUE` is placed in the `.percpu` section.
+            unsafe { $crate::cpu::percpu::PerCpuKey::new(&VALUE) }
         };
 
         $crate::percpu! { $($rest)* }
@@ -486,7 +480,8 @@ macro_rules! percpu {
             #[unsafe(link_section = ".percpu")]
             static VALUE: $crate::cpu::percpu::PerCpuStorage<$ty> =
                 $crate::cpu::percpu::PerCpuStorage::uninit();
-            $crate::cpu::percpu::PerCpuKey::new(&VALUE)
+            // SAFETY: `VALUE` is placed in the `.percpu` section.
+            unsafe { $crate::cpu::percpu::PerCpuKey::new(&VALUE) }
         };
 
         $crate::percpu! { $($rest)* }
@@ -501,7 +496,8 @@ macro_rules! percpu {
             #[unsafe(link_section = ".percpu")]
             static VALUE: $crate::cpu::percpu::PerCpuStorage<$ty> =
                 $crate::cpu::percpu::PerCpuStorage::new($value);
-            $crate::cpu::percpu::PerCpuKey::new(&VALUE)
+            // SAFETY: `VALUE` is placed in the `.percpu` section.
+            unsafe { $crate::cpu::percpu::PerCpuKey::new(&VALUE) }
         };
 
         $crate::percpu! { $($rest)* }
