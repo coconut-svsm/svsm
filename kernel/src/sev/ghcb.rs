@@ -645,8 +645,6 @@ impl GHCB {
         // Maximum entries (8 bytes each_ minus 8 bytes for header
         let max_entries: u16 = ((GHCB_BUFFER_SIZE - 8) / 8).try_into().unwrap();
         let mut entries: u16 = 0;
-        let mut paddr = region.start();
-        let end = region.end();
         let op_mask: u64 = match op {
             PageStateChangeOp::Private => PSC_OP_PRIVATE,
             PageStateChangeOp::Shared => PSC_OP_SHARED,
@@ -656,20 +654,14 @@ impl GHCB {
 
         self.clear();
 
-        while paddr < end {
-            let size = if paddr.is_aligned(PAGE_SIZE_2M) && paddr + PAGE_SIZE_2M <= end {
-                PageSize::Huge
-            } else {
-                PageSize::Regular
-            };
-            let pgsize = usize::from(size);
+        let mut pages = region.iter_pages_largest().peekable();
+        while let Some((paddr, size)) = pages.next() {
             let entry = self.psc_entry(paddr, op_mask, 0, size);
             let offset = usize::from(entries) * 8 + 8;
             self.write_buffer(&entry, offset)?;
             entries += 1;
-            paddr = paddr + pgsize;
 
-            if entries == max_entries || paddr >= end {
+            if entries == max_entries || pages.peek().is_none() {
                 let header = PageStateChangeHeader {
                     cur_entry: 0,
                     end_entry: entries - 1,
