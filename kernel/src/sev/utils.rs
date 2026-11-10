@@ -7,7 +7,7 @@
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::virt_to_frame;
-use crate::types::{GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M, PageSize};
+use crate::types::{GUEST_VMPL, PAGE_SIZE_2M, PageSize};
 use crate::utils::MemoryRegion;
 use core::arch::asm;
 use core::fmt;
@@ -101,21 +101,9 @@ pub unsafe fn pvalidate_range(
     region: MemoryRegion<VirtAddr>,
     valid: PvalidateOp,
 ) -> Result<(), SvsmError> {
-    let mut addr = region.start();
-    let end = region.end();
-
-    while addr < end {
-        if addr.is_aligned(PAGE_SIZE_2M) && addr + PAGE_SIZE_2M <= end {
-            // SAFETY: the caller promises that the validation operation is
-            // safe.
-            unsafe { pvalidate_page(addr, PageSize::Huge, valid)? };
-            addr = addr + PAGE_SIZE_2M;
-        } else {
-            // SAFETY: the caller promises that the validation operation is
-            // safe.
-            unsafe { pvalidate_page(addr, PageSize::Regular, valid)? };
-            addr = addr + PAGE_SIZE;
-        }
+    for (addr, size) in region.iter_pages_largest() {
+        // SAFETY: the caller promises that the validation operation is safe.
+        unsafe { pvalidate_page(addr, size, valid)? };
     }
 
     Ok(())
