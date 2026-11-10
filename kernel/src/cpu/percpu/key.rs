@@ -255,8 +255,14 @@ pub struct PerCpuKey<T: 'static> {
 
 impl<T: 'static> PerCpuKey<T> {
     /// Construct a key for use by [`percpu!`](crate::percpu).
+    ///
+    /// # Safety
+    ///
+    /// `template` must be placed in the `.percpu` linker section, so that its
+    /// offset within the section identifies the same storage in every
+    /// per-CPU area.
     #[doc(hidden)]
-    pub const fn new(template: &'static PerCpuStorage<T>) -> Self {
+    pub const unsafe fn new(template: &'static PerCpuStorage<T>) -> Self {
         Self {
             template,
             _marker: PhantomData,
@@ -453,7 +459,8 @@ macro_rules! percpu {
             #[unsafe(link_section = ".percpu")]
             static VALUE: $crate::cpu::percpu::PerCpuStorage<$ty> =
                 $crate::cpu::percpu::PerCpuStorage::uninit();
-            $crate::cpu::percpu::PerCpuKey::new(&VALUE)
+            // SAFETY: `VALUE` is placed in the `.percpu` section.
+            unsafe { $crate::cpu::percpu::PerCpuKey::new(&VALUE) }
         };
 
         $crate::percpu! { $($rest)* }
@@ -471,7 +478,8 @@ macro_rules! percpu {
             #[unsafe(link_section = ".percpu")]
             static VALUE: $crate::cpu::percpu::PerCpuStorage<$ty> =
                 $crate::cpu::percpu::PerCpuStorage::new($value);
-            $crate::cpu::percpu::PerCpuKey::new(&VALUE)
+            // SAFETY: `VALUE` is placed in the `.percpu` section.
+            unsafe { $crate::cpu::percpu::PerCpuKey::new(&VALUE) }
         };
 
         $crate::percpu! { $($rest)* }
@@ -486,7 +494,8 @@ macro_rules! percpu {
             #[unsafe(link_section = ".percpu")]
             static VALUE: $crate::cpu::percpu::PerCpuStorage<$ty> =
                 $crate::cpu::percpu::PerCpuStorage::uninit();
-            $crate::cpu::percpu::PerCpuKey::new(&VALUE)
+            // SAFETY: `VALUE` is placed in the `.percpu` section.
+            unsafe { $crate::cpu::percpu::PerCpuKey::new(&VALUE) }
         };
 
         $crate::percpu! { $($rest)* }
@@ -501,7 +510,8 @@ macro_rules! percpu {
             #[unsafe(link_section = ".percpu")]
             static VALUE: $crate::cpu::percpu::PerCpuStorage<$ty> =
                 $crate::cpu::percpu::PerCpuStorage::new($value);
-            $crate::cpu::percpu::PerCpuKey::new(&VALUE)
+            // SAFETY: `VALUE` is placed in the `.percpu` section.
+            unsafe { $crate::cpu::percpu::PerCpuKey::new(&VALUE) }
         };
 
         $crate::percpu! { $($rest)* }
