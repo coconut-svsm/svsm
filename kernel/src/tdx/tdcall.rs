@@ -160,25 +160,14 @@ unsafe fn td_accept_physical_page(addr: PhysAddr, size: PageSize) -> Result<(), 
 /// acceptance.  The caller is additionally required to ensure that the address
 /// range is appropriate aligned to 4 KB boundaries.
 pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Result<(), SvsmError> {
-    let mut addr = region.start();
-    if !addr.is_aligned(PAGE_SIZE) {
+    if !region.start().is_aligned(PAGE_SIZE) {
         return Err(SvsmError::InvalidAddress);
     }
 
-    let end = region.end();
-
-    while addr < end {
-        if addr.is_aligned(PAGE_SIZE_2M) && addr + PAGE_SIZE_2M <= end {
-            // SAFETY: the caller takes responsibility for the correct usage of
-            // the physical address.
-            unsafe { td_accept_physical_page(addr, PageSize::Huge)? };
-            addr = addr + PAGE_SIZE_2M;
-        } else {
-            // SAFETY: the caller takes responsibility for the correct usage of
-            // the physical address.
-            unsafe { td_accept_physical_page(addr, PageSize::Regular)? };
-            addr = addr + PAGE_SIZE;
-        }
+    for (addr, size) in region.iter_pages_largest() {
+        // SAFETY: the caller takes responsibility for the correct usage of the
+        // physical address.
+        unsafe { td_accept_physical_page(addr, size)? };
     }
 
     Ok(())
