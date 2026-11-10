@@ -7,10 +7,10 @@
 use crate::console::_print;
 #[cfg(feature = "enable-console-log")]
 use crate::console::console_write;
+use crate::cpu::percpu::current_task;
 use crate::error::SvsmError;
 use crate::fs::{SliceRefBuffer, log_write};
 use crate::locking::SpinLock;
-use crate::syscall::{ObjHandle, obj_get};
 use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::fmt;
@@ -95,10 +95,11 @@ impl LogBuffer {
 impl fmt::Write for LogBuffer {
     /// Writes all bytes from the slice to the log buffer
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        let obj_handle = ObjHandle::new(0);
         let buf = SliceRefBuffer::new(s.as_bytes());
-        let fs = obj_get(obj_handle).map_err(print_warning).unwrap();
-        let fs = fs
+        // The log of the task does not depend on its file descriptors, which
+        // user mode can close.
+        let log = current_task().log();
+        let fs = log
             .as_fs()
             .ok_or(SvsmError::LogError)
             .map_err(print_warning)
@@ -224,5 +225,25 @@ pub fn switch_to_log_buffer() {
     write_log_sinks(early.contents());
     if early.truncated {
         write_log_sinks(EARLY_LOG_TRUNCATED.as_bytes());
+    }
+}
+
+#[cfg(all(test, test_in_svsm))]
+mod tests {
+    use crate::cpu::percpu::current_task;
+    use crate::syscall::ObjHandle;
+    use syscall::STDOUT_FILENO;
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_log_without_stdout() {
+        let task = current_task();
+        let stdout = ObjHandle::new(STDOUT_FILENO);
+        let log = task.remove_obj(stdout).unwrap();
+
+        // The kernel log of the task does not use its standard output.
+        log::info!("logging with the standard output closed");
+
+        task.add_obj_at(log, stdout).unwrap();
     }
 }

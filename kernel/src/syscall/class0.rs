@@ -16,7 +16,8 @@ use core::ffi::c_char;
 use syscall::SysCallError;
 
 pub fn sys_exit(exit_code: u32) -> ! {
-    let code = (exit_code & 0xffff) as u16;
+    // Like on Linux, only the low 8 bits of the exit code are kept.
+    let code = exit_code as u8;
     log::info!(
         "Terminating task {}, exit_code {code}",
         current_task().get_task_name()
@@ -37,8 +38,6 @@ pub fn sys_exec(file: usize, root: usize, _flags: usize) -> Result<u64, SysCallE
 }
 
 pub fn sys_close(obj_id: u32) -> Result<u64, SysCallError> {
-    // According to syscall ABI/API spec, close always returns 0 even
-    // if called with an invalid handle
-    let _ = obj_close(obj_id.into());
+    obj_close(obj_id.into())?;
     Ok(0)
 }

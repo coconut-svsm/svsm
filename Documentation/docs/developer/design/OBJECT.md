@@ -154,7 +154,7 @@ impl From<&ObjHandle> for u32 {
 impl Drop for ObjHandle {
     fn drop(&mut self) {
         // Close the object when drop the ObjHandle.
-        unsafe { syscall1(SYS_CLOSE, self.0.into()) };
+        unsafe { syscall1(SysNo::Close as u64, self.0.into()) };
     }
 }
 

@@ -461,30 +461,26 @@ extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vecto
 ///
 /// * `ctxt` - The context of user mode at the system call.
 fn handle_system_call(ctxt: &mut X86ExceptionContext) {
-    let Ok(input) = TryInto::<u64>::try_into(ctxt.regs.rax) else {
-        ctxt.regs.rax = !0;
+    let Ok(nr) = SysNo::try_from(ctxt.regs.rax as u64) else {
+        ctxt.regs.rax = SysCallError::ENOSYS as usize;
         return;
     };
 
-    ctxt.regs.rax = match input {
-        // Class 0 SysCalls.
-        SYS_EXIT => sys_exit(ctxt.regs.rdi as u32),
-        SYS_EXEC => sys_exec(ctxt.regs.rdi, ctxt.regs.rsi, ctxt.regs.r8),
-        SYS_CLOSE => sys_close(ctxt.regs.rdi as u32),
-        // Class 1 SysCalls.
-        SYS_OPEN => sys_open(ctxt.regs.rdi, ctxt.regs.rsi, ctxt.regs.r8),
-        SYS_READ => sys_read(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
-        SYS_WRITE => sys_write(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
-        SYS_SEEK => sys_seek(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
-        SYS_UNLINK => sys_unlink(ctxt.regs.rdi),
-        SYS_TRUNCATE => sys_truncate(ctxt.regs.rdi as u32, ctxt.regs.rsi),
-        SYS_OPENDIR => sys_opendir(ctxt.regs.rdi),
-        SYS_READDIR => sys_readdir(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
-        SYS_MKDIR => sys_mkdir(ctxt.regs.rdi),
-        SYS_RMDIR => sys_rmdir(ctxt.regs.rdi),
-        // Class 3 SysCalls.
-        SYS_CAPABILITIES => sys_capabilities(ctxt.regs.rdi as u32),
-        _ => Err(SysCallError::ENOSYS),
+    ctxt.regs.rax = match nr {
+        SysNo::ExitGroup => sys_exit(ctxt.regs.rdi as u32),
+        SysNo::Close => sys_close(ctxt.regs.rdi as u32),
+        SysNo::Read => sys_read(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.rdx),
+        SysNo::Write => sys_write(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.rdx),
+        SysNo::SvsmExec => sys_exec(ctxt.regs.rdi, ctxt.regs.rsi, ctxt.regs.rdx),
+        SysNo::SvsmOpen => sys_open(ctxt.regs.rdi, ctxt.regs.rsi, ctxt.regs.rdx),
+        SysNo::SvsmSeek => sys_seek(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.rdx),
+        SysNo::SvsmUnlink => sys_unlink(ctxt.regs.rdi),
+        SysNo::SvsmTruncate => sys_truncate(ctxt.regs.rdi as u32, ctxt.regs.rsi),
+        SysNo::SvsmOpendir => sys_opendir(ctxt.regs.rdi),
+        SysNo::SvsmReaddir => sys_readdir(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.rdx),
+        SysNo::SvsmMkdir => sys_mkdir(ctxt.regs.rdi),
+        SysNo::SvsmRmdir => sys_rmdir(ctxt.regs.rdi),
+        SysNo::SvsmCapabilities => sys_capabilities(ctxt.regs.rdi as u32),
     }
     .map_or_else(|e| e as usize, |v| v as usize);
 }

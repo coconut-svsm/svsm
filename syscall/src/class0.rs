@@ -4,19 +4,18 @@
 //
 // Author: Chuanxiao Dong <chuanxiao.dong@intel.com>
 
+use super::SysNo;
 use super::call::{SysCallError, syscall1, syscall3};
-use super::{SYS_EXEC, SYS_EXIT};
 use core::ffi::CStr;
 
-/// Terminate the current task with the given exit code. The kernel only
-/// supports exit codes on 16 bits, so the upper 16 bits of the provided
-/// code will be ignored.
+/// Terminate the current task with the given exit code. Like on Linux, only
+/// the low 8 bits of the code are used.
 pub fn exit(code: u32) -> ! {
-    // SAFETY: SYS_EXIT is supported syscall number by the svsm kernel.
+    // SAFETY: ExitGroup is supported syscall number by the svsm kernel.
     unsafe {
-        let _ = syscall1(SYS_EXIT, u64::from(code));
+        let _ = syscall1(SysNo::ExitGroup as u64, u64::from(code));
     }
-    unreachable!("Should never return from SYS_EXIT syscall");
+    unreachable!("Should never return from ExitGroup syscall");
 }
 
 #[allow(dead_code)]
@@ -25,14 +24,14 @@ pub struct Tid(u32);
 
 pub fn exec(file: &CStr, root: &CStr, flags: u32) -> Result<Tid, SysCallError> {
     // SAFETY:
-    // 1. SYS_EXEC is a supported syscall number by the svsm kernel.
+    // 1. SvsmExec is a supported syscall number by the svsm kernel.
     // 2. Parameters `file.as_ptr()` and `root.as_ptr()` are passed as raw pointers.
     // but the function `sys_exec` which this function delegates to, performs the
     // necessary checks.
     // 3. Currently `flags` parameter is unused.
     unsafe {
         syscall3(
-            SYS_EXEC,
+            SysNo::SvsmExec as u64,
             file.as_ptr() as u64,
             root.as_ptr() as u64,
             u64::from(flags),

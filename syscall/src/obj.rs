@@ -4,7 +4,7 @@
 //
 // Author: Chuanxiao Dong <chuanxiao.dong@intel.com>
 
-use super::SYS_CLOSE;
+use super::SysNo;
 use super::call::syscall1;
 
 /// The object is exposed to the user mode via the object-opening related
@@ -36,9 +36,9 @@ pub trait Obj {
 
 impl Drop for ObjHandle {
     fn drop(&mut self) {
-        // SAFETY: SYS_CLOSE is supported syscall number by the svsm kernel.
+        // SAFETY: Close is supported syscall number by the svsm kernel.
         unsafe {
-            let _ = syscall1(SYS_CLOSE, self.0.into());
+            let _ = syscall1(SysNo::Close as u64, self.0.into());
         }
     }
 }
