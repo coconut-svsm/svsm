@@ -173,62 +173,42 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
     Ok(())
 }
 
+/// Accepts the page of the given size that `vaddr` maps to `paddr`, zeroing it
+/// if it was already accepted.
+///
 /// # Safety
-/// This function will zero arbitrary memory, so the caller is required to
-/// ensure that the supplied virtual address range is appropriate for
-/// acceptance.  The caller is additionally required to ensure that the address
-/// range is appropriate aligned to 4 KB boundaries.
-unsafe fn td_accept_virtual_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), SvsmError> {
+///
+/// See `td_accept_virtual_memory()`
+unsafe fn td_accept_virtual_page(
+    vaddr: VirtAddr,
+    paddr: PhysAddr,
+    size: PageSize,
+) -> Result<(), SvsmError> {
+    let frame = match size {
+        PageSize::Regular => PageFrame::Size4K(paddr),
+        PageSize::Huge => PageFrame::Size2M(paddr),
+    };
     // SAFETY: the caller takes responsibility for the correct usage of the
     // physical address.
-    let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size4K(paddr))) };
+    let ret = unsafe { tdx_result(tdg_mem_page_accept(frame)) };
     match ret {
-        Ok(s) => {
-            if s == TdxSuccess::PageAlreadyAccepted {
-                // Zero the 4 KB page.
-                // SAFETY: the caller takes responsibility for the correct
-                // usage of the virtual address.
-                unsafe {
-                    vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE);
-                }
+        Ok(TdxSuccess::PageAlreadyAccepted) => {
+            // Zero the page.
+            // SAFETY: the caller takes responsibility for the correct usage of
+            // the virtual address.
+            unsafe {
+                vaddr.as_mut_ptr::<u8>().write_bytes(0, usize::from(size));
             }
             Ok(())
         }
-        Err(e) => Err(e.into()),
-    }
-}
-
-/// # Safety
-/// This function will zero arbitrary memory, so the caller is required to
-/// ensure that the supplied virtual address range is appropriate for
-/// acceptance.  The caller is additionally required to ensure that the address
-/// range is appropriate aligned to 4 KB boundaries.
-unsafe fn td_accept_virtual_2m(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), SvsmError> {
-    // SAFETY: the caller takes responsibility for the correct usage of the
-    // physical address.
-    let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size2M(paddr))) };
-    match ret {
-        Ok(s) => {
-            if s == TdxSuccess::PageAlreadyAccepted {
-                // Zero the 2M page.
-                // SAFETY: the caller takes responsibility for the correct
-                // usage of the virtual address.
-                unsafe {
-                    vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE_2M);
-                }
-            }
-            Ok(())
-        }
-        Err(TdxError::PageSizeMismatch) => {
+        Ok(_) => Ok(()),
+        Err(TdxError::PageSizeMismatch) if size == PageSize::Huge => {
             // Process this 2 MB page as a series of 4 KB pages.
-            for offset in 0usize..512usize {
+            for offset in (0..PAGE_SIZE_2M).step_by(PAGE_SIZE) {
                 // SAFETY: the caller takes responsibility for the correct
                 // usage of the physical address.
                 unsafe {
-                    td_accept_virtual_4k(
-                        vaddr + (offset << PAGE_SHIFT),
-                        paddr + (offset << PAGE_SHIFT),
-                    )?;
+                    td_accept_virtual_page(vaddr + offset, paddr + offset, PageSize::Regular)?;
                 }
             }
             Ok(())
@@ -258,14 +238,14 @@ pub unsafe fn td_accept_virtual_memory(region: MemoryRegion<VirtAddr>) -> Result
             // SAFETY: the caller takes responsibility for the correct usage of
             // the virtual address.
             unsafe {
-                td_accept_virtual_2m(vaddr, frame.address())?;
+                td_accept_virtual_page(vaddr, frame.address(), PageSize::Huge)?;
             }
             PAGE_SIZE_2M
         } else {
             // SAFETY: the caller takes responsibility for the correct usage of
             // the virtual address.
             unsafe {
-                td_accept_virtual_4k(vaddr, frame.address())?;
+                td_accept_virtual_page(vaddr, frame.address(), PageSize::Regular)?;
             }
             PAGE_SIZE
         };
