@@ -32,11 +32,8 @@ use crate::mm::PAGE_SIZE;
 use crate::mm::TryPtr;
 use crate::mm::USER_MEM_END;
 use crate::mm::guestmem::UserPtr;
-use crate::platform::PageValidateOp;
-use crate::platform::SvsmPlatform;
 use crate::task::{TaskExitStatus, is_task_fault, terminate};
 use crate::tdx::ve::handle_virtualization_exception;
-use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::arch::global_asm;
 use core::mem::offset_of;
@@ -129,17 +126,11 @@ pub unsafe fn early_idt_init(idt: &mut IDT<'_>) {
 /// # Safety
 /// The caller is expected to provide a valid virtual address for use as the
 /// IDT.
-pub unsafe fn idt_init(idt_vaddr: VirtAddr, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
+pub unsafe fn idt_init(idt_vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Configure the pre-allocated page for use as the IDT.
     // SAFETY: the caller guarantees the safety of the supplied virtual
     // address.
     let idt_page = unsafe {
-        // The IDT allocation is not validated as part of the boot image, so
-        // validate it here.
-        platform.validate_virtual_page_range(
-            MemoryRegion::new(idt_vaddr, PAGE_SIZE),
-            PageValidateOp::Validate,
-        )?;
         let idt_ptr = idt_vaddr.as_mut_ptr::<IdtEntry>();
         slice::from_raw_parts_mut(idt_ptr, PAGE_SIZE / size_of::<IdtEntry>())
     };

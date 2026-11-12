@@ -13,9 +13,10 @@ use crate::cpu::percpu::{PERCPU_VMSAS, this_cpu};
 use crate::cpu::smp::this_cpu_shared;
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
-use crate::platform::PageStateChangeOp;
+use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::sev::ghcb::with_current_ghcb;
-use crate::sev::{PvalidateOp, RMPFlags, pvalidate, rmp_adjust, secrets_page};
+use crate::sev::secrets_page;
+use crate::sev::utils::rmp_grant_guest_access;
 use crate::types::{GUEST_VMPL, PAGE_SIZE, PageSize};
 use crate::utils::{MemoryRegion, zero_mem_region};
 use alloc::vec::Vec;
@@ -48,6 +49,7 @@ impl SevFWMetaData {
 /// The caller must have verified that the given physical memory region is
 /// private to the CVM and that it does not alias SVSM memory.
 unsafe fn validate_fw_mem_region(
+    platform: &dyn SvsmPlatform,
     boot_params: &BootParams<'_>,
     region: MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
@@ -57,9 +59,11 @@ unsafe fn validate_fw_mem_region(
     log::info!("Validating {pstart:#018x}-{pend:#018x}");
 
     if boot_params.page_state_change_required() {
-        with_current_ghcb(|ghcb| ghcb.page_state_change(region, PageStateChangeOp::Private))
-            .expect("GHCB PSC call failed to validate firmware memory");
+        platform.page_state_change(region, PageStateChangeOp::Private)?;
     }
+
+    // SAFETY: the caller guarantees that the region is firmware memory.
+    unsafe { platform.validate_physical_page_range(region, PageValidateOp::Validate)? };
 
     for paddr in region.iter_pages(PageSize::Regular) {
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
@@ -67,88 +71,76 @@ unsafe fn validate_fw_mem_region(
 
         // SAFETY: the virtual address mapping is known to point to the guest
         // physical address range supplied by the caller.
-        unsafe {
-            pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid)?;
-
-            // Make page accessible to guest VMPL
-            rmp_adjust(
-                vaddr,
-                RMPFlags::GUEST_VMPL | RMPFlags::RWX,
-                PageSize::Regular,
-            )?;
-
-            zero_mem_region(vaddr, vaddr + PAGE_SIZE);
-        }
+        unsafe { zero_mem_region(vaddr, vaddr + PAGE_SIZE) };
     }
 
     Ok(())
 }
 
-/// # Safety
-///
-/// The caller must have verified that the given physical memory regions are
-/// private to the CVM and that they do not alias SVSM memory.
-unsafe fn validate_fw_memory_vec(
-    boot_params: &BootParams<'_>,
-    regions: Vec<MemoryRegion<PhysAddr>>,
-) -> Result<(), SvsmError> {
-    if regions.is_empty() {
-        return Ok(());
-    }
-
-    let mut next_vec = Vec::new();
-    let mut region = regions[0];
-
-    for next in regions.into_iter().skip(1) {
-        if region.contiguous(&next) {
-            region = region.merge(&next);
-        } else {
-            next_vec.push(next);
+/// Sorts `regions`, merging the ones that overlap or are adjacent.
+fn merge_regions(
+    regions: impl IntoIterator<Item = MemoryRegion<PhysAddr>>,
+) -> Vec<MemoryRegion<PhysAddr>> {
+    let mut regions: Vec<_> = regions.into_iter().collect();
+    regions.sort_unstable_by_key(|region| region.start());
+    regions.dedup_by(|next, prev| {
+        let contiguous = prev.contiguous(next);
+        if contiguous {
+            *prev = prev.merge(next);
         }
-    }
-    // SAFETY: the caller must uphold the safety requirements
-    unsafe {
-        validate_fw_mem_region(boot_params, region)?;
-        validate_fw_memory_vec(boot_params, next_vec)
-    }
+        contiguous
+    });
+    regions
 }
 
+/// Returns the firmware memory regions that the SVSM validates before
+/// launching the firmware, sorted and merged.
+fn svsm_validated_fw_regions(
+    boot_params: &BootParams<'_>,
+    fw_meta: &SevFWMetaData,
+) -> Vec<MemoryRegion<PhysAddr>> {
+    let pages = [fw_meta.cpuid_page, fw_meta.secrets_page, fw_meta.caa_page];
+    let pages = pages
+        .into_iter()
+        .flatten()
+        .map(|paddr| MemoryRegion::new(paddr, PAGE_SIZE));
+    let regions = fw_meta
+        .valid_mem
+        .iter()
+        .copied()
+        .chain(pages)
+        .chain(boot_params.unvalidated_memory_map());
+    merge_regions(regions)
+}
+
+/// Validates the firmware memory that the SVSM validates, and grants the guest
+/// access to all firmware memory.
 pub fn validate_fw_memory(
+    platform: &dyn SvsmPlatform,
     boot_params: &BootParams<'_>,
     fw_meta: &SevFWMetaData,
     kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
-    // Initalize vector with regions from the FW
-    let mut regions = fw_meta.valid_mem.clone();
+    let regions = svsm_validated_fw_regions(boot_params, fw_meta);
 
-    // Add region for CPUID page if present
-    if let Some(cpuid_paddr) = fw_meta.cpuid_page {
-        regions.push(MemoryRegion::new(cpuid_paddr, PAGE_SIZE));
+    // The set of memory that the guest is granted access to
+    let fw_regions = boot_params.get_fw_regions();
+    let fw_memory = merge_regions(fw_regions.into_iter().chain(regions.iter().copied()));
+
+    if fw_memory.iter().any(|region| region.overlap(kernel_region)) {
+        log::error!("Firmware memory overlaps with the kernel");
+        return Err(SvsmError::Firmware);
     }
 
-    // Add region for Secrets page if present
-    if let Some(secrets_paddr) = fw_meta.secrets_page {
-        regions.push(MemoryRegion::new(secrets_paddr, PAGE_SIZE));
+    for region in regions {
+        // SAFETY: we've just checked that the firmware regions do not
+        // overlap with the SVSM kernel
+        unsafe { validate_fw_mem_region(platform, boot_params, region)? };
     }
 
-    // Add region for CAA page if present
-    if let Some(caa_paddr) = fw_meta.caa_page {
-        regions.push(MemoryRegion::new(caa_paddr, PAGE_SIZE));
-    }
-
-    // Sort regions by base address
-    regions.sort_unstable_by_key(|a| a.start());
-
-    for region in regions.iter() {
-        if region.overlap(kernel_region) {
-            log::error!("FwMeta region ovelaps with kernel");
-            return Err(SvsmError::Firmware);
-        }
-    }
-
-    // SAFETY: we've just checked that the firmware regions do not overlap with
-    // the SVSM kernel
-    unsafe { validate_fw_memory_vec(boot_params, regions) }
+    // SAFETY: we've just checked that the firmware memory does not overlap
+    // with the SVSM kernel
+    unsafe { adjust_fw_mem(&fw_memory) }
 }
 
 pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
@@ -267,30 +259,22 @@ pub unsafe fn copy_tables_to_fw(
     Ok(())
 }
 
-/// Configures FW memory regions to grant guest VMPL permission as required.
+/// Grants the guest VMPL access to the firmware memory `regions`.
 ///
 /// # Safety
 ///
-/// The caller must have verified that the firmware physical memory regions in
-/// `boot_params` are private to the CVM and that they do not alias SVSM
-/// memory.
-pub unsafe fn adjust_fw_mem(boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
-    let fw_regions = boot_params.get_fw_regions();
-
-    for (i, region) in fw_regions.into_iter().enumerate() {
+/// The caller must have verified that the given physical memory regions are
+/// private to the CVM and that they do not alias SVSM memory.
+unsafe fn adjust_fw_mem(regions: &[MemoryRegion<PhysAddr>]) -> Result<(), SvsmError> {
+    for (i, region) in regions.iter().enumerate() {
         log::info!("Firmware region {i} at {region:#018x}");
 
         for paddr in region.iter_pages(PageSize::Regular) {
             let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
             let vaddr = guard.virt_addr();
-            // SAFETY: the address is known to be a guest page.
-            if let Err(e) = unsafe {
-                rmp_adjust(
-                    vaddr,
-                    RMPFlags::GUEST_VMPL | RMPFlags::RWX,
-                    PageSize::Regular,
-                )
-            } {
+            // SAFETY: the caller guarantees that the address is firmware
+            // memory.
+            if let Err(e) = unsafe { rmp_grant_guest_access(vaddr, PageSize::Regular) } {
                 log::info!("rmpadjust failed for addr {vaddr:#018x}");
                 return Err(e);
             }
