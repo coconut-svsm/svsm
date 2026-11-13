@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PCID_COUNT"],"fn":["alloc_pcid","pcid_supported","release_pcid"],"static":["PCID_ALLOC"],"struct":["TaskPcid"]};

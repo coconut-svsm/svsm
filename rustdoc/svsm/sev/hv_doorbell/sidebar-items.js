@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["allocate_hv_doorbell_page","process_hv_events","process_hv_events_if_required","setup_hv_doorbell","try_with_current_hv_doorbell","with_current_hv_doorbell"],"static":["HV_DOORBELL"],"struct":["HVDoorbell","HVDoorbellFlags","HVExtIntInfo","HVExtIntStatus"]};

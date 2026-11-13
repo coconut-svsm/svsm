@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["apic","smap","x2apic"]};

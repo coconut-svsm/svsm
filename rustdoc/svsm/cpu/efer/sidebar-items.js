@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["disable_syscall_insn","read_efer","write_efer"]};

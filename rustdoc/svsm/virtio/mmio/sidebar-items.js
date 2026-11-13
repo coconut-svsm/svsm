@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_virtio_mmio_addresses","probe_mmio_slots"],"struct":["MmioRegion","MmioSlot","MmioSlots"]};

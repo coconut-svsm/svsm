@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ISA_RANGE_END","ISA_RANGE_START"],"fn":["init_memory_map","valid_phys_address","valid_phys_region","writable_phys_addr","write_guest_memory_map"],"static":["MEMORY_MAP"]};
