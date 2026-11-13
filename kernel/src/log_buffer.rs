@@ -7,9 +7,12 @@
 use crate::console::_print;
 #[cfg(feature = "enable-console-log")]
 use crate::console::console_write;
+#[cfg(feature = "enable-console-log")]
+use crate::console::try_console_print;
 use crate::error::SvsmError;
 use crate::fs::{SliceRefBuffer, log_write};
 use crate::locking::SpinLock;
+use crate::panic_state;
 use crate::syscall::{ObjHandle, obj_get};
 use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -21,8 +24,10 @@ fn print_warning(_e: SvsmError) {
     _print(format_args!("ERROR: logging failed\n"));
 }
 
-/// Size of the early log buffer. One page is plenty: only a handful of
-/// messages are emitted before the regular log buffer takes over.
+/// Size of the early log buffer. One page is plenty for the handful of
+/// messages emitted before the regular log buffer takes over; the
+/// panic-time messages that share this buffer are best effort and may be
+/// truncated.
 const EARLY_LOG_SIZE: usize = PAGE_SIZE;
 
 /// Prefix added to messages stored in the early log buffer. It matches the
@@ -37,8 +42,10 @@ const EARLY_LOG_TRUNCATED: &str = "[SVSM] <early log truncated>\n";
 /// A fixed size buffer holding the log messages emitted before the file
 /// system is up and the regular log buffer can be used. It needs no heap and
 /// no per-CPU state, so it is usable from the very beginning of kernel
-/// startup. [`switch_to_log_buffer()`] copies its contents to the regular log
-/// buffer, after which it is never used again.
+/// startup, and while panic handling is active (see [`early_log_write()`]).
+/// [`switch_to_log_buffer()`] copies the boot-time contents to the regular
+/// log buffer; contents written during panic handling are not flushed
+/// automatically.
 #[derive(Debug)]
 struct EarlyLogBuffer {
     buffer: [u8; EARLY_LOG_SIZE],
@@ -114,9 +121,11 @@ static LOGGER: ImmutAfterInitCell<SpinLock<LogBuffer>> = ImmutAfterInitCell::uni
 /// from this early, so every message gets the same fixed prefix.
 ///
 /// The message is dropped if the buffer is already locked further down the
-/// call stack, for instance by an exception handler interrupting a write. No
-/// IRQ-safe lock is available before per-CPU state exists, so waiting for the
-/// lock here would deadlock the only CPU running at this point.
+/// call stack, for instance by an exception handler interrupting a write, or
+/// when the buffer is full. No IRQ-safe lock is available before per-CPU
+/// state exists, so waiting for the lock here would deadlock the only CPU
+/// running at this point; during panic handling the same applies to a lock
+/// held by the code that panicked.
 fn early_log_write(args: fmt::Arguments<'_>) {
     if let Some(mut early) = EARLY_LOG.try_lock() {
         // Writing to the early log buffer cannot fail.
@@ -127,6 +136,22 @@ fn early_log_write(args: fmt::Arguments<'_>) {
 }
 
 fn lb_write(args: fmt::Arguments<'_>) {
+    if panic_state::is_active() {
+        // The regular logger reaches the task file and console locks. Panic
+        // output must not wait for a lock held by the code that panicked,
+        // so print to the console without waiting for its lock and go to
+        // the early log buffer only when it is already held, e.g. by a
+        // panic while printing. This only covers CPUs that observe the
+        // flag: one that already passed this check can still block on the
+        // regular path, until the platform terminates the guest.
+        #[cfg(feature = "enable-console-log")]
+        if try_console_print(format_args!("{EARLY_LOG_PREFIX}{args}")) {
+            return;
+        }
+        early_log_write(args);
+        return;
+    }
+
     match LOGGER.try_get_inner() {
         Ok(logger) => logger.lock().write_fmt(args).unwrap(),
         Err(_) => early_log_write(args),

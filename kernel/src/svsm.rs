@@ -12,7 +12,6 @@ use bootdefs::platform::SvsmPlatformType;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, Ordering};
 use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::boot_params::BootParamBox;
 use svsm::boot_params::BootParams;
@@ -55,6 +54,7 @@ use svsm::mm::pagetable::paging_init;
 use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
+use svsm::panic_state;
 #[cfg(feature = "persistence")]
 use svsm::persistence::{persistence_discover, persistence_init};
 use svsm::platform::PageValidateOp;
@@ -704,8 +704,7 @@ fn panic(info: &PanicInfo<'_>) -> ! {
     // Guard against re-entering the panic handler. This may happen if any
     // of the actions in __panic() trigger a panic themselves (e.g printing
     // output or walking the stacktrace).
-    static IN_PANIC: AtomicBool = AtomicBool::new(false);
-    if !IN_PANIC.swap(true, Ordering::Relaxed) {
+    if panic_state::enter() {
         __panic(info);
     }
 
