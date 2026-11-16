@@ -8,14 +8,13 @@ endif
 
 SRC_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 OUT_DIR ?= $(SRC_DIR)
+CC ?= gcc
 
 CFLAGS += -I$(SRC_DIR)/include -nostdinc -nostdlib -mno-red-zone
 CFLAGS += -m64 -march=x86-64 -mno-sse2 -fPIE
 CFLAGS += -fno-stack-protector
 CFLAGS += -ffreestanding
 CFLAGS += -Wall -Werror
-
-CC = gcc
 
 vpath %.c $(SRC_DIR)
 vpath %.s $(SRC_DIR)
