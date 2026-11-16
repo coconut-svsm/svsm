@@ -30,7 +30,7 @@ use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
 use crate::mm::PAGE_SIZE;
 use crate::mm::TryPtr;
-use crate::mm::USER_MEM_END;
+use crate::mm::USER_MEM;
 use crate::mm::guestmem::UserPtr;
 use crate::platform::PageValidateOp;
 use crate::platform::SvsmPlatform;
@@ -214,7 +214,7 @@ fn is_syscall_insn(ctxt: &X86ExceptionContext) -> bool {
 fn can_resume_after_syscall(rip: usize) -> bool {
     VirtAddr::from(rip)
         .checked_add(SYSCALL_INSN.len())
-        .is_some_and(|next| next < USER_MEM_END)
+        .is_some_and(|next| next < USER_MEM.end())
 }
 
 // Invalid-Opcode handler
@@ -592,10 +592,10 @@ mod tests {
     fn test_can_resume_after_syscall() {
         assert!(can_resume_after_syscall(0x1000));
         // The last instruction that ends within user space.
-        assert!(can_resume_after_syscall((USER_MEM_END - 3).bits()));
+        assert!(can_resume_after_syscall((USER_MEM.end() - 3).bits()));
         // The next address is the first one outside of user space.
-        assert!(!can_resume_after_syscall((USER_MEM_END - 2).bits()));
-        assert!(!can_resume_after_syscall((USER_MEM_END - 1).bits()));
+        assert!(!can_resume_after_syscall((USER_MEM.end() - 2).bits()));
+        assert!(!can_resume_after_syscall((USER_MEM.end() - 1).bits()));
         assert!(!can_resume_after_syscall(usize::MAX));
     }
 }
