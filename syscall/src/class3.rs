@@ -4,11 +4,11 @@
 //
 // Author: Chuanxiao Dong <chuanxiao.dong@intel.com>
 
-use super::SYS_CAPABILITIES;
+use super::SysNo;
 use super::call::{SysCallError, syscall1};
 
 pub fn capabilities(index: u32) -> Result<u64, SysCallError> {
     // SAFETY: Invokes a system call and does not directly change any memory of
     // the process.
-    unsafe { syscall1(SYS_CAPABILITIES, index.into()) }
+    unsafe { syscall1(SysNo::SvsmCapabilities as u64, index.into()) }
 }

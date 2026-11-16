@@ -7,7 +7,7 @@
 //! Tests for entering the kernel with the `syscall` instruction.
 
 use core::arch::asm;
-use userlib::{SYS_CAPABILITIES, SysCallError};
+use userlib::{SysCallError, SysNo};
 
 /// A number that is not a system call.
 const SYS_INVALID: u64 = 0xdead_beef;
@@ -37,18 +37,18 @@ fn syscall_insn(nr: u64, arg: u64) -> u64 {
 #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
 fn test_syscall_insn_dispatch() {
     // Index 0 returns the number of capabilities, which follow it.
-    let count = syscall_insn(SYS_CAPABILITIES, 0);
+    let count = syscall_insn(SysNo::SvsmCapabilities as u64, 0);
     assert!(count > 0);
 
     // Every valid index succeeds. Errors are negative values.
     for index in 1..=count {
-        let ret = syscall_insn(SYS_CAPABILITIES, index) as i64;
+        let ret = syscall_insn(SysNo::SvsmCapabilities as u64, index) as i64;
         assert!(ret >= 0, "index {index} failed with {ret}");
     }
 
     // The first index after the last capability is invalid.
     assert_eq!(
-        syscall_insn(SYS_CAPABILITIES, count + 1) as i64,
+        syscall_insn(SysNo::SvsmCapabilities as u64, count + 1) as i64,
         SysCallError::ENOENT as i64
     );
 }

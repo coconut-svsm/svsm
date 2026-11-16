@@ -33,7 +33,7 @@ use crate::cpu::sse::xsave_area_size;
 use crate::cpu::tlb::flush_tlb_pcid_sync;
 use crate::cpu::{X86ExceptionContext, X86InterruptFrame};
 use crate::error::SvsmError;
-use crate::fs::{Directory, FileHandle, opendir, stdout_open};
+use crate::fs::{Directory, FileHandle, opendir, stdin_open, stdout_open};
 use crate::locking::RWLock;
 use crate::locking::SpinLockIrqSafe;
 use crate::mm::pagetable::{PTEntryFlags, PageTable, new_pgtable};
@@ -46,6 +46,7 @@ use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CPL, SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::{MemoryRegion, is_aligned};
 use intrusive_collections::{LinkedList, LinkedListAtomicLink, intrusive_adapter};
+use syscall::{STDERR_FILENO, STDIN_FILENO, STDOUT_FILENO};
 
 use super::exec::exec;
 use super::pcid::{TaskPcid, pcid_supported};
@@ -162,14 +163,14 @@ impl From<TaskState> for u32 {
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub enum TaskExitStatus {
     /// Task called sys_exit(code).
-    Exited(u16),
+    Exited(u8),
     /// Task was killed by an x86 exception.
     Exception,
 }
 
 impl From<u32> for TaskExitStatus {
     fn from(v: u32) -> Self {
-        let (code, exception) = ((v >> 16) as u16, (v & 0xFFFF) as u16);
+        let (code, exception) = ((v >> 16) as u8, (v & 0xFFFF) as u16);
         if exception != 0 {
             Self::Exception
         } else {
@@ -392,6 +393,11 @@ pub struct Task {
     /// Objects shared among threads within the same process
     objs: Arc<RWLock<BTreeMap<ObjHandle, Arc<dyn Obj>>>>,
 
+    /// The log the kernel writes its messages for this task to. It is also
+    /// the standard output and error of the task, but user mode can close
+    /// those descriptors or use them for other files.
+    log: Arc<dyn Obj>,
+
     /// Queue of tasks waiting for completion of this task.
     wait_queue: SpinLockIrqSafe<WaitQueue>,
 
@@ -526,6 +532,16 @@ impl Task {
             None
         };
 
+        // The threads of a process share the log of the process.
+        let log = match args.thread_of {
+            Some(ref parent_thread) => parent_thread.log.clone(),
+            None => stdout_open(if &*args.name == "idle" {
+                "SVSM"
+            } else {
+                &args.name
+            }),
+        };
+
         let xsa = Self::allocate_xsave_area();
         let xsa_addr = u64::from(xsa.vaddr()) as usize;
 
@@ -615,6 +631,7 @@ impl Task {
             runlist_link: LinkedListAtomicLink::default(),
             waitlist_link: LinkedListAtomicLink::default(),
             objs: objtree,
+            log,
             wait_queue: SpinLockIrqSafe::new(WaitQueue::new()),
             exit_status: AtomicU32::new(TaskExitStatus::default().into()),
         });
@@ -1097,18 +1114,21 @@ impl Task {
             .ok_or(ObjError::NotFound.into())
     }
 
+    /// Returns the log of the task, which the kernel writes its messages to.
+    pub fn log(&self) -> Arc<dyn Obj> {
+        self.log.clone()
+    }
+
     fn attach_stdout(&self) {
-        let name = if &*self.name == "idle" {
-            "SVSM"
-        } else {
-            &self.name
-        };
-
-        let fh_log = stdout_open(name);
-
-        let oh_log = ObjHandle::new(0);
-        self.add_obj_at(fh_log, oh_log)
-            .expect("Failed to attach log");
+        // Like on Linux, descriptor 0 is standard input, which is empty, and
+        // the log is standard output and standard error. Attaching an object
+        // to 0 also keeps it from being handed out for another object.
+        self.add_obj_at(stdin_open(), ObjHandle::new(STDIN_FILENO))
+            .expect("Failed to attach stdin");
+        for fd in [STDOUT_FILENO, STDERR_FILENO] {
+            self.add_obj_at(self.log.clone(), ObjHandle::new(fd))
+                .expect("Failed to attach log");
+        }
     }
 }
 
