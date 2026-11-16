@@ -11,7 +11,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::alloc::free_multiple_pages;
 use crate::mm::{PAGE_SIZE, PerCPUPageMappingGuard, TryPtr};
-use crate::platform::{PageStateChangeOp, PageValidateOp, SVSM_PLATFORM, SevFWMetaData};
+use crate::platform::SevFWMetaData;
 use crate::utils::{MemoryRegion, page_align_up, round_to_pages};
 use alloc::vec::Vec;
 use bootdefs::boot_params::BootParamBlock;
@@ -229,24 +229,6 @@ impl BootParams<'_> {
         let mem_map_mapping =
             PerCPUPageMappingGuard::create(mem_map_region.start(), mem_map_region.end(), 0)?;
         let mem_map_va = mem_map_mapping.virt_addr();
-
-        if self.boot_param_block.firmware.memory_map_prevalidated == 0 {
-            // The guest expects the pages in the memory map to be treated like
-            // host-provided IGVM parameters, which requires the pages to be
-            // validated.  Since the memory was not declared as part of the
-            // guest firmware image, the pages must be validated here.
-            if self.page_state_change_required() {
-                SVSM_PLATFORM.page_state_change(mem_map_region, PageStateChangeOp::Private)?;
-            }
-
-            let mem_map_va_region = MemoryRegion::new(mem_map_va, mem_map_region.len());
-            // SAFETY: the virtual address region was created above to map the
-            // specified physical address range and is therefore safe.
-            unsafe {
-                SVSM_PLATFORM
-                    .validate_virtual_page_range(mem_map_va_region, PageValidateOp::Validate)?;
-            }
-        }
 
         // Calculate the maximum number of entries that can be inserted.
         let max_entries = mem_map_size / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
@@ -477,6 +459,20 @@ impl BootParams<'_> {
         }
 
         regions
+    }
+
+    /// Returns the guest memory map area if the SVSM must validate it, i.e.
+    /// if it is not part of a prevalidated region.
+    pub fn unvalidated_memory_map(&self) -> Option<MemoryRegion<PhysAddr>> {
+        let fw_info = &self.boot_param_block.firmware;
+        if fw_info.memory_map_size == 0 || fw_info.memory_map_prevalidated != 0 {
+            return None;
+        }
+        let gpa = PhysAddr::from(fw_info.memory_map_address as u64);
+        Some(MemoryRegion::new(
+            gpa.page_align(),
+            page_align_up(fw_info.memory_map_size as usize),
+        ))
     }
 
     pub fn fw_in_low_memory(&self) -> bool {
