@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["GuestRegister"],"fn":["set_guest_register"]};

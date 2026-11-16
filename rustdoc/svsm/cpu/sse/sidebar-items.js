@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["XCR0_SSE_ENABLE","XCR0_X87_ENABLE","XCR0_YMM_ENABLE","XSAVE_LEGACY_SIZE"],"fn":["legacy_sse_enable","sse_init","sse_restore_context","sse_save_context","xcr0_set","xsave_area_size","xsave_enable"],"static":["SVSM_XCR0"]};

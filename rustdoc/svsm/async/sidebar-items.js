@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["task_busypoll_to_completion"],"struct":["SvsmSyncTypes"]};
