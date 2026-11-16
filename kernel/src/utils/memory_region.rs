@@ -5,7 +5,7 @@
 // Author: Carlos López <carlos.lopez@suse.com>
 
 use crate::address::Address;
-use crate::types::PageSize;
+use crate::types::{PAGE_SIZE_2M, PageSize};
 use core::fmt;
 
 /// An abstraction over a memory region, expressed in terms of physical
@@ -211,6 +211,49 @@ where
         (self.start().bits()..self.end().bits())
             .step_by(size)
             .map(A::from)
+    }
+
+    /// Iterate over the region in the largest pages possible, yielding the
+    /// address and size of each page. A 2M page is used wherever the address
+    /// is 2M-aligned and the rest of the region spans at least 2M; otherwise
+    /// a 4K page is used. As with [`Self::iter_pages()`], the region should
+    /// be page-aligned.
+    ///
+    /// ```rust
+    /// # use svsm::address::PhysAddr;
+    /// # use svsm::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
+    /// # use svsm::utils::MemoryRegion;
+    /// let region = MemoryRegion::new(PhysAddr::from(0x1ff000u64), PAGE_SIZE_2M + PAGE_SIZE * 2);
+    /// let mut iter = region.iter_pages_largest();
+    /// assert_eq!(
+    ///     iter.next(),
+    ///     Some((PhysAddr::from(0x1ff000u64), PageSize::Regular))
+    /// );
+    /// assert_eq!(
+    ///     iter.next(),
+    ///     Some((PhysAddr::from(0x200000u64), PageSize::Huge))
+    /// );
+    /// assert_eq!(
+    ///     iter.next(),
+    ///     Some((PhysAddr::from(0x400000u64), PageSize::Regular))
+    /// );
+    /// assert_eq!(iter.next(), None);
+    /// ```
+    pub fn iter_pages_largest(&self) -> impl Iterator<Item = (A, PageSize)> + use<A> {
+        let mut rest = *self;
+        core::iter::from_fn(move || {
+            if rest.is_empty() {
+                return None;
+            }
+            let page = rest.start;
+            let size = if page.is_aligned(PAGE_SIZE_2M) && rest.len() >= PAGE_SIZE_2M {
+                PageSize::Huge
+            } else {
+                PageSize::Regular
+            };
+            rest.start = A::from(page.bits() + usize::from(size));
+            Some((page, size))
+        })
     }
 
     /// Check whether an address is within this region.

@@ -17,7 +17,7 @@ use super::snp_fw::launch_fw;
 use super::snp_fw::prepare_fw_launch;
 use super::snp_fw::print_fw_meta;
 use super::snp_fw::validate_fw_memory;
-use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::address::{PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::cpuid_table;
@@ -32,8 +32,6 @@ use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
 use crate::hyperv;
 use crate::io::IOPort;
-use crate::mm::PAGE_SIZE;
-use crate::mm::PAGE_SIZE_2M;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::memory::write_guest_memory_map;
 use crate::mm::pagetable::with_pgtable;
@@ -78,22 +76,14 @@ unsafe fn pvalidate_page_range(
     // In the future, it is likely that this function will need to be prepared
     // to execute both PVALIDATE and RMPADJUST over the same set of addresses,
     // so the loop is structured to anticipate that possibility.
-    let mut paddr = range.start();
-    let paddr_end = range.end();
-    while paddr < paddr_end {
-        // Check whether a 2 MB page can be attempted.
-        let len = if paddr.is_aligned(PAGE_SIZE_2M) && paddr + PAGE_SIZE_2M <= paddr_end {
-            PAGE_SIZE_2M
-        } else {
-            PAGE_SIZE
-        };
+    for (paddr, size) in range.iter_pages_largest() {
+        let len = usize::from(size);
         let mapping = PerCPUPageMappingGuard::create(paddr, paddr + len, 0)?;
         // SAFETY: The mapping correctly represents the physical address range
         // and therefore is safe with respect to other memory operations.
         unsafe {
             pvalidate_range(MemoryRegion::new(mapping.virt_addr(), len), op)?;
         }
-        paddr = paddr + len;
     }
 
     Ok(())
