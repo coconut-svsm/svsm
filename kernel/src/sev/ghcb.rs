@@ -6,7 +6,7 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::msr::{SEV_GHCB, write_msr};
-use crate::cpu::{IrqGuard, X86GeneralRegs, flush_tlb_global_sync_page};
+use crate::cpu::{IrqGuard, X86GeneralRegs, flush_tlb_global_sync_page, irqs_disabled};
 use crate::error::SvsmError;
 use crate::mm::pagetable::with_pgtable_mut;
 use crate::mm::validate::{
@@ -150,6 +150,10 @@ pub fn with_current_ghcb<F, R>(f: F) -> R
 where
     F: FnOnce(&GHCB) -> R,
 {
+    // Interrupt handlers also use the GHCB (e.g. to signal EOI), so keep
+    // interrupts disabled from setting up a GHCB call until its response has
+    // been read.
+    let _guard = IrqGuard::new();
     GHCB_PAGE.with(|ghcb| f(ghcb))
 }
 
@@ -486,15 +490,14 @@ impl GHCB {
 
         let ghcb_address = VirtAddr::from(self as *const GHCB);
         let ghcb_pa = u64::from(virt_to_phys(ghcb_address));
-        // Disable interrupts between writing the MSR and making the GHCB call
-        // to prevent reentrant use of the GHCB MSR.
-        let guard = IrqGuard::new();
+        // with_current_ghcb() keeps interrupts disabled, so an interrupt
+        // handler cannot reuse the GHCB before the response has been read.
+        debug_assert!(irqs_disabled());
         // SAFETY: GHCB is already allocated and setup so this is safe.
         unsafe {
             write_msr(SEV_GHCB, ghcb_pa);
         }
         raw_vmgexit();
-        drop(guard);
 
         let sw_exit_info_1 = self.get_exit_info_1_valid()?;
         if sw_exit_info_1 != 0 {
