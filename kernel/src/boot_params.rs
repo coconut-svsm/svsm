@@ -315,40 +315,13 @@ impl BootParams<'_> {
     }
 
     fn get_cmdline_parameter(&self, param: &[u8]) -> Option<&[u8]> {
-        self.igvm_cmdline.and_then(|cmdline| {
-            if cmdline.len() <= param.len() {
-                return None;
-            } else {
-                // Scan the command line up through the last point where the
-                // parameter string could be present.
-                let scan_len = cmdline.len() - param.len();
-                for i in 0..scan_len {
-                    // Check to see whether this command line position holds
-                    // the first character of the requested parameter name.  If
-                    // so, loop over every character in the requested parameter
-                    // as long as it matches the string found in the command
-                    // line.
-                    let mut j: usize = 0;
-                    while cmdline[i + j] == param[j] {
-                        j += 1;
-                        if j == param.len() {
-                            // The parameter matches.  Generate a substring
-                            // that contains the entire command line that
-                            // follows the parameter string, and then break it
-                            // at the first space.
-                            let (_, substr) = cmdline.split_at(i + j);
-                            let end = substr
-                                .iter()
-                                .position(|&b| b == b' ')
-                                .unwrap_or(substr.len());
-                            let (val, _) = substr.split_at(end);
-                            return Some(val);
-                        }
-                    }
-                }
+        let cmdline = self.igvm_cmdline?;
+        for argument in cmdline.split(|&b| b == b' ') {
+            if let Some(value) = argument.strip_prefix(param) {
+                return Some(value);
             }
-            None
-        })
+        }
+        None
     }
 
     fn param_as_u32(param: &[u8]) -> Option<u32> {
@@ -596,5 +569,47 @@ impl Drop for BootParamBox<'_> {
     fn drop(&mut self) {
         let page_count = round_to_pages(self.boot_params.boot_param_block.param_area_size as usize);
         free_multiple_pages(self.vaddr, page_count);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zerocopy::FromZeros;
+
+    #[test]
+    fn test_get_cmdline_parameter() {
+        let param_block = BootParamBlock::default();
+        let param_page = IgvmParamPage::default();
+        let memory_map = IgvmMemoryMap {
+            memory_map: [IGVM_VHS_MEMORY_MAP_ENTRY::new_zeroed(); IGVM_MEMORY_ENTRIES_PER_PAGE],
+        };
+        let mut boot_params = BootParams {
+            boot_param_block: &param_block,
+            igvm_param_page: &param_page,
+            igvm_memory_map: &memory_map,
+            igvm_cmdline: None,
+            igvm_madt: &[],
+            igvm_device_tree: &[],
+            guest_context: None,
+        };
+        assert_eq!(boot_params.get_cmdline_parameter(b"foobar="), None);
+
+        let cases: &[(&[u8], Option<&[u8]>)] = &[
+            (b"", None),
+            (b"xfoobar=value", None),
+            (b"foobar_extra=value", None),
+            (b"other=foobar=value", None),
+            (b"foobar", None),
+            (b"foobar=value", Some(b"value")),
+            (b"xfoobar=wrong foobar=value", Some(b"value")),
+            (b"  other=value   foobar=value  next=value ", Some(b"value")),
+            (b"foobar=first foobar=second", Some(b"first")),
+            (b"foobar=", Some(b"")),
+        ];
+        for &(cmdline, expected) in cases {
+            boot_params.igvm_cmdline = Some(cmdline);
+            assert_eq!(boot_params.get_cmdline_parameter(b"foobar="), expected);
+        }
     }
 }
