@@ -292,18 +292,18 @@ impl LocalApic {
         // dismissal of any interrupt above will require reprocessing of
         // interrupt state prior to guest reentry, and that reprocessing will
         // reset the guest lazy EOI flag.
-        if self.lazy_eoi_pending {
-            if let Some(caa_ptr) = caa {
-                let calling_area = TryPtr::<SvsmCaa>::from(caa_ptr);
-                // SAFETY: guest vmsa and ca are always validated before being
-                // updated (core_remap_ca(), core_create_vcpu() or
-                // prepare_fw_launch()) so they're safe to use.
-                if let Ok(caa) = unsafe { calling_area.read() } {
-                    if caa.no_eoi_required == 0 {
-                        assert!(self.isr_stack_index != 0);
-                        self.perform_eoi();
-                    }
-                }
+        if self.lazy_eoi_pending
+            && let Some(caa_ptr) = caa
+        {
+            let calling_area = TryPtr::<SvsmCaa>::from(caa_ptr);
+            // SAFETY: guest vmsa and ca are always validated before being
+            // updated (core_remap_ca(), core_create_vcpu() or
+            // prepare_fw_launch()) so they're safe to use.
+            if let Ok(caa) = unsafe { calling_area.read() }
+                && caa.no_eoi_required == 0
+            {
+                assert!(self.isr_stack_index != 0);
+                self.perform_eoi();
             }
         }
     }
@@ -460,21 +460,21 @@ impl LocalApic {
                 // interrupt pending. If another interrupt is pending,
                 // then an explicit EOI will be required to prompt
                 // delivery of the next interrupt.
-                if self.scan_irr() == 0 {
-                    if let Some(calling_area) = guest_caa {
-                        // SAFETY: guest vmsa and ca are always validated
-                        // before being upated (core_remap_ca(),
-                        // core_create_vcpu() or prepare_fw_launch()) so
-                        // they're safe to use.
-                        unsafe {
-                            if let Ok(caa) = calling_area.read() {
-                                if calling_area.write(caa.update_no_eoi_required(1)).is_ok() {
-                                    // Only track a pending lazy EOI if the
-                                    // calling area page could successfully be
-                                    // updated.
-                                    self.lazy_eoi_pending = true;
-                                }
-                            }
+                if self.scan_irr() == 0
+                    && let Some(calling_area) = guest_caa
+                {
+                    // SAFETY: guest vmsa and ca are always validated
+                    // before being upated (core_remap_ca(),
+                    // core_create_vcpu() or prepare_fw_launch()) so
+                    // they're safe to use.
+                    unsafe {
+                        if let Ok(caa) = calling_area.read()
+                            && calling_area.write(caa.update_no_eoi_required(1)).is_ok()
+                        {
+                            // Only track a pending lazy EOI if the
+                            // calling area page could successfully be
+                            // updated.
+                            self.lazy_eoi_pending = true;
                         }
                     }
                 }

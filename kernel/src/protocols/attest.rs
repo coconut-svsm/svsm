@@ -441,10 +441,10 @@ fn write_attestation_report(
     if report.len() > report_region.len() {
         return Err(SvsmReqError::invalid_parameter());
     }
-    if let (Some(region), Some(data)) = (cert_region.as_ref(), certs) {
-        if data.len() > region.len() {
-            return Err(SvsmReqError::invalid_parameter());
-        }
+    if let (Some(region), Some(data)) = (cert_region.as_ref(), certs)
+        && data.len() > region.len()
+    {
+        return Err(SvsmReqError::invalid_parameter());
     }
 
     // All sizes match, copy data to guest

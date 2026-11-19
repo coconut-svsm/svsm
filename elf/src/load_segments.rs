@@ -43,7 +43,7 @@ impl Elf64LoadSegments {
     /// - `range`: An [`Elf64AddrRange`] representing the address range to compare against.
     ///
     /// # Returns
-    /// Returns [`Some(index)`] if a matching segment is found, where `index` is the index
+    /// Returns `Some(index)` if a matching segment is found, where `index` is the index
     /// of the first such segment. Returns [`None`] if no matching segment is found.
     pub fn find_first_not_before(&self, range: &Elf64AddrRange) -> Option<usize> {
         let i = self.segments.partition_point(|segment| {

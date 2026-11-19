@@ -109,10 +109,11 @@ pub mod svsm_gdbstub {
         // within the same CPU causing a deadlock.
         loop {
             let mut gdb_state = GDB_STATE.lock();
-            if let Some(stub) = gdb_state.as_ref() {
-                if stub.target.is_single_step != 0 && stub.target.is_single_step != id {
-                    continue;
-                }
+            if let Some(stub) = gdb_state.as_ref()
+                && stub.target.is_single_step != 0
+                && stub.target.is_single_step != id
+            {
+                continue;
             }
 
             // SAFETY: swaps the stack with GDB_STACK_TOP, which is held uniquely mutably
