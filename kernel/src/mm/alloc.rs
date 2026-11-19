@@ -2450,7 +2450,7 @@ pub const MIN_ALIGN: usize = 32;
 
 pub fn layout_from_size(size: usize) -> Result<Layout, AllocError> {
     let align: usize = {
-        if (size % PAGE_SIZE) == 0 {
+        if size.is_multiple_of(PAGE_SIZE) {
             PAGE_SIZE
         } else {
             MIN_ALIGN
