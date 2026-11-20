@@ -14,6 +14,11 @@ env:
   QEMU_REF: svsm
   IGVM_REPO: https://github.com/microsoft/igvm.git
   IGVM_REF: igvm-v0.3.4
+  # Throwaway KBS server used to exercise the in-SVSM attestation test.
+  # Pinned to a commit so that kbs-test changes only reach CI when this is
+  # updated.
+  KBS_TEST_REPO: https://github.com/coconut-svsm/kbs-test.git
+  KBS_TEST_SHA: 582a26adaa47a3a97de44a25ab3ae17a8a8eac1d
 
 permissions:
   contents: read
@@ -132,8 +137,44 @@ jobs:
       - name: Set up vhost-vsock permissions
         run: sudo chmod 666 /dev/vhost-vsock
 
+      - name: Get kbs-test from cache
+        id: kbs_test_cache
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: citests/kbs-test
+          key: kbs-test-${{ env.KBS_TEST_SHA }}
+
+      # The in-SVSM attestation test performs a full attestation against a KBS
+      # server on the host, bridged to the guest by aproxy. kbs-test is a
+      # throwaway server for exactly that purpose, and lives in its own
+      # repository rather than being vendored here.
+      - if: ${{ steps.kbs_test_cache.outputs.cache-hit != 'true' }}
+        name: Build kbs-test
+        run: |
+          OUT="$PWD/citests/kbs-test"
+          mkdir -p "$OUT"
+
+          # Build outside the coconut-svsm checkout: kbs-test is not a member
+          # of the coconut-svsm cargo workspace, and cargo refuses to build a
+          # package nested under a workspace root that does not list it.
+          mkdir -p ../scratch/kbs-test
+          pushd ../scratch/kbs-test
+
+          # Fetch exactly the pinned commit, so that the cached binary always
+          # matches the cache key.
+          git init -q
+          git fetch --depth=1 "${{ env.KBS_TEST_REPO }}" "${{ env.KBS_TEST_SHA }}"
+          git checkout -q FETCH_HEAD
+
+          cargo build --release --locked
+          cp target/release/kbs-test "$OUT"
+
+          popd
+
+      # igvmmeasure and aproxy are needed by test-in-svsm.sh, which is invoked
+      # directly below rather than through the make target.
       - name: Build test
-        run: make bin/coconut-test-qemu.igvm
+        run: make bin/coconut-test-qemu.igvm bin/igvmmeasure aproxy
 
       ########################
 
@@ -151,7 +192,9 @@ jobs:
           PR_NUM=${{ github.event.pull_request.number }}
           VSOCK_PORT=$(( ${PR_NUM:-0} + 1024 ))
           VSOCK_CID=$(( ${PR_NUM:-0} + 10 ))
-          QEMU=./citests/qemu/bin/qemu-system-x86_64 scripts/test-in-svsm.sh \
+          QEMU=./citests/qemu/bin/qemu-system-x86_64 \
+          KBS=./citests/kbs-test/kbs-test \
+          scripts/test-in-svsm.sh \
             --vsock-port $VSOCK_PORT --vsock-cid $VSOCK_CID \
             --nocc --timeout 180 \
             </dev/null 2>&1
