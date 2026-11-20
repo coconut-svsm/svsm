@@ -5,13 +5,14 @@
 use crate::{Args, BuildResult, BuildTarget, Component, ComponentConfig, features::Features};
 use packit::PackItArchiveEncoder;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Components for the filesystem image.
+/// Components for the filesystem image. The modules are kept sorted by
+/// name so that the archive is laid out the same way in every build.
 #[derive(Debug, Clone, Deserialize)]
 pub struct FsConfig {
-    modules: HashMap<String, ComponentConfig>,
+    modules: BTreeMap<String, ComponentConfig>,
 }
 
 impl FsConfig {
