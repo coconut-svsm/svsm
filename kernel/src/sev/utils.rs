@@ -7,7 +7,7 @@
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::virt_to_frame;
-use crate::types::{GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M, PageSize};
+use crate::types::{GUEST_VMPL, PAGE_SIZE_2M, PageSize};
 use crate::utils::MemoryRegion;
 use core::arch::asm;
 use core::fmt;
@@ -62,22 +62,36 @@ impl fmt::Display for SevSnpError {
     }
 }
 
+/// Validates or rescinds validation of the page of the given size at `vaddr`.
+///
 /// # Safety
-/// The caller is required to ensure that conversion of the virtual address
-/// range does not violate memory safety.
-unsafe fn pvalidate_range_4k(
-    region: MemoryRegion<VirtAddr>,
+///
+/// See `pvalidate_range()`
+unsafe fn pvalidate_page(
+    vaddr: VirtAddr,
+    size: PageSize,
     valid: PvalidateOp,
 ) -> Result<(), SvsmError> {
-    region
-        .iter_pages(PageSize::Regular)
+    // Validation as a 2 MB page can only be attempted if the underlying
+    // mapping is a 2 MB mapping.
+    let ret = if size == PageSize::Regular || virt_to_frame(vaddr).size() >= PAGE_SIZE_2M {
         // SAFETY: the caller promises that the validation operation is safe.
-        .try_for_each(|addr| unsafe {
-            pvalidate(addr, PageSize::Regular, valid).map_err(|e| match e {
-                SvsmError::SevSnp(err) => err.with_addr(addr).into(),
-                other => other,
-            })
-        })
+        unsafe { pvalidate(vaddr, size, valid) }
+    } else {
+        Err(SevSnpError::FAIL_SIZEMISMATCH(6).into())
+    };
+    match ret {
+        Ok(()) => Ok(()),
+        // If we fail, try to fall back to regular-sized pages.
+        Err(SvsmError::SevSnp(SevSnpError::FAIL_SIZEMISMATCH(_))) if size == PageSize::Huge => {
+            MemoryRegion::new(vaddr, PAGE_SIZE_2M)
+                .iter_pages(PageSize::Regular)
+                // SAFETY: the caller promises that the validation operation is safe.
+                .try_for_each(|addr| unsafe { pvalidate_page(addr, PageSize::Regular, valid) })
+        }
+        Err(SvsmError::SevSnp(e)) => Err(e.with_addr(vaddr).into()),
+        Err(e) => Err(e),
+    }
 }
 
 /// # Safety
@@ -87,41 +101,9 @@ pub unsafe fn pvalidate_range(
     region: MemoryRegion<VirtAddr>,
     valid: PvalidateOp,
 ) -> Result<(), SvsmError> {
-    let mut addr = region.start();
-    let end = region.end();
-
-    while addr < end {
-        // Validation as a 2 MB page can only be attempted if the underlying
-        // mapping is a 2 MB mapping.
-        if addr.is_aligned(PAGE_SIZE_2M)
-            && addr + PAGE_SIZE_2M <= end
-            && virt_to_frame(addr).size() >= PAGE_SIZE_2M
-        {
-            // Try to validate as a huge page.
-            // If we fail, try to fall back to regular-sized pages.
-            // SAFETY: the caller promises that the validation operation is
-            // safe.
-            unsafe {
-                pvalidate(addr, PageSize::Huge, valid).or_else(|err| match err {
-                    SvsmError::SevSnp(SevSnpError::FAIL_SIZEMISMATCH(_)) => {
-                        pvalidate_range_4k(MemoryRegion::new(addr, PAGE_SIZE_2M), valid)
-                    }
-                    SvsmError::SevSnp(e) => Err(e.with_addr(addr).into()),
-                    other => Err(other),
-                })?;
-            }
-            addr = addr + PAGE_SIZE_2M;
-        } else {
-            // SAFETY: the caller promises that the validation operation is
-            // safe.
-            unsafe {
-                pvalidate(addr, PageSize::Regular, valid).map_err(|e| match e {
-                    SvsmError::SevSnp(err) => err.with_addr(addr).into(),
-                    other => other,
-                })?;
-            }
-            addr = addr + PAGE_SIZE;
-        }
+    for (addr, size) in region.iter_pages_largest() {
+        // SAFETY: the caller promises that the validation operation is safe.
+        unsafe { pvalidate_page(addr, size, valid)? };
     }
 
     Ok(())

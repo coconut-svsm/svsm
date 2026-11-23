@@ -11,7 +11,7 @@ use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
 use crate::mm::pagetable::PageFrame;
 use crate::mm::{PerCPUPageMappingGuard, virt_to_frame};
-use crate::types::{PAGE_SHIFT, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PAGE_SHIFT, PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::MemoryRegion;
 
 use bitfield_struct::bitfield;
@@ -109,101 +109,44 @@ unsafe fn tdg_mem_page_accept(frame: PageFrame) -> u64 {
     }
 }
 
+/// Accepts the page of the given size at `addr`, zeroing it if it was
+/// already accepted.
+///
 /// # Safety
-/// This function will zero arbitrary memory, so the caller is required to
-/// ensure that the supplied physical address range is appropriate for
-/// acceptance.  The caller is additionally required to ensure that the address
-/// range is appropriate aligned to 4 KB boundaries.
-pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Result<(), SvsmError> {
-    let mut addr = region.start();
-    if !addr.is_aligned(PAGE_SIZE) {
-        return Err(SvsmError::InvalidAddress);
-    }
-
-    let end = region.end();
-
-    while addr < end {
-        if addr.is_aligned(PAGE_SIZE_2M) && addr + PAGE_SIZE_2M <= end {
-            // SAFETY: the caller takes responsibility for the correct usage of
-            // the physical address.
-            let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size2M(addr))) };
-            match ret {
-                Ok(s) => {
-                    if s == TdxSuccess::PageAlreadyAccepted {
-                        // The caller is expected not to accept a page twice
-                        // unless doing so is known to be safe.  If the TDX
-                        // module indicates that the page was already accepted,
-                        // it must mean that the page was not removed after a
-                        // previous attempt to accept.  In this case, the page
-                        // must be zeroed now because the caller expects every
-                        // accepted page to be zeroed.
-                        // SAFETY: the caller takes responsibility for the
-                        // correct usage of the physical address.
-                        unsafe {
-                            let mapping =
-                                PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE_2M, 0)?;
-                            mapping
-                                .virt_addr()
-                                .as_mut_ptr::<u8>()
-                                .write_bytes(0, PAGE_SIZE_2M);
-                        }
-                    }
-                    addr = addr + PAGE_SIZE_2M;
-                    continue;
-                }
-                Err(TdxError::PageSizeMismatch) => {
-                    // Fall through to the 4 KB path below.
-                }
-                Err(e) => {
-                    return Err(e.into());
-                }
-            }
-        }
-
-        // SAFETY: the caller takes responsibility for the correct usage of the
-        // physical address.
-        let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size4K(addr))) };
-        match ret {
-            Ok(s) => {
-                if s == TdxSuccess::PageAlreadyAccepted {
-                    // Zero the 4 KB page.
-                    // SAFETY: the caller takes responsibility for the correct
-                    // usage of the physical address.
-                    unsafe {
-                        let mapping = PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE, 0)?;
-                        mapping
-                            .virt_addr()
-                            .as_mut_ptr::<u8>()
-                            .write_bytes(0, PAGE_SIZE);
-                    }
-                }
-                addr = addr + PAGE_SIZE;
-            }
-            Err(e) => return Err(e.into()),
-        }
-    }
-
-    Ok(())
-}
-
-/// # Safety
-/// This function will zero arbitrary memory, so the caller is required to
-/// ensure that the supplied virtual address range is appropriate for
-/// acceptance.  The caller is additionally required to ensure that the address
-/// range is appropriate aligned to 4 KB boundaries.
-unsafe fn td_accept_virtual_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), SvsmError> {
+///
+/// See `td_accept_physical_memory()`
+unsafe fn td_accept_physical_page(addr: PhysAddr, size: PageSize) -> Result<(), SvsmError> {
+    let frame = match size {
+        PageSize::Regular => PageFrame::Size4K(addr),
+        PageSize::Huge => PageFrame::Size2M(addr),
+    };
     // SAFETY: the caller takes responsibility for the correct usage of the
     // physical address.
-    let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size4K(paddr))) };
+    let ret = unsafe { tdx_result(tdg_mem_page_accept(frame)) };
     match ret {
-        Ok(s) => {
-            if s == TdxSuccess::PageAlreadyAccepted {
-                // Zero the 4 KB page.
+        Ok(TdxSuccess::PageAlreadyAccepted) => {
+            // The caller is expected not to accept a page twice unless doing
+            // so is known to be safe.  If the TDX module indicates that the
+            // page was already accepted, it must mean that the page was not
+            // removed after a previous attempt to accept.  In this case, the
+            // page must be zeroed now because the caller expects every
+            // accepted page to be zeroed.
+            let len = usize::from(size);
+            // SAFETY: the caller takes responsibility for the correct usage of
+            // the physical address.
+            unsafe {
+                let mapping = PerCPUPageMappingGuard::create(addr, addr + len, 0)?;
+                mapping.virt_addr().as_mut_ptr::<u8>().write_bytes(0, len);
+            }
+            Ok(())
+        }
+        Ok(_) => Ok(()),
+        Err(TdxError::PageSizeMismatch) if size == PageSize::Huge => {
+            // Process this 2 MB page as a series of 4 KB pages.
+            for addr in MemoryRegion::new(addr, PAGE_SIZE_2M).iter_pages(PageSize::Regular) {
                 // SAFETY: the caller takes responsibility for the correct
-                // usage of the virtual address.
-                unsafe {
-                    vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE);
-                }
+                // usage of the physical address.
+                unsafe { td_accept_physical_page(addr, PageSize::Regular)? };
             }
             Ok(())
         }
@@ -213,35 +156,59 @@ unsafe fn td_accept_virtual_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), S
 
 /// # Safety
 /// This function will zero arbitrary memory, so the caller is required to
-/// ensure that the supplied virtual address range is appropriate for
+/// ensure that the supplied physical address range is appropriate for
 /// acceptance.  The caller is additionally required to ensure that the address
 /// range is appropriate aligned to 4 KB boundaries.
-unsafe fn td_accept_virtual_2m(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), SvsmError> {
+pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Result<(), SvsmError> {
+    if !region.start().is_aligned(PAGE_SIZE) {
+        return Err(SvsmError::InvalidAddress);
+    }
+
+    for (addr, size) in region.iter_pages_largest() {
+        // SAFETY: the caller takes responsibility for the correct usage of the
+        // physical address.
+        unsafe { td_accept_physical_page(addr, size)? };
+    }
+
+    Ok(())
+}
+
+/// Accepts the page of the given size that `vaddr` maps to `paddr`, zeroing it
+/// if it was already accepted.
+///
+/// # Safety
+///
+/// See `td_accept_virtual_memory()`
+unsafe fn td_accept_virtual_page(
+    vaddr: VirtAddr,
+    paddr: PhysAddr,
+    size: PageSize,
+) -> Result<(), SvsmError> {
+    let frame = match size {
+        PageSize::Regular => PageFrame::Size4K(paddr),
+        PageSize::Huge => PageFrame::Size2M(paddr),
+    };
     // SAFETY: the caller takes responsibility for the correct usage of the
     // physical address.
-    let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size2M(paddr))) };
+    let ret = unsafe { tdx_result(tdg_mem_page_accept(frame)) };
     match ret {
-        Ok(s) => {
-            if s == TdxSuccess::PageAlreadyAccepted {
-                // Zero the 2M page.
-                // SAFETY: the caller takes responsibility for the correct
-                // usage of the virtual address.
-                unsafe {
-                    vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE_2M);
-                }
+        Ok(TdxSuccess::PageAlreadyAccepted) => {
+            // Zero the page.
+            // SAFETY: the caller takes responsibility for the correct usage of
+            // the virtual address.
+            unsafe {
+                vaddr.as_mut_ptr::<u8>().write_bytes(0, usize::from(size));
             }
             Ok(())
         }
-        Err(TdxError::PageSizeMismatch) => {
+        Ok(_) => Ok(()),
+        Err(TdxError::PageSizeMismatch) if size == PageSize::Huge => {
             // Process this 2 MB page as a series of 4 KB pages.
-            for offset in 0usize..512usize {
+            for offset in (0..PAGE_SIZE_2M).step_by(PAGE_SIZE) {
                 // SAFETY: the caller takes responsibility for the correct
                 // usage of the physical address.
                 unsafe {
-                    td_accept_virtual_4k(
-                        vaddr + (offset << PAGE_SHIFT),
-                        paddr + (offset << PAGE_SHIFT),
-                    )?;
+                    td_accept_virtual_page(vaddr + offset, paddr + offset, PageSize::Regular)?;
                 }
             }
             Ok(())
@@ -256,34 +223,26 @@ unsafe fn td_accept_virtual_2m(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), S
 /// acceptance.  The caller is additionally required to ensure that the address
 /// range is appropriate aligned to 4 KB boundaries.
 pub unsafe fn td_accept_virtual_memory(region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
-    let mut vaddr = region.start();
-    if !vaddr.is_aligned(PAGE_SIZE) {
+    if !region.start().is_aligned(PAGE_SIZE) {
         return Err(SvsmError::InvalidAddress);
     }
 
-    let vaddr_end = region.end();
-    while vaddr < vaddr_end {
+    for (vaddr, size) in region.iter_pages_largest() {
         let frame = virt_to_frame(vaddr);
-        let size = if vaddr.is_aligned(PAGE_SIZE_2M)
-            && vaddr + PAGE_SIZE_2M <= vaddr_end
-            && frame.size() >= PAGE_SIZE_2M
-        {
+        if frame.size() >= usize::from(size) {
             // SAFETY: the caller takes responsibility for the correct usage of
             // the virtual address.
-            unsafe {
-                td_accept_virtual_2m(vaddr, frame.address())?;
-            }
-            PAGE_SIZE_2M
+            unsafe { td_accept_virtual_page(vaddr, frame.address(), size)? };
         } else {
-            // SAFETY: the caller takes responsibility for the correct usage of
-            // the virtual address.
-            unsafe {
-                td_accept_virtual_4k(vaddr, frame.address())?;
+            // A 2 MB page mapped with 4 KB pages, which need not be physically
+            // contiguous.
+            for vaddr in MemoryRegion::new(vaddr, PAGE_SIZE_2M).iter_pages(PageSize::Regular) {
+                let paddr = virt_to_frame(vaddr).address();
+                // SAFETY: the caller takes responsibility for the correct
+                // usage of the virtual address.
+                unsafe { td_accept_virtual_page(vaddr, paddr, PageSize::Regular)? };
             }
-            PAGE_SIZE
-        };
-
-        vaddr = vaddr + size;
+        }
     }
     Ok(())
 }
