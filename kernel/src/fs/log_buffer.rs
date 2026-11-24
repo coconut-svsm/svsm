@@ -76,6 +76,44 @@ pub fn stdout_open(taskname: &str) -> Arc<dyn Obj> {
     Arc::new(FsObj::new_file(FileHandle::new(&log_file, false, true)))
 }
 
+/// An empty file, which is standard input: the SVSM has no input. It is only
+/// opened for reading, so a write request fails before it reaches the file.
+#[derive(Debug)]
+struct EmptyFile;
+
+impl File for EmptyFile {
+    fn read(&self, _buf: &mut [u8], _offset: usize) -> Result<usize, SvsmError> {
+        Ok(0)
+    }
+
+    fn read_buffer(&self, _buffer: &mut dyn Buffer, _offset: usize) -> Result<usize, SvsmError> {
+        Ok(0)
+    }
+
+    fn write(&self, _buf: &[u8], _offset: usize) -> Result<usize, SvsmError> {
+        Err(SvsmError::FileSystem(FsError::not_supported()))
+    }
+
+    fn write_buffer(&self, _buffer: &dyn Buffer, _offset: usize) -> Result<usize, SvsmError> {
+        Err(SvsmError::FileSystem(FsError::not_supported()))
+    }
+
+    fn truncate(&self, _size: usize) -> Result<usize, SvsmError> {
+        Err(SvsmError::FileSystem(FsError::not_supported()))
+    }
+
+    fn size(&self) -> usize {
+        0
+    }
+}
+
+pub fn stdin_open() -> Arc<dyn Obj> {
+    let file: Arc<dyn File> = Arc::new(EmptyFile);
+
+    // Stdin is read-only and always at the end of the file.
+    Arc::new(FsObj::new_file(FileHandle::new(&file, true, false)))
+}
+
 #[cfg(all(test, test_in_svsm))]
 mod tests {
     use super::*;

@@ -7,36 +7,20 @@
 use bitflags::bitflags;
 use zerocopy::IntoBytes;
 
-// Syscall classes
-const CLASS0: u64 = 0;
-const CLASS1: u64 = 1 << 32;
-const CLASS3: u64 = 3 << 32;
-
-// Syscall number in class0
-pub const SYS_EXIT: u64 = CLASS0;
-pub const SYS_EXEC: u64 = CLASS0 + 4;
-pub const SYS_CLOSE: u64 = CLASS0 + 10;
-
-// Syscall number in class1
-pub const SYS_OPEN: u64 = CLASS1;
-pub const SYS_READ: u64 = CLASS1 + 1;
-pub const SYS_WRITE: u64 = CLASS1 + 2;
-pub const SYS_SEEK: u64 = CLASS1 + 3;
-pub const SYS_TRUNCATE: u64 = CLASS1 + 4;
-pub const SYS_UNLINK: u64 = CLASS1 + 5;
-pub const SYS_OPENDIR: u64 = CLASS1 + 6;
-pub const SYS_READDIR: u64 = CLASS1 + 7;
-pub const SYS_MKDIR: u64 = CLASS1 + 8;
-pub const SYS_RMDIR: u64 = CLASS1 + 9;
-
-// Syscall number in class3
-pub const SYS_CAPABILITIES: u64 = CLASS3;
-
 ///Maximum length of path name including null character in bytes
 pub const PATH_MAX: usize = 4096;
 
 /// Maximum length of file name in bytes
 pub const F_NAME_SIZE: usize = 256;
+
+/// File descriptor of the standard input of a task, which is empty
+pub const STDIN_FILENO: u32 = 0;
+
+/// File descriptor of the standard output of a task, which is the log
+pub const STDOUT_FILENO: u32 = 1;
+
+/// File descriptor of the standard error of a task, which is the log
+pub const STDERR_FILENO: u32 = 2;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, IntoBytes)]

@@ -7,8 +7,11 @@
 use core::arch::asm;
 
 /// Macro to generate system call functions with varying numbers of arguments.
+///
+/// Like Linux on x86-64, the system call number goes in `rax` and the
+/// arguments in `rdi`, `rsi`, `rdx`, `r10`, `r8` and `r9`.
 macro_rules! syscall {
-    ($($name:ident($a:ident, $($b:ident, $($c:ident, $($d:ident, $($e:ident, $($f:ident, )?)?)?)?)?);)+) => {
+    ($($name:ident($a:ident, $($b:ident, $($c:ident, $($d:ident, $($e:ident, $($f:ident, $($g:ident, )?)?)?)?)?)?);)+) => {
         $(
             /// Performs a system call with arguments.
             ///
@@ -18,7 +21,7 @@ macro_rules! syscall {
             /// The kernel should check the syscall number and return the
             /// expected result back.
             #[allow(dead_code)]
-            pub unsafe fn $name($a: u64, $($b: u64, $($c: u64, $($d: u64, $($e: u64, $($f: u64)?)?)?)?)?) -> Result<u64, SysCallError> {
+            pub unsafe fn $name($a: u64, $($b: u64, $($c: u64, $($d: u64, $($e: u64, $($f: u64, $($g: u64)?)?)?)?)?)?) -> Result<u64, SysCallError> {
                 let mut ret = $a;
                 // SAFETY: This block is required to perform a raw system call.
                 // The caller must ensure that the syscall number and arguments
@@ -32,11 +35,14 @@ macro_rules! syscall {
                             $(
                                 in("rsi") $c,
                                 $(
-                                    in("r8") $d,
+                                    in("rdx") $d,
                                     $(
-                                        in("r9") $e,
+                                        in("r10") $e,
                                         $(
-                                            in("r10") $f,
+                                            in("r8") $f,
+                                            $(
+                                                in("r9") $g,
+                                            )?
                                         )?
                                     )?
                                 )?
@@ -64,6 +70,7 @@ syscall! {
     syscall3(a, b, c, d,);
     syscall4(a, b, c, d, e,);
     syscall5(a, b, c, d, e, f,);
+    syscall6(a, b, c, d, e, f, g,);
 }
 
 /// Defines [`SysCallError`] and the conversion from its numbers.
