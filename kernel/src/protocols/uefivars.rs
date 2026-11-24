@@ -101,7 +101,6 @@ pub fn uefi_mm_protocol_request(
 
 pub fn uefi_mm_protocol_init() -> Result<(), SvsmReqError> {
     let mut store = STORE.lock();
-    store.reset();
 
     #[cfg(feature = "secureboot")]
     {
@@ -111,6 +110,13 @@ pub fn uefi_mm_protocol_init() -> Result<(), SvsmReqError> {
         store.enroll_db_microsoft_uefi();
         store.enroll_dbx_native();
     }
+
+    // reset() drops all the *volatile* variables and recomputes
+    // the status ones, like SecureBoot, from what is in the store.
+    // This must run after the SB keys are enrolled: if no keys are
+    // found the SecureBoot variable will not be set.
+    // reset() doesn't affect the keys, as they are non-volatile.
+    store.reset();
 
     // In case a TPM is present, shim's fallback.efi will setup efi
     // boot variables then reboot.  This is not going to work until we
