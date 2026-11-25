@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["VMX_EXIT_REASON_CPUID"],"fn":["handle_cpuid","handle_virtualization_exception"]};

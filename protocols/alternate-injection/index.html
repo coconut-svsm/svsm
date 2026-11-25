@@ -1,0 +1,1466 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.4">
+    
+    
+      
+        <title>Alternate Injection Support for SEV-SNP Virtual Machines - COCONUT-SVSM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.8608ea7d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#alternate-injection-support-for-sev-snp-virtual-machines" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="COCONUT-SVSM" class="md-header__button md-logo" aria-label="COCONUT-SVSM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            COCONUT-SVSM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Alternate Injection Support for SEV-SNP Virtual Machines
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="COCONUT-SVSM" class="md-nav__button md-logo" aria-label="COCONUT-SVSM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    COCONUT-SVSM
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Documentation Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../RELEASE-PROCESS/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    COCONUT-SVSM Release Process
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Building and launching
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Building and launching
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/INSTALL/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Installing the COCONUT-SVSM
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Build Recipe Documentation
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Build Recipe Documentation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/BUILD_RECIPES/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    COCONUT Build Recipes Format
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Developer Information
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Developer Information
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/DOC-GUIDELINES/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Documentation Guidelines
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/DEVELOPMENT-PLAN/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Development Plan Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_3" id="__nav_5_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Release Testplan
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_3">
+            <span class="md-nav__icon md-icon"></span>
+            Release Testplan
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/RELEASE-TESTPLAN/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Release Testplan
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/RUSTDOC-GUIDELINES/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Rustdoc Guidelines
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/TESTING/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Testing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/FUZZING/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Fuzzing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/DEBUGGING/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Debugging
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/CONTRIBUTING/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contributing to COCONUT-SVSM
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/VERIFICATION/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Formal Verification
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/ATTESTATION/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Attestation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/PERSISTENCE/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Persistence
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/GH_WORKFLOWS/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    GitHub Workflows
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/AI-AGENTS/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    AI Agents
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_14" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_14" id="__nav_5_14_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Design Documentation
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_14_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_14">
+            <span class="md-nav__icon md-icon"></span>
+            Design Documentation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/design/OBJECT/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Object Handles
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    SVSM Protocols
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            SVSM Protocols
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../uefivars/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    UEFI MM Protocol
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rustdoc/svsm" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    COCONUT-SVSM Rustdoc
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="alternate-injection-support-for-sev-snp-virtual-machines">Alternate Injection Support for SEV-SNP Virtual Machines</h1>
+<p>Revision: June 19, 2024</p>
+<h1 id="background">Background</h1>
+<p>The Alternate Injection feature of SEV-SNP enhances the security of a
+confidential VM by preventing the untrusted host from presenting unexpected
+interrupts or exceptions, while still preserving the standard interrupt
+dispatch semantics inherent in the x86 architecture.  Use of Alternate
+Injection requires management logic within the guest running at a higher VMPL,
+such as an SVSM, and also requires cooperation from the host to ensure that
+pending interrupts can be signaled through the management VMPL.  This document
+describes extensions to the GHCB and SVSM specifications that enable support
+for the use of Alternate Injection.</p>
+<h1 id="interrupt-delivery-model">Interrupt Delivery Model</h1>
+<h2 id="requirements">Requirements</h2>
+<p>The primary motivation for supporting Alternate Injection is to ensure that the
+untrusted hypervisor cannot inject arbitrary interrupt or exception vectors
+into a guest VM, instead ensuring that interrupt presentation can only be
+performed by a trusted entity (the SVSM).  Satisfying the goal of insulating
+the guest OS from malicious interrupts injected by the hypervisor, requires
+insulating the SVSM itself from malicious interrupts injected by the
+hypervisor.  This means that an SVSM that wishes to make use of Alternate
+Injection should itself be prepared to enforce the use of Restricted Injection.
+Consequently, any hypervisor that offers support for Alternate Injection must
+also support Restricted Injection.</p>
+<p>Because the SVSM requires its own interrupt sources in addition to the
+interrupt sources associated with the guest OS, the hypervisor is expected to
+track a separate set of interrupt sources for each VMPL enabled for a given
+vCPU.  Interrupts associated with GHCB requests initiated by the SVSM (e.g.
+#HV IPI and #HV timers) are assigned vectors according to the GHCB ABI.
+Other interrupt sources managed by the host, such as for virtual devices, are
+associated with the appropriate VMPL using a host-specific virtualization
+interface not documented here; this document assumes only that any such
+host-specific interface will carefully prescribe such VMPL association so there
+is no ambiguity on the part of guest OS or SVSM software.</p>
+<p>SVSM involvement is required to present interrupts to the guest OS, so when the
+hypervisor detects that a guest OS interrupt has become signaled and should be
+offered to the guest, it is necessary to cause the SVSM to run.  Consequently,
+some sort of preemption mechanism is required to cause the SVSM to take control
+when required to facilitate handling of guest interrupt state.  To take
+advantage of existing preemption mechanisms, the hypervisor will treat such
+notification as an interrupt source, and the SVSM must register an interrupt
+vector with the hypervisor, to be delivered using the existing Restricted
+Injection interrupt delivery model.  The hypervisor is expected to cause the
+SVSM to run any time delivery of an interrupt would result in injection of #HV
+to the SVSM.</p>
+<h1 id="ghcb-changes">GHCB Changes</h1>
+<h2 id="extended-interrupt-information">Extended Interrupt Information</h2>
+<p>The interrupt descriptor at the base of the #HV doorbell page is extended to
+include two 16-bit words which convey additional information about interrupts
+or events related to interrupt processing in lower VMPLs.  The first 16-bit
+word (<code>PendingEvent</code>) retains its existing meaning.  The second 16-bit word is
+defined as <code>InjectionInfo</code>, and its bits are defined to have the following
+meaning.</p>
+<ul>
+<li>Bit [0] is <code>NoEoiRequired</code> as defined in the current GHCB specification.</li>
+<li>Bits [7:1] are reserved for future use.</li>
+<li>Bit [8] indicates that interrupt information is available for VMPL 1.</li>
+<li>Bit [9] indicates that interrupt information is available for VMPL 2.</li>
+<li>Bit [10] indicates that interrupt information is available for VMPL 3.</li>
+<li>Bits [15:11] are reserved for future use.</li>
+</ul>
+<p>To indicate separate interrupt sources for each VMPL, the #HV doorbell page is
+further extended to define the first 256 bytes.  Bytes 0-31 contain interrupt
+information associated with SVSM itself.  Bytes 32-63 are reserved for future
+use.  Bytes 64-95 contain the extended interrupt descriptor (defined below)
+associated with VMPL 1.  Bytes 128-159 contain the extended interrupt
+descriptor associated with VMPL 2.  Bytes 192-223 contain the extended
+interrupt descriptor associated with VMPL 3.</p>
+<p>Whenever the hypervisor delivers an interrupt for a lower VMPL (or an event,
+such as a request to revert to host-managed APIC emulation), it will set the
+appropriate interrupt bit(s) in the extended interrupt descriptor corresponding
+to the lower VMPL, and it will also set bit 8, 9, or 10 in the second 16-bit
+word of the SVSM’s extended interrupt descriptor to indicate which VMPL has
+pending interrupt evaluation work.  If the bit corresponding to VMPL activity
+transitions from zero to one, the hypervisor will send an interrupt to the SVSM
+indicating that guest interrupt processing is required.</p>
+<p>The extended interrupt descriptor associated with each non-zero VMPL is defined
+to include sixteen 16-bit words (for a total of 32 bytes) which together
+comprise a 256-bit vector describing pending interrupts.  Only interrupt
+vectors in the range 31-255 may be represented in this vector, leaving the low
+31 bits available for additional information.  Presenting multiple interrupt
+sources at once permits efficient delivery of interrupts by the SVSM to the
+guest OS by minimizing the number of interactions that must occur with the
+hypervisor.</p>
+<p>The first 16-bit word in the extended interrupt descriptor, corresponding to
+bits 0-15, is defined as follows.</p>
+<ul>
+<li>Bits [7:0] describe the vector of a single pending interrupt, which must have a value in the range 31-255.  This field is used if only a single vector is pending, or if any level-sensitive interrupt is pending.</li>
+<li>Bit [8] indicates that an NMI is pending.</li>
+<li>Bit [9] indicates that a virtual #MC is pending.</li>
+<li>Bit [10] indicates the trigger mode of the interrupt described in bits [7:0].
+A value of one indicates a level-sensitive interrupt, and a value of zero
+indicates an edge-triggered interrupt.</li>
+<li>Bits [13:11] are reserved for future use.</li>
+<li>Bit [14] indicates whether any interrupt is indicated in bits 31-255 of the
+extended interrupt descriptor.  Only edge-triggered interrupts may be signaled
+in the extended interrupt descriptor.</li>
+<li>Bit [15] is reserved for future use.</li>
+</ul>
+<p>The 16-bit word at byte offset 2, corresponding to bits 16-31, has the
+following meaning.</p>
+<ul>
+<li>Bits [14:0] are defined for future use.</li>
+<li>Bit [15] corresponds to vector 31 in the 256-bit extended interrupt
+descriptor.</li>
+</ul>
+<p>The 16-bit word at byte offset 4 corresponds to vectors 32-47 in the extended
+interrupt descriptor, and subsequent 16-bit words have similar meanings.</p>
+<p>When the hypervisor presents any edge-triggered interrupt, it will ensure that
+either a single interrupt is described in bits 7:0 of the page, or that bit 14
+is set and the corresponding bits are set in bits 31-255 of the page.  Example
+pseudo-code is included in this document.</p>
+<p>When the hypervisor presents a level-sensitive interrupt, it will set bits 7:0
+to indicate the highest priority level-sensitive interrupt in progress, as well
+as setting bit 10 to indicate that a level-sensitive interrupt is pending.  The
+hypervisor may change the value of bits 7:0 if a higher priority
+level-sensitive interrupt is presented.  Example pseudo-code is included in
+this document.</p>
+<p>When the SVSM wants to consume an interrupt for a lower VMPL, it should first
+check to see whether bits 7:0, as well as bits 10 and 14, describe a single,
+edge-triggered interrupt.  If so, the SVSM can consume the interrupt by
+atomically clearing bits 7:0, ensuring that bits 10 and 14 have not changed; if
+this succeeds, the hypervisor will consider the interrupt consumed without
+requiring any EOI.  If bit 14 indicates that multiple interrupts are present,
+the SVSM can atomically clear bit 14, and then sweep bits 31-255 looking for
+specific interrupt vectors, atomically clearing those that it finds; these
+interrupts are considered consumed without requiring any EOI.  If the SVSM
+observes that a level-sensitive interrupt is present, it should consume what it
+finds in bits 7:0 and track a level-sensitive interrupt in progress.  When
+handling an EOI for a level-sensitive interrupt, the SVSM must send an explicit
+EOI to the hypervisor.  To resolve possible race conditions between an EOI
+request and subsequent delivery of a higher-priority level-sensitive interrupt,
+all level-sensitive EOI requests will specify the vector for which the EOI
+applies, using a new #HV EOI call.  Example pseudo-code is included in this
+document.</p>
+<h2 id="negotiating-functionality">Negotiating Functionality</h2>
+<h3 id="enabling-alternate-injection">Enabling Alternate Injection</h3>
+<p>Hypervisor support for extended interrupt information and Alternate Injection
+is enumerated in the GHCB FEATURES bitmask.  Bit 7 indicates the availability
+of extended interrupt information.  If bit 7 is set, the SVSM can configure
+interrupt policy to enable the use of Alternate Injection.</p>
+<p>If an SVSM detects support for extended information, then the SVSM can request
+the Alternate Injection feature during VMSA creation. Any time a VMSA is
+created using the SNP AP Creation GHCB call, and the new VMSA specifies the
+Alternate Injection feature in the SEV feature mask, the hypervisor will
+activate extended interrupt delivery for the vCPU.</p>
+<p>Alternate Injection is not supported for VMPL 0 itself.  Specifying Alternate
+Injection for any VMSA associated with VMPL 0 is considered an error.  In
+addition, Alternate Injection is not supported unless VMPL 0 is using
+Restricted Injection.  Specifying Alternate Injection for any non-zero VMSA
+associated with a vCPU that is not using Restricted Injection for VMPL 0 is
+considered an error.</p>
+<h3 id="supporting-multiple-guest-runtimes">Supporting Multiple Guest Runtimes</h3>
+<p>Code executing within the guest OS VMPL typically spans multiple runtime
+components, such as a virtual firmware as well as an operating system, and each
+of these components may have different capabilities with respect to APIC
+handling: some components may know how to make use of the SVSM APIC Protocol
+and some may rely on the hypervisor to emulate the APIC using the existing
+X2APIC MSRs conveyed via the GHCB protocol.  It must be possible to permit
+different configurations for each of these components.</p>
+<p>The SVSM is required to have knowledge of whether the first component that
+executes can support the Alternate Injection protocol.  If the SVSM does not
+know that the first component to execute will support the SVSM APIC Protocol,
+then it must not enable Alternate Injection in the guest VMSA.  If the SVSM
+does know that the first component to execute will support the SVSM APIC
+Protocol, then it will enable Alternate Injection prior to the first guest
+entry; the first guest component must either make use of the protocol or it
+must request that the protocol be disabled.  The initial version of the SVSM
+APIC Protocol permits the enumeration of features and the ability to control
+their use so that the guest can make this determination and configure itself as
+required.</p>
+<p>When there is a handoff from one component to another (such as from a UEFI
+virtual firmware to a guest operating system), the component terminating its
+execution must be prepared to disable the use of Alternate Injection unless it
+knows that the component taking over is prepared to continue use of Alternate
+Injection.  Since there may not be a mechanism for the two components to
+negotiate this directly, the SVSM APIC Protocol supports a registration
+mechanism to determine the behavior across the handoff.  Each component that
+desires to make use of the SVSM APIC Protocol will register its intention to
+use the protocol, and the SVSM will keep a count of the number of registered
+requests.  As long as the registration count remains non-zero, Alternate
+Injection will remain active.  Once the registration drops to zero, Alternate
+Injection will be disabled, and cannot be enabled again.</p>
+<p>Note that registration and deregistration actions apply across the entire guest
+VMPL, but the current status of Alternate Injection is recorded separately for
+every vCPU.  Consequently, whenever an action is taken to deregister Alternate
+Injection, a call must be made on every active vCPU to ensure that its
+Alternate Injection enablement state is updated to match the enablement state
+for the entire guest.</p>
+<p>The following flow illustrates how this mechanism might be used in the case of
+a transition from a UEFI-based firmware to a guest OS.</p>
+<ul>
+<li>Prior to executing ExitBootServices, a guest OS that understands the SVSM
+APIC Protocol should detect the availability of that protocol and determine
+whether it is usable.  If so, it should register its use of the SVSM APIC
+Protocol.</li>
+<li>During the execution of ExitBootServices, the firmware (which does not know
+the intention of the guest OS) should deregister its use of the SVSM APIC
+Protocol.  If the guest OS registered its intention to use Alternate Injection,
+this call will not affect the current state of Alternate Injection.  If the
+guest OS did not declare its intention to use Alternate Injection, then this
+call will disable Alternate Injection (but only deactivate it on the calling
+vCPU), and the guest OS can use the X2APIC GHCB protocol as it expects.</li>
+<li>After the firmware deregisters its use of the SVSM APIC Protocol during
+ExitBootServices (most likely on the BSP), it must send a request to every
+other vCPU to update its Alternate Injection posture.  If the guest OS
+registered its intention to use Alternate Injection, this will have no effect,
+but if the guest OS did not declare its intention to use Alternate injection,
+then this will cause each additional processor to deactivate Alternate
+Injection in its own processor state, permitting the guest to use the X2APIC
+GHCB protocol as it expects.</li>
+</ul>
+<h3 id="multi-processor-considerations">Multi-Processor Considerations</h3>
+<p>The registration count of Alternate Injection is kept as a single count for the
+entire VM, but Alternate Injection is maintained per vCPU.  Consequently, when
+the guest wishes to deregister its use of Alternate Injection, it must first
+call the SVSM to perform the deregistration, and after that it must call the
+SVSM on each active vCPU to update the Alternate Injection state based on the
+current registration state.</p>
+<p>The Alternate Injection state is normally expected to be consistent across
+processors, except for those periods of time when all vCPUs are in the process
+of disabling Alternate Injection.  Consequently, consistency will be enforced
+when additional vCPUs are created through the SVSM Core Protocol.  When
+creating a new vCPU via the Core Protocol, the supplied VMSA must set its SEV
+features to match the Alternate Injection state of the calling vCPU.  If a vCPU
+that has enabled Alternate Injection supplies a VMSA with Alternate Injection
+disabled, or if a vCPU that has disabled Alternate Injection supplies a VMSA
+with Alternate Injection enabled, the Create vCPU call will fail with
+<code>SVSM_ERR_INVALID_PARAMETER</code>.</p>
+<h2 id="scheduling-considerations">Scheduling Considerations</h2>
+<p>When Alternate Injection is active, the SVSM is solely responsible for causing
+interrupts to be presented to a lower VMPL, but the SVSM is not always aware of
+the precise time that such interrupts are scheduled for delivery by the
+hypervisor.  It is possible that additional interrupts become scheduled while
+the SVSM is executing its exit flow to return to a lower VMPL, and has already
+passed the point where it has made its determination about whether to deliver
+an interrupt to a lower VMPL.  Consequently, the SVSM must be designed so that
+once it passes the point where it commits to entering the lower VMPL, any
+delivery of #HV that indicates interrupt delivery to the lower VMPL will cause
+it to cancel the VMGEXIT that would cause a return to the lower VMPL, so that
+it can process the interrupt that has been signaled.</p>
+<h2 id="changes-to-ghcb-guest-non-automatic-exits">Changes to GHCB Guest Non-Automatic Exits</h2>
+<h3 id="configure-injection-notification-vector-0x8000_0019">Configure Injection Notification Vector (0x8000_0019)</h3>
+<p>This call configures the interrupt vector that will be signaled by the
+hypervisor whenever it needs to notify the SVSM that interrupt injection
+processing is required.</p>
+<p>Upon entry to the hypervisor, <code>SW_EXITINFO1</code> is defined such that bits [7:0]
+contain the interrupt vector that will be signaled when the SVSM is notified of
+pending injection processing; other bits are reserved and should be zero.  This
+interrupt will be delivered as an edge-triggered interrupt.</p>
+<p>This call can only be issued by VMPL 0.  If this call is issued by any other
+VMPL, it is considered an error.</p>
+<h3 id="disable-alternate-injection-0x8000_001a">Disable Alternate Injection (0x8000_001A)</h3>
+<p>This call requests the hypervisor to disable Alternate Injection for a specific
+VMPL.  Any interrupts present in the appropriate extended interrupt vector will
+be placed into the IRR of the hypervisor-emulated APIC and delivered to the
+target VMPL using direct event injection.  As with proxy interrupt messages
+sent by the hypervisor via the #HV doorbell page, if bits 10 and 14 are clear,
+then bits 7:0 specify a single, edge-triggered interrupt vector pending
+delivery, or zero if no interrupt is pending delivery.  If bit 14 is set, then
+only those bits in the extended interrupt vector corresponding to interrupts in
+the range 31-255 will be placed into the IRR as edge-triggered interrupts.  If
+bit 10 is set, then the interrupt vector indicated by bits 7:0 will be placed
+into the IRR as a level-sensitive interrupt (the hypervisor is already required
+to keep track of any other level-sensitive interrupts that are pending
+delivery.  Reverting to hypervisor APIC emulation also requires knowledge of
+which interrupt(s), if any, have been placed into service.  Therefore, the 32
+bytes that follow the extended interrupt vector associated with the target VMPL
+are defined as an ISR vector, indicating which edge-triggered interrupts are
+already in service (the hypervisor is already required to keep track of which
+level-sensitive interrupts are currently in service).  Only bits corresponding
+to interrupt vectors in the range 31-255 have meaning; the other bits are
+reserved. The SVSM must clear any data in this ISR area before writing ISR
+bits.</p>
+<p>This call can only be issued by VMPL 0.  If this call is issued by any other
+VMPL, it is considered an error.</p>
+<p>Upon entry to the hypervisor, <code>SW_EXITINFO1</code> is defined as follows.</p>
+<ul>
+<li><code>SW_EXITINFO1[19:16]</code> – VMPL for which Alternate Injection is being deactivated.</li>
+<li><code>SW_EXITINFO1[15:8]</code> – Virtual TPR for the target VMPL.</li>
+<li><code>SW_EXITINFO1[1]</code> - Interrupt shadow state of the target VMPL.</li>
+<li><code>SW_EXITINFO1[0]</code> - <code>EFLAGS_IF</code> value of the target VMPL.</li>
+</ul>
+<h3 id="hv-timer-0x8000_0016">#HV Timer (0x8000_0016)</h3>
+<p>The #HV Timer NAE currently defined is extended to permit signaling of timer
+interrupts by a lower VMPL.  Not all SVSM implementations of Alternate
+Injection support will choose to implement the timer features of the APIC.  In
+this case, the lower VMPL will continue to make use of the #HV Timer Guest NAE
+calls to configure timer support.  The hypervisor must always interpret this
+NAE to be specific to the calling VMPL, and must not permit timer requests from
+VMPL to affect timer state of another VMPL.  If the hypervisor determines that
+the timer interrupt is due for a VMPL that has Alternate Injection active, then
+it will schedule delivery of the interrupt specified in the Timer LVT entry by
+proxying that interrupt to the SVSM.</p>
+<p>From the point of view of the guest, any timer signaled in this way will appear
+to be a host-generated interrupt, so the vector must be configured by the guest
+OS as an allowed vector using the APIC Protocol.</p>
+<h3 id="specific-eoi-0x8000_001b">Specific EOI (0x8000_001B)</h3>
+<p>This call requests the hypervisor to perform an EOI cycle on a level-sensitive
+interrupt.  Such an EOI must be performed on a specific EOI to avoid race
+conditions in which the hypervisor presents a new level-sensitive interrupt
+while the SVSM is attempting to complete an EOI on a lower-priority
+level-sensitive interrupt.</p>
+<p>Upon entry to the hypervisor, <code>SW_EXITINFO1</code> is defined as follows:</p>
+<ul>
+<li><code>SW_EXITINFO1[19:16]</code> – VMPL for which the EOI applies.</li>
+<li><code>SW_EXITINFO1[7:0]</code> – The vector for which the EOI applies.</li>
+</ul>
+<p>All other bits in <code>SW_EXITINFO1</code> are reserved and must contain zero.
+ <code>SW_EXITINFO2</code> must contain zero.</p>
+<h1 id="svsm-protocol-changes">SVSM Protocol Changes</h1>
+<p>When Alternate Injection is active, only the SVSM can manage interrupt delivery
+for a lower VMPL.  A new SVSM protocol is defined to enable the lower VMPL to
+configure its APIC state through the SVSM.</p>
+<p>In general, the APIC configuration protocol simply requires routing APIC
+register read and write requests to the SVSM.  However, a guest OS generally
+expects that only certain interrupt vectors can be signaled via the APIC (a
+guest OS may, for example, assume that certain IDT vectors can only be invoked
+through execution of a software interrupt, and never through an external
+hardware interrupt), and therefore the untrusted hypervisor must not have the
+ability to signal arbitrary interrupt vectors to the lower VMPL.  Therefore,
+the APIC protocol also requires the guest OS to advise the SVSM of which
+interrupt vectors are permissible to deliver.</p>
+<h2 id="svsm-apic-protocol">SVSM APIC Protocol</h2>
+<p>Protocol number 3 is defined as the APIC Protocol.</p>
+<p>The APIC Protocol is supported only as long as Alternate Injection is enabled.
+If the SVSM is unable to enable Alternate Injection because the hypervisor does
+not support the necessary guest/host interaction protocols, the SVSM will
+suppress availability of the APIC Protocol.  Similarly, if Alternate Injection
+is ever disabled as the result of a guest call, the SVSM will suppress
+availability of the SVSM protocol on the calling vCPU.</p>
+<h3 id="query-features-call-0">Query Features (Call 0)</h3>
+<p>This call (<code>SVSM_APIC_QUERY_FEATURES</code>) permits the guest to determine which
+APIC features are supported.  If the APIC protocol is supported at all, then
+basic APIC functionality related to interrupt delivery is supported, including
+the following registers: APIC ID, IRR, ISR, LDR, DFR, TMR, TPR, PPR, EOI, ICR,
+and self-IPI.  Only IPIs of the Fixed or NMI types are considered part of basic
+APIC functionality. </p>
+<p>This call has no inputs.  Upon completion of the call, EAX contains the return
+code from the call, and ECX contains a bitmask of supported features.</p>
+<ul>
+<li>Bit 0 indicates support for timer functionality (Timer LVT, divide
+configuration, initial count, and current count).  If timer functionality is
+not supported, the guest must rely on the hypervisor to emulate timer support
+through use of the #HV Timer GHCB protocol.</li>
+<li>Bit 1 indicates support for INIT and SIPI delivery.  If INIT and SIPI
+delivery are not supported, the guest may use INIT and SIPI signals to start
+additional vCPUs within the invoking VMPL.  Note that even if INIT and SIPI are
+supported, the guest must still use the VMSA creation calls of the SVSM Core
+Protocol to start additional vCPUs so that the Calling Area address for each
+vCPU can be configured correctly.</li>
+<li>Future bits are reserved and may be defined to include performance counters
+or other architectural interrupt sources.</li>
+</ul>
+<h3 id="apic-emulation-configuration-call-1">APIC Emulation Configuration (Call 1)</h3>
+<p>This call (<code>SVSM_APIC_CONFIGURE_EMULATION</code>) controls whether the guest can make
+use of the SVSM APIC Protocol.  If Alternate Injection is currently enabled on
+the calling vCPU, the guest can increment or decrement the registration count
+of the SVSM APIC Protocol (as described in the section “Supporting Multiple
+Guest Runtimes”).  Three forms of the call are possible.</p>
+<ul>
+<li><code>ECX[1:0]</code> = 0b00.  This will cause the Alternate Injection SEV feature to be
+disabled on the calling vCPU if the registration count has dropped to zero.  If
+the registration count remains non-zero, then Alternate Injection will remain
+enabled as an SEV feature on the calling vCPU.</li>
+<li><code>ECX[1:0]</code> = 0b01.  This will cause Alternate Injection to be deregistered for
+the guest.  If the registration count drops to zero, then the Alternate
+Injection SEV feature will be disabled on the calling vCPU.</li>
+<li><code>ECX[1:0]</code> = 0b10.  This will cause Alternate injection to be registered for
+the guest.  No change will be made to Alternate injection on the calling vCPU.
+If the registration count is already zero, this will fail with error code
+0x8000_1000 (<code>SVSM_ERR_APIC_CANNOT_REGISTER</code>).</li>
+</ul>
+<p>All other ECX bits are reserved and must be zero.  The combination 0b11 for
+<code>ECX[1:0]</code> is illegal.  Passing any illegal combination of bits will cause the
+call to fail with <code>SVSM_ERR_INVALID_PARAMETER</code>.</p>
+<p>Once Alternate Injection is disabled on the calling vCPU, further calls to the
+SVSM APIC Protocol will return <code>SVSM_ERR_UNSUPPORTED_PROTOCOL</code>.</p>
+<h3 id="read-apic-register-call-2">Read APIC Register (Call 2)</h3>
+<p>This call (<code>SVSM_APIC_READ_REGISTER</code>) permits the guest to read an APIC
+register.  Upon entry, ECX contains the X2APIC MSR number corresponding to the
+APIC register, in the range 0x800-0x8FF.  Upon successful completion of the
+call, RDX contains the value of the register.  Reading the ICR Low MSR (0x830)
+will return the entire 64-bit value of the Interrupt Control Register.  If ECX
+contains an illegal or unsupported MSR number, then <code>SVSM_ERR_INVALID_ADDRESS</code>
+will be returned.</p>
+<h3 id="write-apic-register-call-3">Write APIC Register (Call 3)</h3>
+<p>This call (<code>SVSM_APIC_WRITE_REGISTER</code>) permits the guest to write an APIC
+register.  Upon entry, ECX contains the X2APIC MSR number corresponding to the
+APIC register, in the range 0x800-0x8FF, and RDX contains the value of the
+register.  Writing the ICR Low MSR will write the entire 64-bit value of the
+Interrupt Control Register.  If ECX contains an illegal or unsupported MSR
+number, <code>SVSM_ERR_INVALID_ADDRESS</code> will be returned.  If ECX contains an MSR
+number that does not support writing, then <code>SVSM_ERR_INVALID_PARAMETER</code> will be
+returned.</p>
+<h3 id="configure-interrupt-vector-call-4">Configure Interrupt Vector (Call 4)</h3>
+<p>This call (<code>SVSM_APIC_CONFIGURE_VECTOR</code>) permits the guest to designate an
+interrupt vector as permissible or impermissible for the hypervisor to deliver.
+If a vector is designated as permissible, then the SVSM will signal that vector
+whenever it has been scheduled for delivery by the hypervisor (regardless of
+whether the source of the interrupt is legitimate or spurious). If a vector is
+designated as impermissible, then the SVSM will prevent that vector from being
+delivered to the guest, and will simply acknowledge the interrupt with the
+hypervisor without processing it any further (if the interrupt is
+level-sensitive, the SVSM will perform an EOI with the hypervisor without
+delivering it to the guest OS).  Two forms of this call are supported.</p>
+<ul>
+<li><code>ECX[9]=1</code>.  This form requests that all vectors be enabled, or that all
+vectors be disabled.  If <code>ECX[8]=1</code>, then all vectors will be enabled, and if
+<code>ECX[8]=0</code>, then all vectors will be disabled.  <code>ECX[7:0]</code> is ignored.  All
+other bits in ECX are reserved and must be zero.</li>
+<li><code>ECX[9]=0</code>.  This form requests a specific vector to be enabled or disabled.
+<code>ECX[7:0]</code> contains the vector number.  If <code>ECX[8]=1</code>, then the vector will be
+enabled, and if <code>ECX[8]=0</code>, then the vector will be disabled.  All other bits
+in ECX are reserved and must be zero.</li>
+</ul>
+<p>Enabling vector 2 will enable the host to present NMI, and disabling vector 2
+will prevent the host from presenting NMI.  Specifying a specific vector other
+than 2 or a vector in the range 0x1F-0xFF will cause
+<code>SVSM_ERR_INVALID_PARAMETER</code> to be returned.  If any reserved bit in ECX is
+set, then <code>SVSM_ERR_INVALID_PARAMETER</code> will be returned.</p>
+<h2 id="core-calling-area-changes">Core Calling Area Changes</h2>
+<p>Byte offset 2 of the Calling Area is defined to permit acceleration of
+End-of-Interrupt signaling without having to invoke the SVSM explicitly.  Byte
+2 is defined as “No EOI Required”, similar to the <code>NoEoiRequired field</code> in the
+#HV doorbell page.</p>
+<p>When the SVSM delivers an interrupt, and no lower priority interrupt is
+pending, the SVSM will set <code>NoEoiRequired</code> to 1, indicating that it is possible
+for the guest to complete an EOI without having to write to the APIC EOI
+register.  When the guest is ready to perform an EOI, it must perform an
+interlocked exchange to write the value zero into the NoEoiRequired field (this
+must be an interlocked operation in case the SVSM is invoked to perform
+interrupt processing, interrupting the guest’s logic to examine NoEoiPending).
+If the previous value is non-zero, then the EOI is complete and no further
+action is required, but if the previous value is zero, then the guest perform
+an explicit EOI cycle by issuing the <code>SVSM_APIC_WRITE_REGISTER</code> call).  If the
+SVSM delivers an interrupt, and a lower interrupt is also pending, then the
+SVSM will set <code>NoEoiRequired</code> to zero.  Similarly, if the SVSM schedules an
+interrupt while a higher priority interrupt is already in service, the SVSM
+will clear the <code>NoEoiPending</code> field to indicate that an explicit EOI cycle will
+be required to cause the pending lower priority interrupt to be delivered.</p>
+<h1 id="pseudocode">Pseudocode</h1>
+<h2 id="hypervisor-interrupt-signaling">Hypervisor Interrupt Signaling</h2>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>let descriptor := extended descriptor for target VMPL;
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>if one interrupt is pending
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    descriptor[7:0] := vector;
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    descriptor[14] := 0;
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    perform internal EOI if vector is edge-triggered
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>else
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    descriptor[7:0] := highest pending level-sensitive interrupt, or zero if none;
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    if any other edge-triggered interrupts are pending {
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        descriptor[14] := 1;
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>        copy edge-triggered interrupts into descriptor bitmap;
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        perform internal EOI for all pending edge-triggered interrupts;
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    endif
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>endif
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>doorbell.flags[10, 9, or 8] := 1 based on target VMPL;
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>if doorbell.flags[10, 9, or 8] was previously zero
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    signal notification interrupt to SVSM;
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>endif
+</span></code></pre></div>
+<h2 id="consuming-interrupts">Consuming interrupts</h2>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>if interlocked test and reset (doorbell.flags[8]) != 0
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    process interrupts for VMPL 1
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>endif
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>if interlocked test and reset (doorbell.flags[9]) != 0
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    process interrupts for VMPL 2
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>endif
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>if interlocked test and reset (doorbell.flags[10]) != 0
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    process interrupts for VMPL 3
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>endif
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>process interrupts:
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>let flags := interlocked exchange descriptor[15:0] with 0;
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>if flags[14] == 0
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>    let vector := descriptor[7:0];
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>    insert (vector) into the IRR;
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>    if flags[10] != 0
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>        insert (vector) into the TMR;
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>    else
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>        remove (vector) from the TMR;
+</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>    endif
+</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>else
+</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>    if flags[10] != 0
+</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>        let vector := descriptor[7:0];
+</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>        insert (vector) into the IRR;
+</span><span id="__span-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>        insert (vector) into the TMR;
+</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>    endif
+</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a>
+</span><span id="__span-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>    for each additional 16-bit word in the descriptor {
+</span><span id="__span-1-30"><a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a>        let flags := interlocked exchange descriptor word with 0;
+</span><span id="__span-1-31"><a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>        if (flags != 0)
+</span><span id="__span-1-32"><a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>            insert each corresponding vector into the IRR;
+</span><span id="__span-1-33"><a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>            remove each corresponding vector from the TMR;
+</span><span id="__span-1-34"><a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a>        endif
+</span><span id="__span-1-35"><a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a>    end for
+</span><span id="__span-1-36"><a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a>endif
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.f1b6f286.min.js"></script>
+      
+    
+  </body>
+</html>

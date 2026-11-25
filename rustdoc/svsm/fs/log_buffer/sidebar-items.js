@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["initialize_log_buffer","log_read","log_write","stdin_open","stdout_open"],"struct":["EmptyFile","LogFile"]};

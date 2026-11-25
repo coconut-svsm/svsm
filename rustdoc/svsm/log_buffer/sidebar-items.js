@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EARLY_LOG_PREFIX","EARLY_LOG_SIZE","EARLY_LOG_TRUNCATED"],"fn":["early_log_write","install_early_logger","lb_write","print_warning","switch_to_log_buffer","write_log_sinks"],"static":["BUFFER_LOGGER","EARLY_LOG","LOGGER"],"struct":["BufferLogger","EarlyLogBuffer","LogBuffer"]};

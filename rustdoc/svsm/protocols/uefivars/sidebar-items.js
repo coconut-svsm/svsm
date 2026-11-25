@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SVSM_UEFI_MM_REQUEST","UEFI_MM_BUFFER_LIMIT","UEFI_MM_PROTOCOL_VERSION_MAX","UEFI_MM_PROTOCOL_VERSION_MIN"],"fn":["check_buffer","uefi_mm_get_manifest","uefi_mm_protocol_init","uefi_mm_protocol_request","uefi_mm_request"],"static":["STORE"],"struct":["UefiMmManifest","UefiMmManifestFlags"]};

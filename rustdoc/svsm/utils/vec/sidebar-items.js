@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["try_to_vec","vec_sized"]};

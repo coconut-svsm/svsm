@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INT3_INSTR","MAX_BREAKPOINTS"],"enum":["ExceptionType","GdbInitState"],"fn":["debug_break","gdbstub_start","handle_debug_exception","handle_stop"],"static":["GDB_INIT_STATE","GDB_STACK","GDB_STACK_TOP","GDB_STATE","PACKET_BUFFER"],"struct":["GdbStubBreakpoint","GdbStubConnection","GdbStubTarget","GdbTaskContext","SvsmGdbStub"]};
