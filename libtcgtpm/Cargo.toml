@@ -4,9 +4,14 @@ version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
+cocoon-tpm-ossl-bare-sys = { workspace = true }
+libcrt = { workspace = true }
 
 [build-dependencies]
 bindgen = { workspace = true, features = ["runtime"] }
+# Pin prettyplease <0.3 — prettyplease 0.3 uses syn v3 but bindgen 0.73
+# uses syn v2 internally, causing a type mismatch at compile time.
+prettyplease = ">=0.2.29, <0.3"
 
 [lints]
 workspace = true
