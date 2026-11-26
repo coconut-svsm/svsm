@@ -4,12 +4,70 @@
 //
 // Author: Claudio Carvalho <cclaudio@linux.ibm.com>
 
-use std::env::current_dir;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 
+fn git_reset(submodule_dir: &Path) {
+    // Reset the submodule to the commit recorded in the superproject,
+    // initializing it if necessary.
+    let status = Command::new("git")
+        .args(["submodule", "update", "--init"])
+        .arg(submodule_dir.file_name().unwrap())
+        .current_dir(submodule_dir.parent().unwrap())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .unwrap_or_else(|e| panic!("failed to run git submodule update: {e}"));
+    assert!(
+        status.success(),
+        "failed to reset the submodule at {} to the commit recorded in the superproject",
+        submodule_dir.display()
+    );
+}
+
+fn apply_patch(patch: &Path, submodule_dir: &Path) {
+    // use an explicit committer identity in case git is not fully set up
+    // (for example CI)
+    let status = Command::new("git")
+        .arg("-c")
+        .arg(format!("user.name=libtcgtpm-build"))
+        .arg("-c")
+        .arg(format!("user.email=libtcgtpm@localhost"))
+        .arg("am")
+        .arg("-3")
+        .arg("--committer-date-is-author-date")
+        .arg(patch)
+        .current_dir(submodule_dir)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .unwrap_or_else(|e| panic!("failed to run git am: {e}"));
+
+    if !status.success() {
+        panic!(
+            "failed to apply {} to {}",
+            patch.display(),
+            submodule_dir.display()
+        );
+    }
+}
+
 fn main() {
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let tpm_dir = manifest_dir.join("deps/tpm-20-ref");
+    let tpm_patch_dir = manifest_dir.join("patches/tpm-20-ref");
+    git_reset(&tpm_dir);
+    apply_patch(
+        &tpm_patch_dir.join("0001-Address-improper-object-slot-reuse.patch"),
+        &tpm_dir,
+    );
+    apply_patch(
+        &tpm_patch_dir.join("0002-Address-RSA-OAEP-timing-side-channel-vulnerability.patch"),
+        &tpm_dir,
+    );
+
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
     // Build libtcgtpm.
@@ -76,7 +134,5 @@ fn main() {
 
     // Tell cargo not to rerun the build-script unless anything in this
     // directory changes.
-    let cwd = current_dir().unwrap();
-    let cwd = cwd.as_os_str().to_str().unwrap();
-    println!("cargo:rerun-if-changed={cwd}");
+    println!("cargo:rerun-if-changed={}", manifest_dir.display());
 }

@@ -1,0 +1,95 @@
+From 8d8d81b6687d9695dfc65f7bbeebd16005aca186 Mon Sep 17 00:00:00 2001
+From: Jan Kiszka <jan.kiszka@siemens.com>
+Date: Thu, 13 Aug 2026 14:35:55 +0200
+Subject: [PATCH 1/2] Address improper object slot reuse
+
+See [1] and [2].
+
+[1] https://trustedcomputinggroup.org/wp-content/uploads/VRT0010-Advisory_Final-1.pdf
+[2] https://trustedcomputinggroup.org/wp-content/uploads/TPM2.0-Library-Spec-184-Errata-1-PUBLISH.pdf
+
+Fixes: CVE-2026-6726
+Signed-off-by: Jan Kiszka <jan.kiszka@siemens.com>
+---
+ TPMCmd/tpm/src/command/AttachedComponent/AC_Send.c   | 4 ++++
+ TPMCmd/tpm/src/command/Attestation/Certify.c         | 4 ++++
+ TPMCmd/tpm/src/command/Attestation/CertifyCreation.c | 4 ++++
+ TPMCmd/tpm/src/command/Object/ActivateCredential.c   | 4 ++++
+ TPMCmd/tpm/src/subsystem/Object.c                    | 1 +
+ 5 files changed, 17 insertions(+)
+
+diff --git a/TPMCmd/tpm/src/command/AttachedComponent/AC_Send.c b/TPMCmd/tpm/src/command/AttachedComponent/AC_Send.c
+index ed1b6ac..6903530 100644
+--- a/TPMCmd/tpm/src/command/AttachedComponent/AC_Send.c
++++ b/TPMCmd/tpm/src/command/AttachedComponent/AC_Send.c
+@@ -52,6 +52,10 @@ TPM2_AC_Send(AC_Send_In*  in,  // IN: input parameter list
+     // permanent handle.
+     else if(HandleGetType(in->authHandle) != TPM_HT_PERMANENT)
+         return TPM_RCS_HANDLE + RC_AC_Send_authHandle;
++
++    // Cannot send a sequence object to an attached component
++    if(ObjectIsSequence(object))
++        return TPM_RCS_TYPE + RC_AC_Send_sendObject;
+     // Make sure that the object to be duplicated has the right attributes
+     if(IS_ATTRIBUTE(
+            object->publicArea.objectAttributes, TPMA_OBJECT, encryptedDuplication)
+diff --git a/TPMCmd/tpm/src/command/Attestation/Certify.c b/TPMCmd/tpm/src/command/Attestation/Certify.c
+index f879ade..32b91c8 100644
+--- a/TPMCmd/tpm/src/command/Attestation/Certify.c
++++ b/TPMCmd/tpm/src/command/Attestation/Certify.c
+@@ -28,6 +28,10 @@ TPM2_Certify(Certify_In*  in,  // IN: input parameter list
+     if(!CryptSelectSignScheme(signObject, &in->inScheme))
+         return TPM_RCS_SCHEME + RC_Certify_inScheme;
+ 
++    // Cannot certify a sequence object
++    if(ObjectIsSequence(certifiedObject))
++        return TPM_RCS_TYPE + RC_Certify_objectHandle;
++
+     // Command Output
+     // Filling in attest information
+     // Common fields
+diff --git a/TPMCmd/tpm/src/command/Attestation/CertifyCreation.c b/TPMCmd/tpm/src/command/Attestation/CertifyCreation.c
+index d44975f..8d2a8cb 100644
+--- a/TPMCmd/tpm/src/command/Attestation/CertifyCreation.c
++++ b/TPMCmd/tpm/src/command/Attestation/CertifyCreation.c
+@@ -26,6 +26,10 @@ TPM2_CertifyCreation(CertifyCreation_In*  in,  // IN: input parameter list
+     OBJECT*          certified  = HandleToObject(in->objectHandle);
+     OBJECT*          signObject = HandleToObject(in->signHandle);
+     // Input Validation
++    // Cannot certify creation of a sequence object
++    if(ObjectIsSequence(certified))
++        return TPM_RCS_TYPE + RC_CertifyCreation_objectHandle;
++
+     if(!IsSigningObject(signObject))
+         return TPM_RCS_KEY + RC_CertifyCreation_signHandle;
+     if(!CryptSelectSignScheme(signObject, &in->inScheme))
+diff --git a/TPMCmd/tpm/src/command/Object/ActivateCredential.c b/TPMCmd/tpm/src/command/Object/ActivateCredential.c
+index a46b234..d0a05ad 100644
+--- a/TPMCmd/tpm/src/command/Object/ActivateCredential.c
++++ b/TPMCmd/tpm/src/command/Object/ActivateCredential.c
+@@ -43,6 +43,10 @@ TPM2_ActivateCredential(ActivateCredential_In*  in,  // IN: input parameter list
+        || !IS_ATTRIBUTE(object->publicArea.objectAttributes, TPMA_OBJECT, restricted))
+         return TPM_RCS_TYPE + RC_ActivateCredential_keyHandle;
+ 
++    // Cannot activate credential of sequence object
++    if(ObjectIsSequence(activateObject))
++        return TPM_RCS_TYPE + RC_ActivateCredential_activateHandle;
++
+     // Command output
+ 
+     // Decrypt input credential data via asymmetric decryption.  A
+diff --git a/TPMCmd/tpm/src/subsystem/Object.c b/TPMCmd/tpm/src/subsystem/Object.c
+index 171d02d..b55cf26 100644
+--- a/TPMCmd/tpm/src/subsystem/Object.c
++++ b/TPMCmd/tpm/src/subsystem/Object.c
+@@ -16,6 +16,7 @@
+ // Note: This could be converted to a macro.
+ void ObjectFlush(OBJECT* object)
+ {
++    MemorySet(object, 0, sizeof(*object));
+     object->attributes.occupied = CLEAR;
+ }
+ 
+-- 
+2.56.1
+
