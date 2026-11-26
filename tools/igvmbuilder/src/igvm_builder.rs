@@ -641,7 +641,7 @@ impl IgvmBuilder {
             // Add the VSM register list.
             self.directives.push(IgvmDirectiveHeader::X64VbsVpContext {
                 vtl: self.highest_vtl(),
-                registers: start_context.to_vec(),
+                registers: start_context.clone(),
                 compatibility_mask: VSM_COMPATIBILITY_MASK,
             });
         }

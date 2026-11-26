@@ -114,10 +114,10 @@ pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     if let Some(addr) = FIXED_MAPPING.kernel_mapping.phys_to_virt(paddr) {
         return addr;
     }
-    if let Some(ref mapping) = FIXED_MAPPING.heap_mapping {
-        if let Some(addr) = mapping.phys_to_virt(paddr) {
-            return addr;
-        }
+    if let Some(ref mapping) = FIXED_MAPPING.heap_mapping
+        && let Some(addr) = mapping.phys_to_virt(paddr)
+    {
+        return addr;
     }
 
     panic!("Invalid physical address {:#018x}", paddr);

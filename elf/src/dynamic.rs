@@ -160,7 +160,7 @@ impl Elf64Dynamic {
 
         // Code below assumes that buf.len is aligned to 16, otherwise it might
         // panic.
-        if buf.len() % 16 != 0 {
+        if !buf.len().is_multiple_of(16) {
             return Err(ElfError::InvalidAddressAlignment);
         }
 

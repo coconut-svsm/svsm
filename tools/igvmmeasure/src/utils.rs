@@ -14,11 +14,10 @@ pub fn get_policy(igvm: &IgvmFile, compatibility_mask: u32) -> Option<u64> {
             policy: guest_policy,
             compatibility_mask: guest_cm,
         } = init
+            && (compatibility_mask & guest_cm) != 0
         {
-            if (compatibility_mask & guest_cm) != 0 {
-                policy = Some(*guest_policy);
-                break;
-            }
+            policy = Some(*guest_policy);
+            break;
         }
     }
     policy

@@ -124,14 +124,14 @@ fuzz_target!(|inp: FuzzInput| {
                 }
             }
             Action::ReadPage(idx) => {
-                if let Some(page) = get_item(&pages, idx) {
-                    if inited.contains(page) {
-                        let page_off = idx % PAGE_SIZE;
-                        // SAFETY: the page is valid, since we stored
-                        // it earlier in `pages`.
-                        let val = unsafe { page.as_ptr::<u8>().add(page_off).read_volatile() };
-                        assert!(val == 0 || val == WRITE_BYTE);
-                    }
+                if let Some(page) = get_item(&pages, idx)
+                    && inited.contains(page)
+                {
+                    let page_off = idx % PAGE_SIZE;
+                    // SAFETY: the page is valid, since we stored
+                    // it earlier in `pages`.
+                    let val = unsafe { page.as_ptr::<u8>().add(page_off).read_volatile() };
+                    assert!(val == 0 || val == WRITE_BYTE);
                 }
             }
             Action::AllocateFilePageRef => {
