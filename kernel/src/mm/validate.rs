@@ -6,15 +6,10 @@
 
 use crate::address::Address;
 use crate::address::PhysAddr;
-use crate::address::VirtAddr;
-use crate::boot_params::BootParams;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::PageBox;
-use crate::mm::pagetable::PageFrame;
-use crate::mm::virt_to_frame;
 use crate::mm::virt_to_phys;
-use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::types::PAGE_SIZE;
 use crate::types::PAGE_SIZE_2M;
 use crate::utils::MemoryRegion;
@@ -213,60 +208,4 @@ impl ValidBitmap {
         let mask: u64 = 1u64 << bit;
         self.bitmap[index] & mask == mask
     }
-}
-
-/// Validate the specified memory region which has already been mapped into
-/// the virtual address space.
-/// # Safety
-/// The caller is required to ensure the safety of the virtual address range.
-pub unsafe fn validate_mapped_region(
-    platform: &dyn SvsmPlatform,
-    boot_params: &BootParams<'_>,
-    vregion: MemoryRegion<VirtAddr>,
-) -> Result<(), SvsmError> {
-    if boot_params.page_state_change_required() {
-        // Loop over the virtual address range to determine the physical
-        // address ranges that must be changed to private pages.
-        let mut paddr_len: usize = 0;
-        let mut paddr_next: u64 = 0;
-        let vaddr_end = vregion.end();
-        let mut vaddr = vregion.start();
-        while vaddr < vaddr_end {
-            let frame = virt_to_frame(vaddr);
-            let (paddr, page_size): (u64, usize) = match frame {
-                PageFrame::Size2M(pa) => (pa.into(), PAGE_SIZE_2M),
-                PageFrame::Size4K(pa) => (pa.into(), PAGE_SIZE),
-                // Other page sizes are not supported here.
-                _ => return Err(SvsmError::Mem),
-            };
-            // When encountering a discontinuity in physical addresses,
-            // process the old range before proceeding.
-            if (paddr != paddr_next) && (paddr_len != 0) {
-                let paddr_start = PhysAddr::new((paddr_next - paddr_len as u64) as usize);
-                platform.page_state_change(
-                    MemoryRegion::new(paddr_start, paddr_len),
-                    PageStateChangeOp::Private,
-                )?;
-                paddr_len = 0;
-            }
-            paddr_len += page_size;
-            paddr_next = paddr + (page_size as u64);
-            vaddr = vaddr + page_size;
-        }
-
-        if paddr_len != 0 {
-            let paddr_start = PhysAddr::new((paddr_next - paddr_len as u64) as usize);
-            platform.page_state_change(
-                MemoryRegion::new(paddr_start, paddr_len),
-                PageStateChangeOp::Private,
-            )?;
-        }
-    }
-
-    // SAFETY: the caller has ensured the safety of the virtual address range.
-    unsafe {
-        platform.validate_virtual_page_range(vregion, PageValidateOp::Validate)?;
-    }
-
-    Ok(())
 }
